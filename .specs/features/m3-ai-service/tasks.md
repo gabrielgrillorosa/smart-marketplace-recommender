@@ -22,15 +22,15 @@ No TESTING.md exists — this is a greenfield TypeScript/Fastify service. Formal
 
 ### Phase 1: Foundation (Sequential)
 
-Shared infrastructure all other tasks depend on.
+Shared infrastructure all other tasks depend on. T0 (deps) and T1+T2 (types + config) have no cross-dependency but are kept sequential for simplicity.
 
 ```
-T1 → T2 → T3 → T4
+T0 → T1 → T2 → T3 → T4
 ```
 
 ### Phase 2: Core Services (Parallel OK)
 
-After foundation is in place, three domain services can be built in parallel.
+After foundation is in place, domain services and Dockerfile can be built in parallel. T7 depends only on T0 (package.json correct) and the directory structure defined in T1.
 
 ```
 T4 ──┬──→ T5 [P]
@@ -40,12 +40,12 @@ T4 ──┬──→ T5 [P]
 
 ### Phase 3: Routes (Parallel OK)
 
-Each route depends on its own service only.
+Each route depends exclusively on its own service.
 
 ```
-T5 ──→ T8 [P]
-T6 ──→ T9 [P]
-T7 ──→ T10 [P]
+T4 ──→ T8 [P]   (embeddings route — uses EmbeddingService from T4)
+T5 ──→ T9 [P]   (search route — uses SearchService from T5)
+T6 ──→ T10 [P]  (rag route — uses RAGService from T6)
 ```
 
 ### Phase 4: Integration (Sequential)
@@ -53,12 +53,34 @@ T7 ──→ T10 [P]
 Wire everything together, refactor entry point, update infrastructure.
 
 ```
-T8, T9, T10 ──→ T11 → T12 → T13
+T8, T9, T10, T7 ──→ T11 → T12 → T13
 ```
 
 ---
 
 ## Task Breakdown
+
+### T0: Verify and pin dependencies
+
+**What**: Confirm `@langchain/core` is declared explicitly in `package.json` and verify `tsconfig.json` has `outDir: "./dist"` — prerequisites for T6 (RAGService imports) and T7 (Dockerfile build)
+**Where**: `ai-service/package.json`, `ai-service/tsconfig.json`
+**Depends on**: None
+**Reuses**: —
+**Requirement**: M3-23 (LangChain chain imports), M3-34 (Dockerfile build)
+
+**Tools**:
+- MCP: `filesystem`
+- Skill: NONE
+
+**Done when**:
+- [ ] `@langchain/core` listed in `package.json` `dependencies` (currently only a transitive dep — must be explicit to survive `npm ci --omit=dev` in Dockerfile runner stage)
+- [ ] `tsconfig.json` has `"outDir": "./dist"` — already confirmed ✅ (no change needed)
+- [ ] `npm install` run if `package.json` was modified (updates `package-lock.json`)
+
+**Tests**: none
+**Gate**: quick — `node -e "require('@langchain/core/prompts')" && echo OK`
+
+---
 
 ### T1: Create shared type definitions
 
@@ -249,7 +271,7 @@ PORT=3002 NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=x ts-n
 
 **What**: Replace existing single-stage Dockerfile with multi-stage build: `builder` compiles TypeScript, `runner` uses only `dist/` and production `node_modules`
 **Where**: `ai-service/Dockerfile`
-**Depends on**: T4 (structure must be known before Dockerfile finalizes COPY paths)
+**Depends on**: T0 (package.json deps correct), T1 (directory structure established)
 **Reuses**: Multi-stage pattern from `api-service/Dockerfile`
 **Requirement**: M3-34
 
@@ -273,7 +295,7 @@ PORT=3002 NEO4J_URI=bolt://localhost:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=x ts-n
 
 **What**: Create `src/routes/embeddings.ts` — Fastify plugin handling `POST /api/v1/embeddings/generate`
 **Where**: `ai-service/src/routes/embeddings.ts`
-**Depends on**: T5 (EmbeddingService), T4
+**Depends on**: T4 (EmbeddingService)
 **Reuses**: Fastify plugin pattern (`FastifyPluginAsync`)
 **Requirement**: M3-06, M3-08, M3-09, M3-10, M3-11, M3-12, M3-13
 
@@ -306,7 +328,7 @@ curl -X POST http://localhost:3001/api/v1/embeddings/generate
 
 **What**: Create `src/routes/search.ts` — Fastify plugin handling `POST /api/v1/search/semantic`
 **Where**: `ai-service/src/routes/search.ts`
-**Depends on**: T5 (SearchService)
+**Depends on**: T5 (SearchService — wraps EmbeddingService + repo)
 **Reuses**: Fastify plugin pattern (`FastifyPluginAsync`)
 **Requirement**: M3-14, M3-15, M3-16, M3-17, M3-18, M3-19, M3-20, M3-21
 
@@ -343,7 +365,7 @@ curl -X POST http://localhost:3001/api/v1/search/semantic \
 
 **What**: Create `src/routes/rag.ts` — Fastify plugin handling `POST /api/v1/rag/query`
 **Where**: `ai-service/src/routes/rag.ts`
-**Depends on**: T6 (RAGService)
+**Depends on**: T6 (RAGService — full pipeline)
 **Reuses**: Fastify plugin pattern (`FastifyPluginAsync`)
 **Requirement**: M3-22, M3-23, M3-24, M3-25, M3-26, M3-27, M3-28, M3-29
 
@@ -476,26 +498,23 @@ docker compose config ai-service
 
 ```
 Phase 1 (Sequential — Foundation):
-  T1 ──→ T2 ──→ T3 ──→ T4
+  T0 ──→ T1 ──→ T2 ──→ T3 ──→ T4
 
-Phase 2 (Parallel — Domain Services):
+Phase 2 (Parallel — Domain Services + Dockerfile):
   T4 complete, then:
     ├── T5 [P]   (SearchService)
     ├── T6 [P]   (RAGService)
-    └── T7 [P]   (Dockerfile multi-stage)
+    └── T7 [P]   (Dockerfile multi-stage — depende de T0+T1, pode rodar assim que T4 terminar)
 
 Phase 3 (Parallel — Routes):
-  T5 ──→ T8 [P]  (embeddings route)
-  T6 ──→ T9 [P]  (search route)    ← Note: T8 needs T4, T9 needs T5, T10 needs T6
-  T7 (no route dependency)
-  ──→ T10 [P]  (rag route)
+  T4 complete ──→ T8 [P]   (embeddings route — EmbeddingService)
+  T5 complete ──→ T9 [P]   (search route — SearchService)
+  T6 complete ──→ T10 [P]  (rag route — RAGService)
 
 Phase 4 (Sequential — Integration):
-  T8, T9, T10, T7 complete, then:
+  T7, T8, T9, T10 complete, then:
     T11 ──→ T12 ──→ T13
 ```
-
-**Note on Phase 3:** `embeddingsRoutes` (T8) depends on both `EmbeddingService` (T4) and needs `Neo4jRepository` — T4 is already done before Phase 2; T8 can parallel with T9/T10 once T5 is done since T5 already depends on T4.
 
 ---
 
@@ -503,17 +522,18 @@ Phase 4 (Sequential — Integration):
 
 | Task | Depends On (task body) | Diagram Shows | Status |
 |------|------------------------|---------------|--------|
-| T1 | None | Start of Phase 1 | ✅ Match |
-| T2 | None | T1 → T2 | ✅ Match |
+| T0 | None | Start of Phase 1 | ✅ Match |
+| T1 | None (após T0) | T0 → T1 | ✅ Match |
+| T2 | None (após T1) | T1 → T2 | ✅ Match |
 | T3 | T1 | T2 → T3 | ✅ Match |
 | T4 | T1, T3 | T3 → T4 | ✅ Match |
 | T5 | T4 | T4 → T5 [P] | ✅ Match |
 | T6 | T4 | T4 → T6 [P] | ✅ Match |
-| T7 | T4 | T4 → T7 [P] | ✅ Match |
-| T8 | T5, T4 | T5 → T8 [P] | ✅ Match |
-| T9 | T5 | T6 → T9 [P] | ✅ Match |
-| T10 | T6 | T7 → T10 [P] | ✅ Match |
-| T11 | T2, T3, T4, T5, T6, T8, T9, T10 | T8,T9,T10 → T11 | ✅ Match |
+| T7 | T0, T1 | T4 → T7 [P] (pode rodar assim que T4 terminar) | ✅ Match |
+| T8 | T4 | T4 → T8 [P] | ✅ Match |
+| T9 | T5 | T5 → T9 [P] | ✅ Match |
+| T10 | T6 | T6 → T10 [P] | ✅ Match |
+| T11 | T2, T3, T4, T5, T6, T7, T8, T9, T10 | T7,T8,T9,T10 → T11 | ✅ Match |
 | T12 | T11 | T11 → T12 | ✅ Match |
 | T13 | T12 | T12 → T13 | ✅ Match |
 
@@ -527,6 +547,7 @@ No `TESTING.md` exists. Formal tests are explicitly **out of scope for M3** (see
 
 | Task | Code Layer Created/Modified | M3 Spec Requires | Task Says | Status |
 |------|-----------------------------|------------------|-----------|--------|
+| T0 | package.json (dep declaration) | none | none | ✅ OK |
 | T1 | Types (interfaces only) | none (M6) | none | ✅ OK |
 | T2 | Config module | none (M6) | none | ✅ OK |
 | T3 | Repository layer | none (M6) | none | ✅ OK |
@@ -549,6 +570,7 @@ All ✅ — no violations.
 
 | Task | Scope | Status |
 |------|-------|--------|
+| T0: Verify and pin dependencies | 1 file (package.json), verificação | ✅ Granular |
 | T1: Create shared types | 1 file, pure interfaces | ✅ Granular |
 | T2: Create env config | 1 file, 1 module | ✅ Granular |
 | T3: Create Neo4jRepository | 1 file, 1 class | ✅ Granular |
