@@ -1,13 +1,13 @@
 # Project State
 
-_Last updated: 2026-04-23 — Session: GitHub repo documented_
+_Last updated: 2026-04-23 — Session: M1 Foundation executed and verified_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M1 — Foundation
-**Phase:** Tasks complete → Ready for Execute
+**Milestone:** M1 — Foundation ✅ COMPLETE
+**Next:** M2 — API Service (Spring Boot endpoints)
 
 ---
 
@@ -108,6 +108,14 @@ _None at this time._
 - `tf.dispose()` and `tf.tidy()` missing in `parte05` worker — causes memory growth on repeated training. Apply in `@tensorflow/tfjs-node` training loop.
 - README port mismatch (8080 vs 3000) in `parte05`. Keep README in sync from day one.
 
+### L-003 — M1 Infrastructure Lessons
+**Source:** M1 Execute phase
+- Neo4j 5.x image does NOT support auto-execution of Cypher init scripts via volume mount (unlike PostgreSQL's `/docker-entrypoint-initdb.d/`). The entrypoint tries to `chown` mounted directories and fails if they are read-only. Solution: apply constraints via the seed script using `CREATE CONSTRAINT IF NOT EXISTS`.
+- Alpine-based Docker health checks: `wget -qO- http://localhost:PORT` fails in some containers because `localhost` doesn't resolve. Always use `127.0.0.1` explicitly in Docker health check commands.
+- Next.js standalone mode binds to the container's network IP by default, not `0.0.0.0`. Set `HOSTNAME=0.0.0.0` in the Dockerfile ENV to make it accessible via `127.0.0.1` inside the container.
+- Order seed data must use deterministic UUIDs (e.g., `uuid/v5` with a stable namespace) to guarantee idempotency across re-runs. `uuid/v4` generates random IDs that defeat `ON CONFLICT (id) DO NOTHING`.
+- Port conflicts on developer machines: use non-standard host port mappings (e.g., `5433:5432`) with a `POSTGRES_HOST_PORT` env var to avoid conflicts with other running PostgreSQL instances.
+
 ### L-002 — langchain import path in exemplo-13
 **Source:** Exploration of `exemplo-13-embeddings-neo4j-rag`
 - `RecursiveCharacterTextSplitter` imported from `langchain/text_splitter` but `langchain` (bare package) is not in `package.json` — may rely on transitive dependency. In the new AI service, import from `@langchain/textsplitters` (explicit scoped package) to avoid ambiguity.
@@ -119,6 +127,7 @@ _None at this time._
 - [x] Specify M1 features (monorepo structure, seed, Neo4j schema) — spec.md created (28 reqs, M1-01..M1-28)
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)
+- [x] Execute M1 — all 21 tasks complete, all 5 services healthy, seed idempotent, 28/28 requirements met
 - [ ] Specify M2 features (Spring Boot API endpoints)
 - [ ] Specify M3 features (AI service embedding + RAG)
 - [ ] Specify M4 features (neural model + hybrid recommendation)
