@@ -1,13 +1,14 @@
 # Project State
 
-_Last updated: 2026-04-23 — Session: M1 Foundation executed and verified_
+_Last updated: 2026-04-23 — Session: M3 AI Service design complex concluído_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M1 — Foundation ✅ COMPLETE
-**Next:** M2 — API Service (Spring Boot endpoints)
+**Milestone:** M3 — AI Service
+**Status:** Design approved (design complex — 5 fases, 3 ADRs) — Next: Tasks
+**Previous:** M2 — API Service ✅ COMPLETE (Build passes, smoke checks executed)
 
 ---
 
@@ -80,6 +81,24 @@ _Last updated: 2026-04-23 — Session: M1 Foundation executed and verified_
 **Tradeoff accepted:** Free tier has rate limits. Acceptable for demo; documented in README.
 **Status:** Accepted ✓
 
+### D-008 — Neo4j driver singleton com sessions por operação e try/finally
+**Date:** 2026-04-23
+**Decision:** Instanciar o `neo4j-driver` Driver uma vez no startup; injetar no `Neo4jRepository`; cada método abre/fecha session em `try/finally`.
+**Rationale:** Evita overhead de conexão por request e leak de sessions em caso de exceção (Staff Engineering + Principal SW Architect — High severity no committee review do Design Complex M3).
+**Status:** Accepted ✓ (ADR-004)
+
+### D-009 — Model warm-up no startup + separação /health (liveness) e /ready (readiness)
+**Date:** 2026-04-23
+**Decision:** `EmbeddingService.init()` antes de `fastify.listen()`; `/health` responde imediatamente; `/ready` responde quando `modelReady === true`.
+**Rationale:** `@xenova/transformers` download (~90MB) causaria latência de 30-60s no primeiro request; separação liveness/readiness evita que Docker marque container como healthy antes do modelo estar pronto (Staff Engineering High + QA Staff Medium no committee review).
+**Status:** Accepted ✓ (ADR-005)
+
+### D-010 — Estrutura modular de camadas para o AI Service
+**Date:** 2026-04-23
+**Decision:** `src/config/` → `src/repositories/` → `src/services/` → `src/routes/` → `src/index.ts`; rotas via `fastify.register` com prefixo `/api/v1`.
+**Rationale:** Extensibilidade para M4 sem refactor; testabilidade por injeção de dependência via constructor; SRP cumprido por camada (Principal SW Architect High no committee review).
+**Status:** Accepted ✓ (ADR-003)
+
 ### D-007 — Client profile vector = mean of purchased product embeddings
 **Date:** 2026-04-23
 **Decision:** Represent a client's taste profile as the element-wise mean of the HuggingFace embeddings of all products they have purchased.
@@ -128,8 +147,12 @@ _None at this time._
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)
 - [x] Execute M1 — all 21 tasks complete, all 5 services healthy, seed idempotent, 28/28 requirements met
-- [ ] Specify M2 features (Spring Boot API endpoints)
-- [ ] Specify M3 features (AI service embedding + RAG)
+- [x] Specify M2 features (Spring Boot API endpoints)
+- [x] Execute M2 — 45 Java classes implemented (controllers/services/repositories/entities/config/exception), OpenAPI + Actuator + cache + recommendation fallback validated via runtime smoke tests
+- [x] Specify M3 features (AI service embedding + RAG) — spec.md created (37 reqs, M3-01..M3-37)
+- [x] Design complex M3 — design.md + ADR-003 (estrutura modular) + ADR-004 (driver singleton) + ADR-005 (warm-up + liveness/readiness) criados; 3 nós ToT, committee review com 3 personas, 6 findings incorporados
+- [ ] Break M3 into tasks — tasks.md
+- [ ] Execute M3
 - [ ] Specify M4 features (neural model + hybrid recommendation)
 - [ ] Specify M5 features (Next.js frontend)
 - [ ] Specify M6 features (tests + README)
@@ -139,7 +162,7 @@ _None at this time._
 ## Deferred Ideas
 
 - **Graph-augmented RAG:** Use multi-hop Cypher traversal (e.g., "find products bought by clients who also bought X") as additional context for the RAG pipeline. Neo4j graph structure supports this without schema changes. Deferred to post-MVP.
-- **Fine-tuning MiniLM-L6-v2:** Train on Ambev/beverage domain product descriptions to improve embedding quality for beverage-specific vocabulary. Requires labeled dataset. Deferred.
+- **Fine-tuning HuggingFace + Benchmarking comparativo (M4 ou pós-MVP):** Explorar fine-tuning de um modelo HuggingFace existente (ex: `sentence-transformers/all-MiniLM-L6-v2` ou `distilbert-base-uncased`) no domínio de produtos do catálogo, e comparar sistematicamente contra o modelo neural treinado com TensorFlow.js (M4). A ideia central é ter um endpoint de benchmarking (`POST /api/v1/benchmark`) que executa um mesmo conjunto de queries de recomendação nos dois modelos e retorna métricas comparativas (Precision@K, nDCG, latência p50/p95). O fine-tuning via HuggingFace `transformers` + `datasets` exige Python — isso abre uma decisão arquitetural: manter o fine-tuning em um script Python separado (offline, gera artefato `.bin`) e servir o resultado via `@xenova/transformers` no AI Service (ONNX export), ou adicionar um microserviço Python para servir o modelo fine-tuned. Deferred para exploração pós-M4, quando o modelo TensorFlow.js estiver treinado e os dados de comparação fizerem sentido. Ver D-001 (decisão TypeScript vs Python) — essa feature pode ser o ponto onde Python entra justificadamente no stack.
 - **Kafka async recommendations:** Pre-compute recommendations asynchronously when a new order is placed. Demonstrates event-driven architecture. Deferred to post-MVP.
 - **Precision@K / nDCG evaluation endpoint:** Expose recommendation quality metrics as a dedicated API endpoint. Important for production but deferred for MVP.
 - **Open Food Facts enrichment:** Use Open Food Facts public API to enrich synthetic product descriptions with real nutritional data. Optional enrichment, deferred.

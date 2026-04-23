@@ -1,7 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M1 — Foundation
-**Status:** In Progress — Spec ✓ + Design ✓ → Ready for Tasks + Execute
+**Current Milestone:** M3 — AI Service
+**Status:** In Progress — Spec ✓ Design ✓ Tasks ✓ Execute ○
+
+**Previous:** M2 — API Service ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
 
 ---
 
