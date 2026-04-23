@@ -1,0 +1,28 @@
+{
+  "name": "ai-service",
+  "version": "0.0.1",
+  "description": "Smart Marketplace Recommender — AI Service",
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "seed": "ts-node src/seed/seed.ts"
+  },
+  "dependencies": {
+    "@langchain/community": "^0.3.0",
+    "@langchain/openai": "^0.3.0",
+    "@xenova/transformers": "^2.17.2",
+    "fastify": "^4.28.0",
+    "neo4j-driver": "^5.24.0",
+    "pg": "^8.12.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/uuid": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
