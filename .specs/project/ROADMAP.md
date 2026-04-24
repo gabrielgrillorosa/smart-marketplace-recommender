@@ -1,9 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M3 — AI Service
-**Status:** In Progress — Spec ✓ Design ✓ Tasks ✓ Execute ○
+**Current Milestone:** M4 — Neural Recommendation Model
+**Status:** Planned
 
-**Previous:** M2 — API Service ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
+**Previous:** M3 — AI Service ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
 
 ---
 

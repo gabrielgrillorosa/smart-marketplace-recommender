@@ -1,14 +1,14 @@
 # Project State
 
-_Last updated: 2026-04-23 — Session: M3 AI Service design complex concluído_
+_Last updated: 2026-04-23 — Session: M4 Neural Recommendation Model — spec.md criado_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M3 — AI Service
-**Status:** Design approved (design complex — 5 fases, 3 ADRs) — Next: Tasks
-**Previous:** M2 — API Service ✅ COMPLETE (Build passes, smoke checks executed)
+**Milestone:** M4 — Neural Recommendation Model
+**Status:** Spec ✓ — Next: Design
+**Previous:** M3 — AI Service ✅ COMPLETE (13 tasks, tsc clean, all endpoints implemented)
 
 ---
 
@@ -151,9 +151,9 @@ _None at this time._
 - [x] Execute M2 — 45 Java classes implemented (controllers/services/repositories/entities/config/exception), OpenAPI + Actuator + cache + recommendation fallback validated via runtime smoke tests
 - [x] Specify M3 features (AI service embedding + RAG) — spec.md created (37 reqs, M3-01..M3-37)
 - [x] Design complex M3 — design.md + ADR-003 (estrutura modular) + ADR-004 (driver singleton) + ADR-005 (warm-up + liveness/readiness) criados; 3 nós ToT, committee review com 3 personas, 6 findings incorporados
-- [ ] Break M3 into tasks — tasks.md
-- [ ] Execute M3
-- [ ] Specify M4 features (neural model + hybrid recommendation)
+- [x] Break M3 into tasks — tasks.md (13 tasks, T0..T13)
+- [x] Execute M3 — 13 tasks complete, tsc --noEmit clean, all 37 requirements met
+- [x] Specify M4 features (neural model + hybrid recommendation) — spec.md criado (34 reqs, M4-01..M4-34)
 - [ ] Specify M5 features (Next.js frontend)
 - [ ] Specify M6 features (tests + README)
 
