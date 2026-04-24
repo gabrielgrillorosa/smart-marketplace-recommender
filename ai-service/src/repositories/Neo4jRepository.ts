@@ -195,6 +195,23 @@ export class Neo4jRepository {
     }
   }
 
+  async getAllProductEmbeddings(): Promise<{ id: string; embedding: number[] }[]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (p:Product) WHERE p.embedding IS NOT NULL RETURN p.id AS id, p.embedding AS embedding'
+      )
+      return result.records.map((r) => ({
+        id: r.get('id'),
+        embedding: r.get('embedding') as number[],
+      }))
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
   async close(): Promise<void> {
     await this.driver.close()
   }
