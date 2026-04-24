@@ -1,14 +1,14 @@
 # Project State
 
-_Last updated: 2026-04-23 — Session: M4 Neural Recommendation Model — Execute complete (8 tasks, tsc clean, all endpoints implemented)_
+_Last updated: 2026-04-24 — Session: M5 Frontend Execute — tasks.md (40 tasks) + todos os componentes implementados; build ✓ lint ✓_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M5 — Frontend
-**Status:** Next: Specify
-**Previous:** M4 — Neural Recommendation Model ✅ COMPLETE (9 tasks, tsc clean, all endpoints implemented)
+**Milestone:** M6 — Quality & Publication
+**Status:** Pending — Next: Specify
+**Previous:** M5 — Frontend ✅ COMPLETE (40 tasks, `npm run build` ✓, `npm run lint` ✓ zero warnings, 33/33 requirements met)
 
 ---
 
@@ -135,6 +135,13 @@ _None at this time._
 - Order seed data must use deterministic UUIDs (e.g., `uuid/v5` with a stable namespace) to guarantee idempotency across re-runs. `uuid/v4` generates random IDs that defeat `ON CONFLICT (id) DO NOTHING`.
 - Port conflicts on developer machines: use non-standard host port mappings (e.g., `5433:5432`) with a `POSTGRES_HOST_PORT` env var to avoid conflicts with other running PostgreSQL instances.
 
+### L-004 — Next.js 14 ESLint version requirements
+**Source:** M5 Execute — `npm run lint` setup
+- `next lint` with Next.js 14 requires ESLint 8, NOT ESLint 9. Installing the latest `eslint` package pulls in ESLint 9 which causes incompatible CLI options errors.
+- Always install `eslint@8` + `eslint-config-next@{NEXT_VERSION}` (pinned to exact Next.js version) together.
+- `npx shadcn@latest init` is interactive and cannot be used with `--yes` alone; manually creating `components/ui/` files + `lib/utils.ts` with `clsx`/`tailwind-merge` is the reliable alternative.
+- For Next.js 14 with Radix UI: install `@radix-ui/react-dialog @radix-ui/react-tooltip @radix-ui/react-select` directly; no additional shadcn CLI needed.
+
 ### L-002 — langchain import path in exemplo-13
 **Source:** Exploration of `exemplo-13-embeddings-neo4j-rag`
 - `RecursiveCharacterTextSplitter` imported from `langchain/text_splitter` but `langchain` (bare package) is not in `package.json` — may rely on transitive dependency. In the new AI service, import from `@langchain/textsplitters` (explicit scoped package) to avoid ambiguity.
@@ -155,10 +162,12 @@ _None at this time._
 - [x] Execute M3 — 13 tasks complete, tsc --noEmit clean, all 37 requirements met
 - [x] Specify M4 features (neural model + hybrid recommendation) — spec.md criado (34 reqs, M4-01..M4-34)
 - [x] Design complex M4 — design.md + ADR-006 (ModelStore atomic swap) + ADR-007 (batch predict tensor strategy) + ADR-008 (tf.tidy async boundary) criados; 3 nós ToT, committee review com 3 personas, 7 findings incorporados
-- [x] Break M4 into tasks — tasks.md (9 tasks, T1..T9)
-- [x] Execute M4 — 9 tasks complete, tsc --noEmit clean, all 34 requirements met
-- [ ] Specify M5 features (Next.js frontend)
-- [ ] Specify M6 features (tests + README)
+- [x] Specify M5 features (Next.js frontend) — spec.md criado (33 reqs, M5-01..M5-33)
+- [x] Design M5 — design.md + ADR-001..ADR-004 criados
+- [x] Break M5 into tasks — tasks.md (40 tasks, 8 phases, 33/33 reqs mapped)
+- [x] Execute M5 — 40 tasks complete, `npm run build` ✓, `npm run lint` ✓ zero warnings, 33/33 requirements met
+- [x] Specify M6 features (tests + README) — spec.md criado (35 reqs, M6-01..M6-35)
+- [ ] Break M6 into tasks — tasks.md
 
 ---
 

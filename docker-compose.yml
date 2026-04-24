@@ -74,9 +74,6 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password123}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       PORT: "3001"
-      API_SERVICE_URL: http://api-service:8080
-      NEURAL_WEIGHT: ${NEURAL_WEIGHT:-0.6}
-      SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
     ports:
       - "${AI_SERVICE_PORT:-3001}:3001"
     depends_on:

@@ -1,9 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M5 — Frontend
-**Status:** Spec — Next: Specify
+**Current Milestone:** M6 — Quality & Publication
+**Status:** Pending — Next: Specify
 
-**Previous:** M4 — Neural Recommendation Model ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
+**Previous:** M5 — Frontend ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
 
 ---
 
@@ -176,6 +176,8 @@
 **Goal:** Project is production-quality in documentation, tests, and engineering practices. README tells a compelling technical story. GitHub repository is ready for public sharing.
 
 **Target:** Tests pass; README is self-sufficient; any engineer can clone and run with zero prior knowledge of the project.
+
+**Status:** Spec ✓ (35 reqs, M6-01..M6-35) — Next: Tasks
 
 ### Features
 
