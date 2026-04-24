@@ -1,14 +1,14 @@
 # Project State
 
-_Last updated: 2026-04-23 — Session: M4 Neural Recommendation Model — spec.md criado_
+_Last updated: 2026-04-23 — Session: M4 Neural Recommendation Model — Execute complete (8 tasks, tsc clean, all endpoints implemented)_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M4 — Neural Recommendation Model
-**Status:** Spec ✓ — Next: Design
-**Previous:** M3 — AI Service ✅ COMPLETE (13 tasks, tsc clean, all endpoints implemented)
+**Milestone:** M5 — Frontend
+**Status:** Next: Specify
+**Previous:** M4 — Neural Recommendation Model ✅ COMPLETE (9 tasks, tsc clean, all endpoints implemented)
 
 ---
 
@@ -154,6 +154,9 @@ _None at this time._
 - [x] Break M3 into tasks — tasks.md (13 tasks, T0..T13)
 - [x] Execute M3 — 13 tasks complete, tsc --noEmit clean, all 37 requirements met
 - [x] Specify M4 features (neural model + hybrid recommendation) — spec.md criado (34 reqs, M4-01..M4-34)
+- [x] Design complex M4 — design.md + ADR-006 (ModelStore atomic swap) + ADR-007 (batch predict tensor strategy) + ADR-008 (tf.tidy async boundary) criados; 3 nós ToT, committee review com 3 personas, 7 findings incorporados
+- [x] Break M4 into tasks — tasks.md (9 tasks, T1..T9)
+- [x] Execute M4 — 9 tasks complete, tsc --noEmit clean, all 34 requirements met
 - [ ] Specify M5 features (Next.js frontend)
 - [ ] Specify M6 features (tests + README)
 
