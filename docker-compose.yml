@@ -70,8 +70,10 @@ services:
       - .env
     environment:
       NEO4J_URI: bolt://neo4j:7687
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password123}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      PORT: "3001"
     ports:
       - "${AI_SERVICE_PORT:-3001}:3001"
     depends_on:
@@ -82,7 +84,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
-      start_period: 15s
+      start_period: 60s
 
   frontend:
     build:
