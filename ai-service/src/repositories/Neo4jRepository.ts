@@ -58,7 +58,7 @@ export class Neo4jRepository {
       await session.run(
         `CREATE VECTOR INDEX product_embeddings IF NOT EXISTS
          FOR (p:Product) ON (p.embedding)
-         OPTIONS { indexConfig: { 'vector.dimensions': 384, 'vector.similarity_function': 'cosine' } }`
+         OPTIONS { indexConfig: { \`vector.dimensions\`: 384, \`vector.similarity_function\`: 'cosine' } }`
       )
     } catch (err) {
       throw new Neo4jUnavailableError(err)

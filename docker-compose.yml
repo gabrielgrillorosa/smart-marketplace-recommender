@@ -48,10 +48,13 @@ services:
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      AI_SERVICE_URL: http://ai-service:3001
     ports:
       - "${API_SERVICE_PORT:-8080}:8080"
     depends_on:
       postgres:
+        condition: service_healthy
+      ai-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q UP"]
@@ -83,11 +86,12 @@ services:
       - "${AI_SERVICE_PORT:-3001}:3001"
     volumes:
       - ai-model-data:/tmp/model
+      - ai-hf-cache:/root/.cache/huggingface
     depends_on:
       neo4j:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health | grep -q ok"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -122,3 +126,4 @@ volumes:
   neo4j_data:
   neo4j_logs:
   ai-model-data:
+  ai-hf-cache:

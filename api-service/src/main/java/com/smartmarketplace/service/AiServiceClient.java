@@ -46,7 +46,7 @@ public class AiServiceClient {
     private List<RecommendationItemDTO> callAiService(UUID clientId, int limit) {
         Map<String, Object> body = Map.of("clientId", clientId.toString(), "limit", limit);
         return aiWebClient.post()
-                .uri("/recommend")
+                .uri("/api/v1/recommend")
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(new ParameterizedTypeReference<List<RecommendationItemDTO>>() {})
