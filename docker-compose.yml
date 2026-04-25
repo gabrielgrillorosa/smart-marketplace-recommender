@@ -74,8 +74,15 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-password123}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       PORT: "3001"
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+      LLM_MODEL: ${LLM_MODEL:-meta-llama/llama-3.2-3b-instruct:free}
+      API_SERVICE_URL: http://api-service:8080
+      NEURAL_WEIGHT: ${NEURAL_WEIGHT:-0.6}
+      SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
     ports:
       - "${AI_SERVICE_PORT:-3001}:3001"
+    volumes:
+      - ai-model-data:/tmp/model
     depends_on:
       neo4j:
         condition: service_healthy
@@ -114,3 +121,4 @@ volumes:
   postgres_data:
   neo4j_data:
   neo4j_logs:
+  ai-model-data:

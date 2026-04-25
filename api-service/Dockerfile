@@ -1,21 +1,13 @@
-# Stage 1: Build the JAR with Maven
-FROM maven:3.9-eclipse-temurin-21 AS build
-
+FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
+COPY mvnw pom.xml ./
+COPY .mvn .mvn
+RUN ./mvnw dependency:go-offline -q
+COPY src src
+RUN ./mvnw package -DskipTests -q
 
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
-
-COPY src ./src
-RUN mvn package -DskipTests -B
-
-# Stage 2: Slim runtime image
-FROM eclipse-temurin:21-jre-alpine AS runtime
-
+FROM eclipse-temurin:21-jre AS runtime
 WORKDIR /app
-
-COPY --from=build /app/target/*.jar app.jar
-
+COPY --from=builder /app/target/*.jar app.jar
 EXPOSE 8080
-
 ENTRYPOINT ["java", "-jar", "app.jar"]

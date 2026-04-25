@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="warning"/>
+    <property name="fileExtensions" value="java"/>
+
+    <!-- No trailing whitespace -->
+    <module name="RegexpSingleline">
+        <property name="format" value="\s+$"/>
+        <property name="message" value="Line has trailing whitespace."/>
+        <property name="severity" value="warning"/>
+    </module>
+
+    <module name="TreeWalker">
+        <!-- Unused imports -->
+        <module name="UnusedImports"/>
+
+        <!-- No star imports -->
+        <module name="AvoidStarImport"/>
+
+        <!-- String literal equality -->
+        <module name="StringLiteralEquality"/>
+
+        <!-- Empty catch block: disallow empty catch blocks without comment -->
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|ignore|ignored"/>
+        </module>
+    </module>
+</module>

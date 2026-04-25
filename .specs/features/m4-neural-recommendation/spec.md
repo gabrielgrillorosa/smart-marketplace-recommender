@@ -6,11 +6,11 @@ Com os embeddings de produtos gerados no M3, o sistema já consegue busca semân
 
 ## Goals
 
-- [ ] Modelo neural é treinado com sucesso usando embeddings HuggingFace como features de entrada (não one-hot como em `parte05`)
-- [ ] `POST /api/v1/recommend` retorna top-N produtos rankeados por score híbrido para qualquer `clientId` válido
-- [ ] Score híbrido é demonstravelmente mais relevante que qualquer abordagem isolada (validação qualitativa no README)
-- [ ] Treinamento completa sem erro de memória ou timeout em hardware de desenvolvimento (MacBook/Linux com 8GB+ RAM)
-- [ ] Todos os endpoints de M4 são consumíveis pelo `api-service` (Spring Boot proxy em M2)
+- [x] Modelo neural é treinado com sucesso usando embeddings HuggingFace como features de entrada (não one-hot como em `parte05`)
+- [x] `POST /api/v1/recommend` retorna top-N produtos rankeados por score híbrido para qualquer `clientId` válido
+- [ ] Score híbrido é demonstravelmente mais relevante que qualquer abordagem isolada (validação qualitativa no README) — validação qualitativa pendente de M6
+- [x] Treinamento completa sem erro de memória ou timeout em hardware de desenvolvimento (MacBook/Linux com 8GB+ RAM)
+- [x] Todos os endpoints de M4 são consumíveis pelo `api-service` (Spring Boot proxy em M2)
 
 ## Out of Scope
 
@@ -146,42 +146,42 @@ Com os embeddings de produtos gerados no M3, o sistema já consegue busca semân
 
 | Requirement ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| M4-01 | P1: Treino — busca clientes/produtos/pedidos do API Service | Design | Pending |
-| M4-02 | P1: Treino — matriz binária com negative sampling | Design | Pending |
-| M4-03 | P1: Treino — perfil de cliente = mean pooling de embeddings (D-007) | Design | Pending |
-| M4-04 | P1: Treino — skip produto sem embedding com log de aviso | Design | Pending |
-| M4-05 | P1: Treino — arquitetura Dense(256→128→64→1) com Dropout | Design | Pending |
-| M4-06 | P1: Treino — adam, binaryCrossentropy, 20 epochs, batch 32 | Design | Pending |
-| M4-07 | P1: Treino — log por epoch | Design | Pending |
-| M4-08 | P1: Treino — save TFSavedModel em /tmp/model | Design | Pending |
-| M4-09 | P1: Treino — retorna métricas finais com HTTP 200 | Design | Pending |
-| M4-10 | P1: Treino — sobrescreve modelo anterior | Design | Pending |
-| M4-11 | P1: Treino — tf.tidy / dispose para evitar memory leak (L-001) | Design | Pending |
-| M4-12 | P1: Treino — HTTP 409 se treinamento já em andamento | Design | Pending |
-| M4-13 | P1: Status — untrained antes do treino | Design | Pending |
-| M4-14 | P1: Status — trained com métricas após treino | Design | Pending |
-| M4-15 | P1: Status — training com progresso durante treino | Design | Pending |
-| M4-16 | P1: Recommend — valida modelo treinado (HTTP 503 se não) | Design | Pending |
-| M4-17 | P1: Recommend — HTTP 404 para clientId inexistente | Design | Pending |
-| M4-18 | P1: Recommend — pool de candidatos: país + não comprado | Design | Pending |
-| M4-19 | P1: Recommend — pool vazio retorna 200 com lista vazia | Design | Pending |
-| M4-20 | P1: Recommend — semanticScore via cosine similarity | Design | Pending |
-| M4-21 | P1: Recommend — neuralScore via model.predict (concat 768 dims) | Design | Pending |
-| M4-22 | P1: Recommend — fórmula híbrida com pesos configuráveis (D-005) | Design | Pending |
-| M4-23 | P1: Recommend — rank decrescente por finalScore | Design | Pending |
-| M4-24 | P1: Recommend — resposta com finalScore, neuralScore, semanticScore, matchReason | Design | Pending |
-| M4-25 | P1: Recommend — default limit=10, max 50 | Design | Pending |
-| M4-26 | P1: Recommend — skip produto sem embedding com log | Design | Pending |
-| M4-27 | P1: Recommend — tf.tidy em predict para liberar memória | Design | Pending |
-| M4-28 | P2: Startup — carrega modelo de /tmp/model se existir | Design | Pending |
-| M4-29 | P2: Startup — status "untrained" se /tmp/model não existe | Design | Pending |
-| M4-30 | P2: Startup — log "Neural model loaded" no carregamento bem-sucedido | Design | Pending |
-| M4-31 | P2: Startup — startup normal se modelo corrompido (log aviso) | Design | Pending |
-| M4-32 | P2: Env — leitura de NEURAL_WEIGHT e SEMANTIC_WEIGHT com defaults | Design | Pending |
-| M4-33 | P2: Env — aviso se pesos não somam 1.0 | Design | Pending |
-| M4-34 | P2: Env — log de pesos no startup | Design | Pending |
+| M4-01 | P1: Treino — busca clientes/produtos/pedidos do API Service | Execute | ✅ Implemented |
+| M4-02 | P1: Treino — matriz binária com negative sampling | Execute | ✅ Implemented |
+| M4-03 | P1: Treino — perfil de cliente = mean pooling de embeddings (D-007) | Execute | ✅ Implemented |
+| M4-04 | P1: Treino — skip produto sem embedding com log de aviso | Execute | ✅ Implemented |
+| M4-05 | P1: Treino — arquitetura Dense(256→128→64→1) com Dropout | Execute | ✅ Implemented |
+| M4-06 | P1: Treino — adam, binaryCrossentropy, 20 epochs, batch 32 | Execute | ✅ Implemented |
+| M4-07 | P1: Treino — log por epoch | Execute | ✅ Implemented |
+| M4-08 | P1: Treino — save TFSavedModel em /tmp/model | Execute | ✅ Implemented |
+| M4-09 | P1: Treino — retorna métricas finais com HTTP 200 | Execute | ✅ Implemented |
+| M4-10 | P1: Treino — sobrescreve modelo anterior | Execute | ✅ Implemented |
+| M4-11 | P1: Treino — tf.tidy / dispose para evitar memory leak (L-001) | Execute | ✅ Implemented |
+| M4-12 | P1: Treino — HTTP 409 se treinamento já em andamento | Execute | ✅ Implemented |
+| M4-13 | P1: Status — untrained antes do treino | Execute | ✅ Implemented |
+| M4-14 | P1: Status — trained com métricas após treino | Execute | ✅ Implemented |
+| M4-15 | P1: Status — training com progresso durante treino | Execute | ✅ Implemented |
+| M4-16 | P1: Recommend — valida modelo treinado (HTTP 503 se não) | Execute | ✅ Implemented |
+| M4-17 | P1: Recommend — HTTP 404 para clientId inexistente | Execute | ✅ Implemented |
+| M4-18 | P1: Recommend — pool de candidatos: país + não comprado | Execute | ✅ Implemented |
+| M4-19 | P1: Recommend — pool vazio retorna 200 com lista vazia | Execute | ✅ Implemented |
+| M4-20 | P1: Recommend — semanticScore via cosine similarity | Execute | ✅ Implemented |
+| M4-21 | P1: Recommend — neuralScore via model.predict (concat 768 dims) | Execute | ✅ Implemented |
+| M4-22 | P1: Recommend — fórmula híbrida com pesos configuráveis (D-005) | Execute | ✅ Implemented |
+| M4-23 | P1: Recommend — rank decrescente por finalScore | Execute | ✅ Implemented |
+| M4-24 | P1: Recommend — resposta com finalScore, neuralScore, semanticScore, matchReason | Execute | ✅ Implemented |
+| M4-25 | P1: Recommend — default limit=10, max 50 | Execute | ✅ Implemented |
+| M4-26 | P1: Recommend — skip produto sem embedding com log | Execute | ✅ Implemented |
+| M4-27 | P1: Recommend — tf.tidy em predict para liberar memória | Execute | ✅ Implemented |
+| M4-28 | P2: Startup — carrega modelo de /tmp/model se existir | Execute | ✅ Implemented |
+| M4-29 | P2: Startup — status "untrained" se /tmp/model não existe | Execute | ✅ Implemented |
+| M4-30 | P2: Startup — log "Neural model loaded" no carregamento bem-sucedido | Execute | ✅ Implemented |
+| M4-31 | P2: Startup — startup normal se modelo corrompido (log aviso) | Execute | ✅ Implemented |
+| M4-32 | P2: Env — leitura de NEURAL_WEIGHT e SEMANTIC_WEIGHT com defaults | Execute | ✅ Implemented |
+| M4-33 | P2: Env — aviso se pesos não somam 1.0 | Execute | ✅ Implemented |
+| M4-34 | P2: Env — log de pesos no startup | Execute | ✅ Implemented |
 
-**Coverage:** 34 total, 34 mapped, 0 unmapped ✓
+**Coverage:** 34 total, 34 mapped, 34 verified ✓
 
 ---
 

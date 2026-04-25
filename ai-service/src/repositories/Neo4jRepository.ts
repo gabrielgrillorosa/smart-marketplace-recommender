@@ -1,5 +1,5 @@
 import neo4j, { Driver } from 'neo4j-driver'
-import { Product, SearchResult, SearchFilters } from '../types/index.js'
+import { Product, SearchResult, SearchFilters, ClientProfile, CandidateProduct } from '../types/index.js'
 
 export class Neo4jUnavailableError extends Error {
   constructor(cause?: unknown) {
@@ -112,6 +112,134 @@ export class Neo4jRepository {
       }))
     } catch (err) {
       if (err instanceof Neo4jUnavailableError) throw err
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getClientWithCountry(clientId: string): Promise<ClientProfile | null> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (c:Client {id: $id}) RETURN c.id AS id, c.name AS name, c.segment AS segment, c.country AS country',
+        { id: clientId }
+      )
+      if (result.records.length === 0) return null
+      const r = result.records[0]
+      return {
+        id: r.get('id'),
+        name: r.get('name'),
+        segment: r.get('segment'),
+        country: r.get('country'),
+      }
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getPurchasedProductIds(clientId: string): Promise<string[]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (:Client {id: $id})-[:BOUGHT]->(p:Product) RETURN p.id AS id',
+        { id: clientId }
+      )
+      return result.records.map((r) => r.get('id'))
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getClientPurchasedEmbeddings(clientId: string): Promise<number[][]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (:Client {id: $id})-[:BOUGHT]->(p:Product) WHERE p.embedding IS NOT NULL RETURN p.embedding AS embedding',
+        { id: clientId }
+      )
+      return result.records.map((r) => r.get('embedding') as number[])
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getCandidateProducts(countryCode: string, excludedIds: string[]): Promise<CandidateProduct[]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        `MATCH (p:Product)-[:AVAILABLE_IN]->(:Country {code: $code})
+         WHERE NOT p.id IN $excludedIds AND p.embedding IS NOT NULL
+         RETURN p.id AS id, p.name AS name, p.category AS category,
+                p.price AS price, p.sku AS sku, p.embedding AS embedding`,
+        { code: countryCode, excludedIds }
+      )
+      return result.records.map((r) => ({
+        id: r.get('id'),
+        name: r.get('name'),
+        category: r.get('category'),
+        price: typeof r.get('price') === 'object' ? r.get('price').toNumber() : Number(r.get('price')),
+        sku: r.get('sku'),
+        embedding: r.get('embedding') as number[],
+      }))
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getAllProductEmbeddings(): Promise<{ id: string; embedding: number[] }[]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (p:Product) WHERE p.embedding IS NOT NULL RETURN p.id AS id, p.embedding AS embedding'
+      )
+      return result.records.map((r) => ({
+        id: r.get('id'),
+        embedding: r.get('embedding') as number[],
+      }))
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async syncBoughtRelationships(
+    edges: Array<{ clientId: string; productId: string }>
+  ): Promise<{ created: number; existed: number; skipped: number }> {
+    if (edges.length === 0) return { created: 0, existed: 0, skipped: 0 }
+
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        `UNWIND $edges AS edge
+         MATCH (c:Client {id: edge.clientId})
+         MATCH (p:Product {id: edge.productId})
+         MERGE (c)-[r:BOUGHT]->(p)
+         ON CREATE SET r.synced = true
+         RETURN count(r) AS total, sum(CASE WHEN r.synced = true THEN 1 ELSE 0 END) AS created`,
+        { edges }
+      )
+
+      const record = result.records[0]
+      const total = record ? (record.get('total') as { toNumber?: () => number } | number) : 0
+      const createdRaw = record ? (record.get('created') as { toNumber?: () => number } | number) : 0
+
+      const totalCount = typeof total === 'object' && total.toNumber ? total.toNumber() : Number(total)
+      const createdCount = typeof createdRaw === 'object' && createdRaw.toNumber ? createdRaw.toNumber() : Number(createdRaw)
+      const existedCount = totalCount - createdCount
+      const skippedCount = edges.length - totalCount
+
+      return { created: createdCount, existed: existedCount, skipped: skippedCount < 0 ? 0 : skippedCount }
+    } catch (err) {
       throw new Neo4jUnavailableError(err)
     } finally {
       await session.close()

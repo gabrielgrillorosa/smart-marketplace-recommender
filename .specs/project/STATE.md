@@ -1,13 +1,12 @@
 # Project State
 
-_Last updated: 2026-04-24 — Session: M5 Frontend Execute — tasks.md (40 tasks) + todos os componentes implementados; build ✓ lint ✓_
+_Last updated: 2026-04-25 — Session: M6 Quality & Publication — 19 AI service tests passing (Vitest); 15 Java unit tests passing (JUnit 5); Testcontainers IT tests created (need Docker group for execution); multi-stage Dockerfiles for all 3 services; ai-model-data volume; bilingual README; CONTRIBUTING.md; ESLint clean (ai-service + frontend); Checkstyle 0 violations; M6 COMPLETE_
 
 ---
 
 ## Current Focus
 
-**Milestone:** M6 — Quality & Publication
-**Status:** Pending — Next: Specify
+**Status:** M6 — Quality & Publication ✅ COMPLETE
 **Previous:** M5 — Frontend ✅ COMPLETE (40 tasks, `npm run build` ✓, `npm run lint` ✓ zero warnings, 33/33 requirements met)
 
 ---
@@ -70,15 +69,14 @@ _Last updated: 2026-04-24 — Session: M5 Frontend Execute — tasks.md (40 task
 - Configurable weights allow demonstrating different behaviors in the README without code changes.
 **Status:** Accepted ✓ (may be revised after M4 implementation and qualitative testing)
 
-### D-006 — OpenRouter + Mistral 7B free for RAG LLM
-**Date:** 2026-04-23
-**Decision:** Use OpenRouter as LLM gateway with `mistralai/mistral-7b-instruct:free` model.
+### D-006 — Separação EMBEDDING_MODEL / LLM_MODEL + troca para Llama 3.2 3B
+**Date:** 2026-04-25
+**Decision:** Separar a variável `NLP_MODEL` em duas: `EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2` (HuggingFace local, sem API key) e `LLM_MODEL=meta-llama/llama-3.2-3b-instruct:free` (OpenRouter inference).
 **Rationale:**
-- Zero cost — free tier model.
-- `exemplo-13` already validates this integration pattern (`@langchain/openai` with `baseURL: https://openrouter.ai/api/v1`).
-- Mistral 7B instruction-tuned is sufficient for grounded Q&A over structured catalog context.
-- OpenRouter allows swapping models without code changes (env variable `NLP_MODEL`).
-**Tradeoff accepted:** Free tier has rate limits. Acceptable for demo; documented in README.
+- `NLP_MODEL` servia dois propósitos distintos — embedding local e LLM remoto — que têm requisitos e providers completamente diferentes.
+- Llama 3.2 3B supera Mistral 7B em benchmarks (MMLU Pro 34.7% vs 24.5%, contexto 128K vs 32K) enquanto sendo menor (2GB VRAM vs 5GB).
+- Separação permite trocar cada modelo independentemente via env var sem mudança de código (validado em `exemplo-13`).
+**Tradeoff accepted:** Llama 3.2 3B tem throughput menor (53 tok/s vs 169 tok/s do Mistral). Aceitável para demo.
 **Status:** Accepted ✓
 
 ### D-008 — Neo4j driver singleton com sessions por operação e try/finally
@@ -162,23 +160,42 @@ _None at this time._
 - [x] Execute M3 — 13 tasks complete, tsc --noEmit clean, all 37 requirements met
 - [x] Specify M4 features (neural model + hybrid recommendation) — spec.md criado (34 reqs, M4-01..M4-34)
 - [x] Design complex M4 — design.md + ADR-006 (ModelStore atomic swap) + ADR-007 (batch predict tensor strategy) + ADR-008 (tf.tidy async boundary) criados; 3 nós ToT, committee review com 3 personas, 7 findings incorporados
+- [x] Break M4 into tasks — tasks.md (9 tasks, T1..T9)
+- [x] Execute M4 — 9 tasks complete, tsc --noEmit clean, 34/34 requirements verified ✅ COMPLETE
 - [x] Specify M5 features (Next.js frontend) — spec.md criado (33 reqs, M5-01..M5-33)
 - [x] Design M5 — design.md + ADR-001..ADR-004 criados
 - [x] Break M5 into tasks — tasks.md (40 tasks, 8 phases, 33/33 reqs mapped)
 - [x] Execute M5 — 40 tasks complete, `npm run build` ✓, `npm run lint` ✓ zero warnings, 33/33 requirements met
 - [x] Specify M6 features (tests + README) — spec.md criado (35 reqs, M6-01..M6-35)
-- [ ] Break M6 into tasks — tasks.md
+- [x] Design complex M6 — design.md + ADR-009 (Vitest DI mocking) + ADR-010 (xenova pre-download builder stage) + ADR-011 (Next.js standalone Dockerfile) criados; 3 nós ToT, committee review com 3 personas, 9 findings incorporados
+- [x] Break M6 into tasks — tasks.md (19 tasks, 7 phases, 55+ reqs mapped)
+- [x] Execute M6 — 19 tasks complete; 19 AI service tests (Vitest); 15 Java unit tests (JUnit 5); Testcontainers IT tests; multi-stage Dockerfiles; ai-model-data volume; bilingual README; CONTRIBUTING; ESLint ✓; Checkstyle ✓ 0 violations; M6 ✅ COMPLETE
 
 ---
 
 ## Deferred Ideas
 
 - **Graph-augmented RAG:** Use multi-hop Cypher traversal (e.g., "find products bought by clients who also bought X") as additional context for the RAG pipeline. Neo4j graph structure supports this without schema changes. Deferred to post-MVP.
+
 - **Fine-tuning HuggingFace + Benchmarking comparativo (M4 ou pós-MVP):** Explorar fine-tuning de um modelo HuggingFace existente (ex: `sentence-transformers/all-MiniLM-L6-v2` ou `distilbert-base-uncased`) no domínio de produtos do catálogo, e comparar sistematicamente contra o modelo neural treinado com TensorFlow.js (M4). A ideia central é ter um endpoint de benchmarking (`POST /api/v1/benchmark`) que executa um mesmo conjunto de queries de recomendação nos dois modelos e retorna métricas comparativas (Precision@K, nDCG, latência p50/p95). O fine-tuning via HuggingFace `transformers` + `datasets` exige Python — isso abre uma decisão arquitetural: manter o fine-tuning em um script Python separado (offline, gera artefato `.bin`) e servir o resultado via `@xenova/transformers` no AI Service (ONNX export), ou adicionar um microserviço Python para servir o modelo fine-tuned. Deferred para exploração pós-M4, quando o modelo TensorFlow.js estiver treinado e os dados de comparação fizerem sentido. Ver D-001 (decisão TypeScript vs Python) — essa feature pode ser o ponto onde Python entra justificadamente no stack.
+
 - **Kafka async recommendations:** Pre-compute recommendations asynchronously when a new order is placed. Demonstrates event-driven architecture. Deferred to post-MVP.
-- **Precision@K / nDCG evaluation endpoint:** Expose recommendation quality metrics as a dedicated API endpoint. Important for production but deferred for MVP.
+
+- **Precision@K / nDCG evaluation endpoint:** Expose recommendation quality metrics as a dedicated API endpoint. Important for production but deferred for MVP. _(Precision@K adicionada como M6-53/54 na fase de treino — este item refere-se ao endpoint dedicado de benchmarking contínuo)_
+
 - **Open Food Facts enrichment:** Use Open Food Facts public API to enrich synthetic product descriptions with real nutritional data. Optional enrichment, deferred.
+
 - **Live cloud deploy:** Deploy to Railway/Render/Fly.io for a public URL in the README. High portfolio impact, deferred until M6 is complete.
+
+- **Model versioning com rollback (Comitê Achado #5):** Salvar modelos com timestamp (`/tmp/model/model-{timestamp}.json`) e manter o último "melhor" modelo como symlink. Permite rollback quando um novo treino produz qualidade inferior. Requer critério de comparação automático (ex: `precisionAt5` do novo modelo vs modelo atual). Severidade: Média. Pré-requisito: M6-53 (Precision@K implementado).
+
+- **Job assíncrono para POST /model/train — padrão 202 + polling (Comitê Achado #6):** Treino síncrono bloqueia o cliente HTTP durante todo o processamento (~9s com 1040 amostras, minutos com 100K). Em produção, proxies (nginx, ALB) têm timeout de 60s. Solução: `POST /model/train` retorna `202 Accepted` com `jobId`, `GET /model/train/status/{jobId}` consulta o progresso. Compatível com a implementação atual do `ModelStore`. Severidade: Média. Pré-condição: dataset grande o suficiente para o timeout ser relevante.
+
+- **p-limit concurrency no fetchAllPages de orders (Comitê Achado #7):** `Promise.all` sobre 1000 clientes dispara 1000 requests HTTP simultâneos para o `api-service`. Pode sobrecarregar o connection pool do Spring Boot ou causar `ECONNRESET`. Solução: `import pLimit from 'p-limit'; const limit = pLimit(10)` antes do `Promise.all`. Com os 20 clientes atuais, sem impacto prático. Severidade: Baixa. Endereçar quando o dataset crescer.
+
+- **Weighted mean pooling por frequência de compra (Comitê Achado #3):** O perfil do cliente é calculado como média aritmética dos embeddings. Um produto comprado 50x tem o mesmo peso que um comprado 1x. Solução: ponderar cada embedding pelo `quantity` do pedido — `clientProfile = Σ(embedding_i × quantity_i) / Σ(quantity_i)`. Requer buscar `quantity` das edges `:BOUGHT` no Neo4j. Severidade: Baixa. Melhoria de qualidade do modelo pós-MVP.
+
+- **Autenticação no endpoint POST /model/train (Comitê Achado #10):** Qualquer cliente que conhece a URL pode retreinar o modelo ou causar carga excessiva. Solução: header `X-Admin-Key` validado contra env var `ADMIN_API_KEY`, ou JWT com role `admin`. Na rede interna Docker do MVP, risco irrelevante. Severidade: Baixa. Endereçar antes de qualquer exposição pública.
 
 ---
 

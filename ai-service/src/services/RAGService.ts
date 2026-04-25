@@ -3,7 +3,7 @@ import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { RunnableSequence } from '@langchain/core/runnables'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 import { EmbeddingService } from './EmbeddingService.js'
-import { Neo4jRepository, Neo4jUnavailableError } from '../repositories/Neo4jRepository.js'
+import { Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { RAGResponse, Source } from '../types/index.js'
 import { ModelNotReadyError } from './SearchService.js'
 
@@ -81,7 +81,7 @@ export class RAGService {
     ])
 
     const llm = new ChatOpenAI({
-      model: 'mistralai/mistral-7b-instruct:free',
+      model: this.modelName,
       apiKey: this.openRouterApiKey,
       configuration: {
         baseURL: 'https://openrouter.ai/api/v1',

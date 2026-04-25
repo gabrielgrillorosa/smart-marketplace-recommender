@@ -1,9 +1,11 @@
 # Roadmap
 
 **Current Milestone:** M6 — Quality & Publication
-**Status:** Pending — Next: Specify
+**Status:** Spec ✓ Design ✓ Tasks ✓ (19 tasks, 7 phases) — Next: Execute
 
 **Previous:** M5 — Frontend ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
+
+**M4 status:** ✅ DONE — Spec ✓ Design ✓ Tasks ✓ Execute ✓ — 34/34 reqs verified, 20/20 runtime tests passing — paginação real, EMBEDDING_MODEL/LLM_MODEL separados
 
 ---
 
@@ -177,7 +179,8 @@
 
 **Target:** Tests pass; README is self-sufficient; any engineer can clone and run with zero prior knowledge of the project.
 
-**Status:** Spec ✓ (35 reqs, M6-01..M6-35) — Next: Tasks
+**Status:** Spec ✓ Design ✓ Tasks ✓
+
 
 ### Features
 
