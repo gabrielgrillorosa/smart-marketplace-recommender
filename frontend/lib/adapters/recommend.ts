@@ -6,11 +6,23 @@ interface RawRecommendItem {
     name?: string;
     category?: string;
     supplier?: string;
+    supplierName?: string;
     countries?: string[];
+    availableCountries?: string[];
     country?: string;
     price?: number;
     sku?: string;
   };
+  id?: string;
+  name?: string;
+  category?: string;
+  supplier?: string;
+  supplierName?: string;
+  countries?: string[];
+  availableCountries?: string[];
+  country?: string;
+  price?: number;
+  sku?: string;
   finalScore?: number;
   score?: number;
   neuralScore?: number;
@@ -44,17 +56,42 @@ function toMatchReason(raw: string | undefined): RecommendationResult['matchReas
 }
 
 export function adaptRecommendations(raw: unknown): { results: RecommendationResult[]; isFallback: boolean } {
-  const data = raw as RawRecommendResponse;
-  const items = data?.recommendations ?? data?.products ?? [];
-  const isFallback = Boolean(data?.isFallback ?? data?.fallback ?? false);
+  let items: RawRecommendItem[];
+  let isFallback = false;
 
-  const results: RecommendationResult[] = items.map((item: RawRecommendItem) => ({
-    product: toProduct(item.product),
-    finalScore: Number(item.finalScore ?? item.score ?? 0),
-    neuralScore: item.neuralScore !== undefined ? Number(item.neuralScore) : undefined,
-    semanticScore: item.semanticScore !== undefined ? Number(item.semanticScore) : undefined,
-    matchReason: toMatchReason(item.matchReason),
-  }));
+  if (Array.isArray(raw)) {
+    items = raw as RawRecommendItem[];
+  } else {
+    const data = raw as RawRecommendResponse;
+    items = data?.recommendations ?? data?.products ?? [];
+    isFallback = Boolean(data?.isFallback ?? data?.fallback ?? false);
+  }
+
+  const results: RecommendationResult[] = items.map((item: RawRecommendItem) => {
+    const productSrc = item.product ?? item;
+    const product: Product = {
+      id: String(productSrc.id ?? ''),
+      name: String(productSrc.name ?? ''),
+      category: String(productSrc.category ?? ''),
+      supplier: String(productSrc.supplierName ?? productSrc.supplier ?? ''),
+      countries: Array.isArray(productSrc.availableCountries)
+        ? productSrc.availableCountries
+        : Array.isArray(productSrc.countries)
+        ? productSrc.countries
+        : productSrc.country
+        ? [String(productSrc.country)]
+        : [],
+      price: Number(productSrc.price ?? 0),
+      sku: String(productSrc.sku ?? ''),
+    };
+    return {
+      product,
+      finalScore: Number(item.finalScore ?? item.score ?? 0),
+      neuralScore: item.neuralScore !== undefined ? Number(item.neuralScore) : undefined,
+      semanticScore: item.semanticScore !== undefined ? Number(item.semanticScore) : undefined,
+      matchReason: toMatchReason(item.matchReason),
+    };
+  });
 
   return { results, isFallback };
 }

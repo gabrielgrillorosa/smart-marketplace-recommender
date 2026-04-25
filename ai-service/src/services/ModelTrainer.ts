@@ -134,6 +134,7 @@ function buildModel(): tf.Sequential {
 
 export class ModelTrainer {
   private _isTraining = false
+  private _progressCallback?: (epoch: number, totalEpochs: number, loss: number) => void
 
   constructor(
     private readonly modelStore: ModelStore,
@@ -147,6 +148,10 @@ export class ModelTrainer {
 
   get isTraining(): boolean {
     return this._isTraining
+  }
+
+  setProgressCallback(cb: (epoch: number, totalEpochs: number, loss: number) => void): void {
+    this._progressCallback = cb
   }
 
   private async syncNeo4j(
@@ -321,6 +326,7 @@ export class ModelTrainer {
               `[ModelTrainer] Epoch ${epoch + 1}/${EPOCHS} — loss: ${loss.toFixed(4)} — accuracy: ${accuracy.toFixed(4)}`
             )
             this.modelStore.setProgress(epoch + 1, EPOCHS)
+            this._progressCallback?.(epoch + 1, EPOCHS, loss)
           },
         },
       })

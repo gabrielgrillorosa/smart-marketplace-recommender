@@ -9,10 +9,33 @@ import { SemanticSearchBar } from './SemanticSearchBar';
 import { ProductDetailModal } from './ProductDetailModal';
 import { Skeleton } from '@/components/ui/skeleton';
 
-const API_SERVICE_URL = process.env.NEXT_PUBLIC_API_SERVICE_URL ?? 'http://localhost:8080';
+const API_SERVICE_URL = '';
 
 interface PageResponse {
   content?: Product[];
+  items?: RawProduct[];
+}
+
+interface RawProduct {
+  id: string;
+  name: string;
+  category: string;
+  supplierName: string;
+  availableCountries: string[];
+  price: number;
+  sku: string;
+}
+
+function toProduct(raw: RawProduct): Product {
+  return {
+    id: raw.id,
+    name: raw.name,
+    category: raw.category,
+    supplier: raw.supplierName,
+    countries: raw.availableCountries,
+    price: raw.price,
+    sku: raw.sku,
+  };
 }
 
 export function CatalogPanel() {
@@ -24,9 +47,19 @@ export function CatalogPanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    apiFetch<PageResponse | Product[]>(`${API_SERVICE_URL}/api/v1/products?size=100`)
+      apiFetch<PageResponse | Product[]>(`/backend/api/v1/products?size=100`)
       .then((data) => {
-        const products = Array.isArray(data) ? data : (data.content ?? []);
+        let raw: RawProduct[] | Product[];
+        if (Array.isArray(data)) {
+          raw = data;
+        } else if (data.items) {
+          raw = data.items;
+        } else {
+          raw = data.content ?? [];
+        }
+        const products = (raw as RawProduct[]).map((item) =>
+          'supplier' in item ? (item as unknown as Product) : toProduct(item)
+        );
         setAllProducts(products);
       })
       .catch(() => setError('Não foi possível carregar os produtos. Verifique se o API Service está disponível.'))
@@ -48,7 +81,7 @@ export function CatalogPanel() {
 
   async function handleProductClick(product: Product) {
     try {
-      const detail = await apiFetch<ProductDetail>(`${API_SERVICE_URL}/api/v1/products/${product.id}`);
+      const detail = await apiFetch<ProductDetail>(`/backend/api/v1/products/${product.id}`);
       setSelectedProduct(detail);
     } catch {
       setSelectedProduct({ ...product, description: 'Descrição não disponível.' });

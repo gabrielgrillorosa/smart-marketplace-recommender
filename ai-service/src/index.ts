@@ -1,25 +1,35 @@
 import Fastify from 'fastify'
+import cors from '@fastify/cors'
 import neo4j from 'neo4j-driver'
-import * as tf from '@tensorflow/tfjs-node'
-import * as fs from 'node:fs'
 import { ENV } from './config/env.js'
 import { Neo4jRepository } from './repositories/Neo4jRepository.js'
 import { EmbeddingService } from './services/EmbeddingService.js'
 import { SearchService } from './services/SearchService.js'
 import { RAGService } from './services/RAGService.js'
-import { ModelStore } from './services/ModelStore.js'
+import { VersionedModelStore } from './services/VersionedModelStore.js'
 import { ModelTrainer } from './services/ModelTrainer.js'
+import { TrainingJobRegistry } from './services/TrainingJobRegistry.js'
+import { CronScheduler } from './services/CronScheduler.js'
 import { RecommendationService } from './services/RecommendationService.js'
 import { embeddingsRoutes } from './routes/embeddings.js'
 import { searchRoutes } from './routes/search.js'
 import { ragRoutes } from './routes/rag.js'
 import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
+import { adminRoutes } from './routes/adminRoutes.js'
 
 const fastify = Fastify({ logger: true })
 
 const start = async () => {
   try {
+    await fastify.register(cors, {
+      origin: (origin, cb) => {
+        cb(null, true)
+      },
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    })
+
+    // Step 2: Neo4j driver singleton
     const driver = neo4j.driver(
       ENV.NEO4J_URI,
       neo4j.auth.basic(ENV.NEO4J_USER, ENV.NEO4J_PASSWORD)
@@ -28,30 +38,19 @@ const start = async () => {
     const repo = new Neo4jRepository(driver)
     const embeddingService = new EmbeddingService(ENV.EMBEDDING_MODEL)
 
-    const modelStore = new ModelStore()
+    // Step 3: VersionedModelStore (extends ModelStore)
+    const versionedModelStore = new VersionedModelStore()
 
+    // Step 4: Load current model from symlink (graceful no-op when absent)
+    await versionedModelStore.loadCurrent()
+
+    // Step 5: Embedding model warm-up
     fastify.log.info(`[ai-service] Loading embedding model: ${ENV.EMBEDDING_MODEL}`)
     await embeddingService.init()
     fastify.log.info('[ai-service] Embedding model ready')
 
-    if (fs.existsSync('/tmp/model')) {
-      try {
-        const loadedModel = await tf.loadLayersModel('file:///tmp/model/model.json')
-        modelStore.setModel(loadedModel, {
-          trainedAt: new Date().toISOString(),
-          finalLoss: 0,
-          finalAccuracy: 0,
-          trainingSamples: 0,
-          durationMs: 0,
-        })
-        fastify.log.info('[ai-service] Neural model loaded from /tmp/model')
-      } catch (loadErr) {
-        fastify.log.warn({ err: loadErr }, '[ai-service] Failed to load neural model from /tmp/model — starting with untrained status')
-      }
-    }
-
     const modelTrainer = new ModelTrainer(
-      modelStore,
+      versionedModelStore,
       repo,
       embeddingService,
       ENV.API_SERVICE_URL,
@@ -59,8 +58,15 @@ const start = async () => {
       ENV.SEMANTIC_WEIGHT,
     )
 
+    // Step 6: TrainingJobRegistry
+    const trainingJobRegistry = new TrainingJobRegistry(modelTrainer, versionedModelStore)
+
+    // Step 7: CronScheduler — registers daily retraining at 02:00
+    const cronScheduler = new CronScheduler(trainingJobRegistry)
+    cronScheduler.start()
+
     const recommendationService = new RecommendationService(
-      modelStore,
+      versionedModelStore,
       repo,
       ENV.NEURAL_WEIGHT,
       ENV.SEMANTIC_WEIGHT,
@@ -75,6 +81,12 @@ const start = async () => {
     fastify.get('/ready', async (_request, reply) => {
       const ready = embeddingService.isReady
       return reply.code(ready ? 200 : 503).send({ ready })
+    })
+
+    // Step 8: Admin plugin (X-Admin-Key scoped — POST /model/train + status)
+    await fastify.register(adminRoutes, {
+      prefix: '/api/v1',
+      registry: trainingJobRegistry,
     })
 
     await fastify.register(embeddingsRoutes, {
@@ -95,8 +107,9 @@ const start = async () => {
 
     await fastify.register(modelRoutes, {
       prefix: '/api/v1',
-      modelTrainer,
-      modelStore,
+      modelStore: versionedModelStore,
+      cronScheduler,
+      versionedModelStore,
     })
 
     await fastify.register(recommendRoutes, {
@@ -104,6 +117,7 @@ const start = async () => {
       recommendationService,
     })
 
+    // Step 10: Start accepting traffic
     await fastify.listen({ port: ENV.PORT, host: '0.0.0.0' })
     fastify.log.info(`AI Service listening on port ${ENV.PORT}`)
   } catch (err) {

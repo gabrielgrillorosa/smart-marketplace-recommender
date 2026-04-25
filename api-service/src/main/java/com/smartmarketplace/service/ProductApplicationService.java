@@ -28,13 +28,16 @@ public class ProductApplicationService {
     private final ProductRepository productRepository;
     private final SupplierRepository supplierRepository;
     private final CountryRepository countryRepository;
+    private final AiSyncClient aiSyncClient;
 
     public ProductApplicationService(ProductRepository productRepository,
                                      SupplierRepository supplierRepository,
-                                     CountryRepository countryRepository) {
+                                     CountryRepository countryRepository,
+                                     AiSyncClient aiSyncClient) {
         this.productRepository = productRepository;
         this.supplierRepository = supplierRepository;
         this.countryRepository = countryRepository;
+        this.aiSyncClient = aiSyncClient;
     }
 
     @Cacheable(value = CacheNames.CATALOG_LIST,
@@ -93,7 +96,9 @@ public class ProductApplicationService {
         product.setCountries(new HashSet<>(countries));
 
         product = productRepository.save(product);
-        return toDetail(product);
+        ProductDetailDTO result = toDetail(product);
+        aiSyncClient.notifyProductCreated(result);
+        return result;
     }
 
     private void validateCreateRequest(CreateProductRequest request) {

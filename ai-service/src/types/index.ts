@@ -102,3 +102,35 @@ export interface RecommendationResult {
   semanticScore: number
   matchReason: MatchReason
 }
+
+// M7 — Production Readiness types
+
+export type JobStatus = 'queued' | 'running' | 'complete' | 'failed'
+
+export interface TrainingJob {
+  jobId: string
+  status: JobStatus
+  epoch?: number
+  totalEpochs?: number
+  loss?: number
+  eta?: string
+  error?: string
+  startedAt?: string
+  completedAt?: string
+}
+
+export interface ModelHistoryEntry {
+  filename: string
+  timestamp: string
+  precisionAt5: number
+  loss: number
+  accepted: boolean
+}
+
+export interface EnrichedModelStatus extends TrainingStatus {
+  staleDays: number | null
+  staleWarning?: string
+  currentModel?: string
+  models: ModelHistoryEntry[]
+  nextScheduledTraining?: string
+}

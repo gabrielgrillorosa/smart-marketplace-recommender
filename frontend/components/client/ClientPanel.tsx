@@ -9,10 +9,29 @@ import { ClientSelector } from './ClientSelector';
 import { ClientProfileCard } from './ClientProfileCard';
 import { RecommendButton } from './RecommendButton';
 
-const API_SERVICE_URL = process.env.NEXT_PUBLIC_API_SERVICE_URL ?? 'http://localhost:8080';
+const API_SERVICE_URL = '';
 
 interface PageResponse {
   content?: Client[];
+  items?: RawClient[];
+}
+
+interface RawClient {
+  id: string;
+  name: string;
+  segment: string;
+  countryCode: string;
+}
+
+function toClient(raw: RawClient): Client {
+  return {
+    id: raw.id,
+    name: raw.name,
+    segment: raw.segment,
+    country: raw.countryCode,
+    totalOrders: 0,
+    recentProducts: [],
+  };
 }
 
 export function ClientPanel() {
@@ -23,9 +42,19 @@ export function ClientPanel() {
   const { clearRecommendations } = useRecommendations();
 
   useEffect(() => {
-    apiFetch<PageResponse | Client[]>(`${API_SERVICE_URL}/api/v1/clients?size=100`)
+    apiFetch<PageResponse | Client[]>(`/backend/api/v1/clients?size=100`)
       .then((data) => {
-        const list = Array.isArray(data) ? data : (data.content ?? []);
+        let raw: RawClient[] | Client[];
+        if (Array.isArray(data)) {
+          raw = data;
+        } else if (data.items) {
+          raw = data.items;
+        } else {
+          raw = data.content ?? [];
+        }
+        const list = (raw as RawClient[]).map((item) =>
+          'country' in item ? (item as unknown as Client) : toClient(item)
+        );
         setClients(list);
       })
       .catch(() => setError('Não foi possível carregar os clientes.'))

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { apiFetch } from '@/lib/fetch-wrapper';
 import { adaptRecommendations } from '@/lib/adapters/recommend';
 
-const API_SERVICE_URL = process.env.API_SERVICE_URL ?? 'http://localhost:8080';
+const API_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
   try {

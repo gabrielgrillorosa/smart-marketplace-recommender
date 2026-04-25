@@ -1,15 +1,13 @@
 # Roadmap
 
-**Current Milestone:** M6 — Quality & Publication
-**Status:** Spec ✓ Design ✓ Tasks ✓ (19 tasks, 7 phases) — Next: Execute
+**Current Milestone:** M7 — Production Readiness ✅ COMPLETE
+**Status:** COMPLETE
 
-**Previous:** M5 — Frontend ✅ Completed — Spec ✓ Design ✓ Tasks ✓ Execute ✓
-
-**M4 status:** ✅ DONE — Spec ✓ Design ✓ Tasks ✓ Execute ✓ — 34/34 reqs verified, 20/20 runtime tests passing — paginação real, EMBEDDING_MODEL/LLM_MODEL separados
+**Previous:** M6 — Quality & Publication ✅ COMPLETE — 55/55 reqs, 19 AI tests (Vitest), 15 Java tests (JUnit 5), Testcontainers IT, multi-stage Dockerfiles, ai-model-data volume, README bilíngue, ESLint ✓, Checkstyle 0 violations
 
 ---
 
-## M1 — Foundation
+## M1 — Foundation ✅ COMPLETE
 
 **Goal:** Entire infrastructure is reproducible with a single command. Synthetic data seeds both databases. Any engineer who clones the repo can bring up all services and inspect data in Neo4j Browser and PostgreSQL within 10 minutes.
 
@@ -41,7 +39,7 @@
 
 ---
 
-## M2 — API Service (Spring Boot)
+## M2 — API Service (Spring Boot) ✅ COMPLETE
 
 **Goal:** Full domain API is live with OpenAPI docs, pagination, filtering, and Actuator metrics. Demonstrates Spring Boot best practices for high-throughput APIs.
 
@@ -78,7 +76,7 @@
 
 ---
 
-## M3 — AI Service (TypeScript/Fastify)
+## M3 — AI Service (TypeScript/Fastify) ✅ COMPLETE
 
 **Goal:** Embedding generation pipeline is operational. All products have vector representations stored in Neo4j. RAG endpoint answers natural language questions about the catalog.
 
@@ -110,7 +108,7 @@
 
 ---
 
-## M4 — Neural Recommendation Model
+## M4 — Neural Recommendation Model ✅ COMPLETE
 
 **Goal:** Neural model is trained on client purchase history using HuggingFace embeddings as input features (replacing one-hot encoding from parte05). Hybrid recommendation endpoint combines semantic + neural scores.
 
@@ -138,7 +136,7 @@
 
 ---
 
-## M5 — Frontend
+## M5 — Frontend ✅ COMPLETE
 
 **Goal:** Functional demo UI that showcases all system capabilities end-to-end. A recruiter or evaluator can clone, run, and immediately see the system working without reading the code.
 
@@ -173,13 +171,13 @@
 
 ---
 
-## M6 — Quality & Publication
+## M6 — Quality & Publication ✅ COMPLETE
 
 **Goal:** Project is production-quality in documentation, tests, and engineering practices. README tells a compelling technical story. GitHub repository is ready for public sharing.
 
 **Target:** Tests pass; README is self-sufficient; any engineer can clone and run with zero prior knowledge of the project.
 
-**Status:** Spec ✓ Design ✓ Tasks ✓
+**Status:** ✅ COMPLETE — 55/55 reqs, testes automatizados, multi-stage Dockerfiles, README bilíngue
 
 
 ### Features
@@ -209,13 +207,66 @@
 
 ---
 
+## M7 — Production Readiness
+
+**Goal:** Fechar os gaps operacionais críticos identificados pelo Comitê de Arquitetura e pela análise pós-M6. Modelo neural retreinado automaticamente toda madrugada. Produtos novos sincronizados com Neo4j e embeddings gerados sem intervenção manual. Treino assíncrono que não bloqueia o cliente HTTP. Model versioning com rollback. Segurança mínima para deploy público.
+
+**Target:** Sistema opera de forma autônoma após deploy — sem intervenção manual para retreino, sincronização ou embedding de novos produtos.
+
+**Status:** ✅ COMPLETE — 37/37 reqs; TrainingJobRegistry + VersionedModelStore + CronScheduler + adminRoutes + sync-product + AiSyncClient; 42 AI tests (Vitest); 16 Java tests; ESLint ✓; Checkstyle 0 violations; Playwright E2E suite
+
+### Features
+
+**Sincronização automática de produtos novos → Neo4j + embeddings (GAP-02)** — PLANNED
+
+- `POST /products` no api-service notifica ai-service após persistir no PostgreSQL
+- ai-service cria nó `Product` no Neo4j e gera embedding via HuggingFace imediatamente
+- Produto novo aparece em busca semântica, RAG e recomendações sem intervenção manual
+- Fallback: se ai-service indisponível, produto fica na fila e é processado no próximo ciclo de `/embeddings/generate`
+
+**Treino assíncrono — padrão 202 + polling (Comitê Achado #6)** — PLANNED
+
+- `POST /model/train` retorna `202 Accepted` com `{ jobId, status: "queued" }` imediatamente
+- `GET /model/train/status/{jobId}` retorna progresso: `{ status, epoch, totalEpochs, loss, eta }`
+- Treino roda em background sem bloquear o event loop do Fastify
+- Pré-requisito para o cron diário (GAP-01)
+
+**Cron diário de retreinamento automático (GAP-01)** — PLANNED
+
+- Cron interno no ai-service (`node-cron`) dispara `modelTrainer.train()` todo dia às 02h
+- Usa o padrão assíncrono do Achado #6 — não bloqueia o event loop
+- `syncNeo4j()` já roda dentro do `train()` — pega todos os pedidos novos do dia automaticamente
+- `staleDays` zera após cada execução bem-sucedida; `staleWarning` desaparece
+
+**Model versioning com rollback (Comitê Achado #5)** — PLANNED
+
+- Modelo salvo com timestamp: `/tmp/model/model-{ISO}.json`
+- Symlink `/tmp/model/current` aponta para o melhor modelo por `precisionAt5`
+- Novo treino só substitui `current` se `precisionAt5` novo ≥ `precisionAt5` atual
+- `GET /model/status` expõe histórico dos últimos 5 modelos com métricas
+
+**Segurança mínima para deploy público (Comitê Achado #10)** — PLANNED
+
+- Header `X-Admin-Key` validado contra env var `ADMIN_API_KEY` nos endpoints `POST /model/train` e `POST /embeddings/generate`
+- Retorna `401 Unauthorized` sem a chave
+- Documentado no README e `.env.example`
+
+**Testes E2E com Playwright** — PLANNED
+
+- Cobertura dos fluxos principais: busca de produto, recomendações, RAG chat
+- Execução no pipeline CI/CD após build das imagens
+- Screenshots de regressão visual para o frontend
+
+---
+
 ## Future Considerations
 
-- Fine-tune `all-MiniLM-L6-v2` on product description corpus (domain adaptation)
-- Add Kafka between API service and AI service for async recommendation pre-computation
-- Implement real-time recommendation updates on `POST /orders` via event stream
-- Add MLflow for experiment tracking and model versioning
-- Expose Precision@K and nDCG metrics endpoint for recommendation quality measurement
-- Add Portuguese/Spanish product description generation via LLM during seed
-- Multi-model LLM comparison in RAG: Mistral vs Llama vs Gemma via OpenRouter
-- Deploy to cloud (Railway, Render, or Fly.io) for live public demo link in README
+- Graph-augmented RAG: multi-hop Cypher como contexto adicional no pipeline RAG
+- Fine-tuning HuggingFace + endpoint `/benchmark` comparando TF.js vs HuggingFace
+- Kafka event-driven: `product.created` e `order.created` substituindo HTTP síncrono
+- Deploy em cloud (Railway/Render/Fly.io) com URL pública no README
+- CI/CD pipeline (GitHub Actions) com gates de lint, testes e build
+- Multi-model LLM comparison no RAG via OpenRouter (Mistral vs Llama vs Gemma)
+- `p-limit(10)` no `fetchAllPages` para controlar concorrência em datasets grandes
+- Weighted mean pooling por frequência de compra no perfil do cliente
+- Multi-model LLM comparison no RAG via OpenRouter (Mistral vs Llama vs Gemma)

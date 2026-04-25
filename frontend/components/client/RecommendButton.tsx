@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import type { Client } from '@/lib/types';
+import type { Client, RecommendationResult } from '@/lib/types';
 import { apiFetch } from '@/lib/fetch-wrapper';
 import { useRecommendations } from '@/lib/contexts/RecommendationContext';
-import { adaptRecommendations } from '@/lib/adapters/recommend';
 
 interface RecommendButtonProps {
   client: Client;
@@ -18,13 +17,12 @@ export function RecommendButton({ client }: RecommendButtonProps) {
     setFetching(true);
     setLoading(true);
     try {
-      const raw = await apiFetch<unknown>('/api/proxy/recommend', {
+      const raw = await apiFetch<{ results: RecommendationResult[]; isFallback: boolean }>('/api/proxy/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId: client.id, limit: 10 }),
       });
-      const { results, isFallback } = adaptRecommendations(raw);
-      setRecommendations(results, isFallback);
+      setRecommendations(raw.results ?? [], raw.isFallback ?? false);
     } catch {
       setRecommendations([], false);
     } finally {

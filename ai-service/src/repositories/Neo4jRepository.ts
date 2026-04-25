@@ -249,4 +249,65 @@ export class Neo4jRepository {
   async close(): Promise<void> {
     await this.driver.close()
   }
+
+  async createProductWithEmbedding(
+    product: {
+      id: string
+      name: string
+      description: string
+      category: string
+      price: number
+      sku: string
+      countryCodes: string[]
+    },
+    embedding: number[]
+  ): Promise<void> {
+    const session = this.driver.session()
+    try {
+      await session.run(
+        `MERGE (p:Product {id: $id})
+         ON CREATE SET p.name = $name, p.description = $description,
+                       p.category = $category, p.price = $price, p.sku = $sku
+         WITH p
+         FOREACH (code IN $countryCodes |
+           MERGE (c:Country {code: code})
+           MERGE (p)-[:AVAILABLE_IN]->(c)
+         )
+         WITH p
+         WHERE p.embedding IS NULL
+         SET p.embedding = $embedding`,
+        {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          category: product.category,
+          price: product.price,
+          sku: product.sku,
+          countryCodes: product.countryCodes,
+          embedding,
+        }
+      )
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getProductEmbedding(productId: string): Promise<number[] | null> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        'MATCH (p:Product {id: $id}) RETURN p.embedding AS embedding',
+        { id: productId }
+      )
+      if (result.records.length === 0) return null
+      const embedding = result.records[0].get('embedding')
+      return embedding ?? null
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
 }

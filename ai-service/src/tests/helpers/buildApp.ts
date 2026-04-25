@@ -2,7 +2,7 @@ import Fastify, { FastifyBaseLogger, FastifyInstance } from 'fastify'
 import type { Neo4jRepository } from '../../repositories/Neo4jRepository.js'
 import type { EmbeddingService } from '../../services/EmbeddingService.js'
 import type { ModelStore } from '../../services/ModelStore.js'
-import type { ModelTrainer } from '../../services/ModelTrainer.js'
+import type { TrainingJobRegistry } from '../../services/TrainingJobRegistry.js'
 import type { RecommendationService } from '../../services/RecommendationService.js'
 import type { RAGService } from '../../services/RAGService.js'
 import type { SearchService } from '../../services/SearchService.js'
@@ -11,12 +11,15 @@ import { searchRoutes } from '../../routes/search.js'
 import { ragRoutes } from '../../routes/rag.js'
 import { modelRoutes } from '../../routes/model.js'
 import { recommendRoutes } from '../../routes/recommend.js'
+import { adminRoutes } from '../../routes/adminRoutes.js'
 
 export interface AppDeps {
   neo4jRepo: Partial<Neo4jRepository>
   embeddingService: Partial<EmbeddingService>
   modelStore: Partial<ModelStore>
-  modelTrainer: Partial<ModelTrainer>
+  modelTrainer?: unknown
+  trainingJobRegistry?: Partial<TrainingJobRegistry>
+  adminApiKey?: string
   recommendationService: Partial<RecommendationService>
   ragService: Partial<RAGService>
   searchService: Partial<SearchService>
@@ -43,7 +46,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await fastify.register(modelRoutes, {
     prefix: '/api/v1',
-    modelTrainer: deps.modelTrainer as ModelTrainer,
     modelStore: deps.modelStore as ModelStore,
   })
 
@@ -51,6 +53,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     prefix: '/api/v1',
     recommendationService: deps.recommendationService as RecommendationService,
   })
+
+  if (deps.trainingJobRegistry) {
+    await fastify.register(adminRoutes, {
+      prefix: '/api/v1',
+      registry: deps.trainingJobRegistry as TrainingJobRegistry,
+      adminApiKey: deps.adminApiKey,
+    })
+  }
 
   return fastify
 }

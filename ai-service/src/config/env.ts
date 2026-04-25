@@ -24,6 +24,10 @@ if (!process.env.API_SERVICE_URL) {
   console.warn('[ai-service] WARNING: API_SERVICE_URL not set. POST /api/v1/model/train will return 503.')
 }
 
+if (!process.env.ADMIN_API_KEY) {
+  console.warn('[ai-service] WARNING: ADMIN_API_KEY not set — admin endpoints unprotected')
+}
+
 const NEURAL_WEIGHT = parseFloat(process.env.NEURAL_WEIGHT ?? '0.6')
 const SEMANTIC_WEIGHT = parseFloat(process.env.SEMANTIC_WEIGHT ?? '0.4')
 
@@ -46,4 +50,5 @@ export const ENV = Object.freeze({
   API_SERVICE_URL: process.env.API_SERVICE_URL ?? '',
   NEURAL_WEIGHT,
   SEMANTIC_WEIGHT,
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY as string | undefined,
 })

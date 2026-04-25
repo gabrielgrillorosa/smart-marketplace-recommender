@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import type { ServiceStatus } from '@/lib/types';
 
-const API_SERVICE_URL = process.env.NEXT_PUBLIC_API_SERVICE_URL ?? 'http://localhost:8080';
-const AI_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL ?? 'http://localhost:3000';
+const API_SERVICE_URL = '';
+const AI_SERVICE_URL = '';
 
 async function checkEndpoint(url: string): Promise<ServiceStatus> {
   try {
@@ -22,8 +22,8 @@ export function useServiceHealth(): { apiStatus: ServiceStatus; aiStatus: Servic
   useEffect(() => {
     async function poll() {
       const [api, ai] = await Promise.all([
-        checkEndpoint(`${API_SERVICE_URL}/actuator/health`),
-        checkEndpoint(`${AI_SERVICE_URL}/ready`),
+        checkEndpoint(`/backend/actuator/health`),
+        checkEndpoint(`/aibackend/ready`),
       ]);
       setApiStatus(api);
       setAiStatus(ai);

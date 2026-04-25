@@ -32,6 +32,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -45,6 +46,9 @@ class ProductApplicationServiceTest {
 
     @Mock
     private CountryRepository countryRepository;
+
+    @Mock
+    private AiSyncClient aiSyncClient;
 
     @InjectMocks
     private ProductApplicationService service;
@@ -130,5 +134,48 @@ class ProductApplicationServiceTest {
         assertThatThrownBy(() -> service.createProduct(request))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("Supplier not found");
+    }
+
+    @Test
+    void createProduct_notifiesAiSyncClient_afterSuccessfulSave() {
+        UUID supplierId = UUID.randomUUID();
+        CreateProductRequest request = new CreateProductRequest(
+                "SKU-SYNC",
+                "Sync Product",
+                "A description that is at least thirty characters long.",
+                "food",
+                new BigDecimal("9.99"),
+                supplierId,
+                List.of("BR")
+        );
+
+        Country country = new Country();
+        country.setCode("BR");
+        country.setName("Brazil");
+
+        Supplier supplier = new Supplier();
+        supplier.setId(supplierId);
+        supplier.setName("Acme");
+        supplier.setCountry(country);
+
+        Product product = new Product();
+        product.setId(UUID.randomUUID());
+        product.setSku("SKU-SYNC");
+        product.setName("Sync Product");
+        product.setDescription("A description that is at least thirty characters long.");
+        product.setCategory("food");
+        product.setPrice(new BigDecimal("9.99"));
+        product.setSupplier(supplier);
+        Set<Country> countries = new HashSet<>();
+        countries.add(country);
+        product.setCountries(countries);
+
+        when(supplierRepository.findById(supplierId)).thenReturn(Optional.of(supplier));
+        when(countryRepository.findByCodeIn(List.of("BR"))).thenReturn(List.of(country));
+        when(productRepository.save(any(Product.class))).thenReturn(product);
+
+        service.createProduct(request);
+
+        verify(aiSyncClient).notifyProductCreated(any(ProductDetailDTO.class));
     }
 }

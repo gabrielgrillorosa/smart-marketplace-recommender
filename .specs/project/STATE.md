@@ -1,17 +1,30 @@
 # Project State
 
-_Last updated: 2026-04-25 — Session: M6 Quality & Publication — 19 AI service tests passing (Vitest); 15 Java unit tests passing (JUnit 5); Testcontainers IT tests created (need Docker group for execution); multi-stage Dockerfiles for all 3 services; ai-model-data volume; bilingual README; CONTRIBUTING.md; ESLint clean (ai-service + frontend); Checkstyle 0 violations; M6 COMPLETE_
+_Last updated: 2026-04-25 — Session: M7 Execute — COMPLETE — 21 tasks, 8 fases, 37/37 reqs; 42 AI tests (Vitest: 19 existing + 23 new); 16 Java tests; ESLint ✓; Checkstyle 0 violations; Playwright E2E suite criada_
 
 ---
 
 ## Current Focus
 
-**Status:** M6 — Quality & Publication ✅ COMPLETE
-**Previous:** M5 — Frontend ✅ COMPLETE (40 tasks, `npm run build` ✓, `npm run lint` ✓ zero warnings, 33/33 requirements met)
+**Status:** M7 — Production Readiness ✅ COMPLETE
+
+**Previous:** M6 — Quality & Publication ✅ COMPLETE (55/55 reqs, testes, Dockerfiles, README bilíngue)
 
 ---
 
 ## Decisions
+
+### AD-011: M7 Production Readiness — backlog formalizado como próximo milestone (2026-04-25)
+
+**Decision:** Os gaps operacionais identificados na análise pós-M6 (GAP-01: cron diário de retreinamento, GAP-02: sincronização automática de produtos novos com Neo4j) e os achados do Comitê de Arquitetura (#5: model versioning, #6: 202 + polling, #10: segurança básica) foram formalizados como features do milestone M7 — Production Readiness. O ROADMAP foi atualizado: M6 marcado como COMPLETE, M7 como PLANNED.
+
+**Reason:** Sem GAP-02 o sistema opera com produtos "invisíveis" para RAG e recomendações assim que qualquer produto novo é cadastrado. Sem GAP-01 o modelo se torna obsoleto silenciosamente sem alertas acionáveis. Ambos os gaps têm severidade Alta para produção. Os achados do Comitê (#5, #6, #10) são pré-requisitos para um deploy público seguro.
+
+**Trade-off:** Adiamos event-driven (Kafka) e fine-tuning para "Future Considerations" — a Solução B do GAP-02 (cron de `generateEmbeddings` com `embedding IS NULL`) é mais simples, já idempotente, e elimina o gap sem dependências externas.
+
+**Impact:** GAP-02 deve ser o primeiro item a executar no M7 — zero pré-requisitos. GAP-01 depende do Achado #6 (202 + polling) para não bloquear o event loop. Achado #5 (model versioning) deve andar junto com GAP-01 pois ambos tocam ModelStore/ModelTrainer.
+
+---
 
 ### D-001 — TypeScript for AI Service instead of Python
 **Date:** 2026-04-23
@@ -170,10 +183,18 @@ _None at this time._
 - [x] Design complex M6 — design.md + ADR-009 (Vitest DI mocking) + ADR-010 (xenova pre-download builder stage) + ADR-011 (Next.js standalone Dockerfile) criados; 3 nós ToT, committee review com 3 personas, 9 findings incorporados
 - [x] Break M6 into tasks — tasks.md (19 tasks, 7 phases, 55+ reqs mapped)
 - [x] Execute M6 — 19 tasks complete; 19 AI service tests (Vitest); 15 Java unit tests (JUnit 5); Testcontainers IT tests; multi-stage Dockerfiles; ai-model-data volume; bilingual README; CONTRIBUTING; ESLint ✓; Checkstyle ✓ 0 violations; M6 ✅ COMPLETE
+- [x] Specify M7 features (production readiness) — spec.md criado (36 reqs, M7-01..M7-36); 5 features (GAP-02, async train, cron GAP-01, model versioning, security + E2E)
+- [x] Design complex M7 — design.md + ADR-012 (TrainingJobRegistry) + ADR-013 (VersionedModelStore) + ADR-014 (admin key scoped plugin) + ADR-015 (AiSyncClient fire-and-forget) criados; 3 nós ToT, committee review com 3 personas, 8 findings incorporados
+- [x] Break M7 into tasks — tasks.md criado (21 tarefas, 8 fases, 37/37 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
+- [x] Execute M7 — 21 tasks complete; 42 AI service tests (Vitest: 19 existing + 23 new); 16 Java tests; ESLint ✓; Checkstyle 0 violations; Playwright E2E suite (search, recommend, rag); VersionedModelStore, TrainingJobRegistry, CronScheduler, adminRoutes, sync-product, AiSyncClient all implemented; M7 ✅ COMPLETE
 
 ---
 
 ## Deferred Ideas
+
+- **Remoção de `spring-boot-starter-webflux` do api-service:** `AiSyncClient` foi reescrito com `java.net.http.HttpClient` (ADR-015 revisado). Resta `AiServiceClient.recommend()` como único consumidor do `WebClient`. Reescrevê-lo com `java.net.http.HttpClient` eliminaria o `spring-boot-starter-webflux` do classpath, removendo o Netty como dependência transitiva e reduzindo o modelo mental do projeto para servlet puro + virtual threads. Deferred por baixo risco atual e escopo do M7.
+
+- **`StructuredTaskScope` para paralelismo awaitable intra-request:** Avaliado pelo Comitê como alternativa ao `Thread.ofVirtual().start()` em `AiSyncClient` e rejeitado — `StructuredTaskScope` requer `scope.join()` antes de fechar o scope, bloqueando o thread pai. É incompatível com fire-and-forget por design (JEP 453/480). O caso de uso correto no projeto seria: montar DTOs compondo múltiplas fontes de dados em paralelo dentro do mesmo request — ex: `productRepo.findById()` + `reviewRepo.findByProductId()` em paralelo com `ShutdownOnFailure`. Endereçar quando houver call site com N resultados awaitable paralelos. Nota: `StructuredTaskScope` era Preview no Java 21; Feature somente no Java 23 — requer atenção ao `java.version` do `pom.xml`.
 
 - **Graph-augmented RAG:** Use multi-hop Cypher traversal (e.g., "find products bought by clients who also bought X") as additional context for the RAG pipeline. Neo4j graph structure supports this without schema changes. Deferred to post-MVP.
 
@@ -196,6 +217,10 @@ _None at this time._
 - **Weighted mean pooling por frequência de compra (Comitê Achado #3):** O perfil do cliente é calculado como média aritmética dos embeddings. Um produto comprado 50x tem o mesmo peso que um comprado 1x. Solução: ponderar cada embedding pelo `quantity` do pedido — `clientProfile = Σ(embedding_i × quantity_i) / Σ(quantity_i)`. Requer buscar `quantity` das edges `:BOUGHT` no Neo4j. Severidade: Baixa. Melhoria de qualidade do modelo pós-MVP.
 
 - **Autenticação no endpoint POST /model/train (Comitê Achado #10):** Qualquer cliente que conhece a URL pode retreinar o modelo ou causar carga excessiva. Solução: header `X-Admin-Key` validado contra env var `ADMIN_API_KEY`, ou JWT com role `admin`. Na rede interna Docker do MVP, risco irrelevante. Severidade: Baixa. Endereçar antes de qualquer exposição pública.
+
+- **Cron diário de retreinamento automático (GAP-01):** O modelo neural fica desatualizado silenciosamente após novos pedidos serem criados. O `staleDays` e `staleWarning` foram implementados no M6 como observabilidade passiva — o sistema avisa que está velho, mas nenhum mecanismo reage automaticamente. Retreinar a cada compra é incorreto (custo computacional, catastrophic forgetting, race conditions); o padrão correto para sistemas B2B é retreinamento em batch diário. Solução: cron interno no `ai-service` (ex: `node-cron`) disparando `modelTrainer.train()` em background todo dia às 02h. Pré-condição: implementar o padrão 202 + async (Comitê Achado #6) para que o cron não bloqueie o event loop. Os dois itens se encaixam: o cron precisa do treino assíncrono; o treino assíncrono precisa de um disparador que não seja manual. Severidade: Média-Alta para produção. Pré-requisito: Comitê Achado #6 (202 + polling).
+
+- **Sincronização automática de produtos novos com Neo4j + embeddings (GAP-02):** Produto cadastrado via `POST /products` no `api-service` é salvo apenas no PostgreSQL. O Neo4j não recebe o nó novo e nenhum embedding é gerado, tornando o produto invisível para busca semântica, RAG e recomendações até que o operador chame manualmente `POST /embeddings/generate`. Diferente do GAP de `:BOUGHT` (resolvido no M6-45), este gap não foi documentado em nenhum ADR, spec ou task. Solução A (simples): `api-service` chama `POST /aiservice/api/v1/embeddings/generate` após salvar produto — síncrono mas frágil se o ai-service estiver fora. Solução B (robusta): cron no ai-service que roda `generateEmbeddings()` periodicamente (só processa produtos com `embedding IS NULL` — já idempotente). Solução C (event-driven): evento `product.created` via Kafka — convergente com D-03. Severidade: Alta para funcionalidade de IA. Pré-requisito: nenhum.
 
 ---
 
