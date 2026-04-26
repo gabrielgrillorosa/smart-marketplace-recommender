@@ -1,9 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M9-A — Demo Buy + Live Reorder 🔄 PLANNED
+**Current Milestone:** M-CF — Client Profile Enrichment Fix 🔄 PLANNED
 **Status:** PLANNED
 
-**Previous:** M8 — UX Journey Refactor ✅ COMPLETE — 55/55 reqs; Zustand store (3 slices + 4 domain hooks) + ReorderableGrid (FLIP ADR-017) + ClientSelectorDropdown + RAGDrawer (always-mounted ADR-018) + ScoreBadge + CatalogPanel toolbar + sonner toasts + E2E suite; `npm run build` ✓; ESLint ✓ 0 warnings
+**Previous:** M9-B — Deep Retrain Showcase ✅ COMPLETE — 32/32 reqs; useRetrainJob (ADR-025) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted (ADR-023) + 3 proxy routes + lib/adapters/train.ts + E2E spec; `npm run build` ✓; ESLint ✓ 0 warnings
 
 ---
 
@@ -312,13 +312,13 @@
 
 ---
 
-## M9-A — Demo Buy + Live Reorder — PLANNED
+## M9-A — Demo Buy + Live Reorder ✅ COMPLETE
 
 **Goal:** Demonstrar aprendizado incremental em tempo real: clicar "Demo Comprar" em um produto atualiza o perfil vector do cliente e reordena as recomendações ao vivo, sem retreinar a rede neural.
 
 **Target:** Avaliador clica "Demo Comprar", espera ~300ms, e vê os cards de recomendação se reordenarem refletindo a nova compra — feedback visual imediato do motor de recomendação.
 
-**Status:** PLANNED — aguarda M8 ✅
+**Status:** ✅ COMPLETE — 33/33 reqs; DemoBuyService + 3 Neo4jRepository methods (ADR-021) + demoBuyRoutes (ADR-022) + recommendFromVector + demoSlice loading state + ProductCard demo buttons + CatalogPanel wiring + 3 proxy routes + E2E spec; 63 AI tests (Vitest); `npm run build` ✓; ESLint ✓ 0 warnings; `tsc --noEmit` ✓
 
 ### Features
 
@@ -337,13 +337,40 @@
 
 ---
 
+## M-CF — Client Profile Enrichment Fix — PLANNED
+
+**Goal:** Corrigir o `ClientProfileCard` na aba "Análise" que exibe `0 pedidos` e `Sem pedidos registrados` para todos os clientes, apesar de os dados existirem no Postgres. O bug está no `ClientSelectorDropdown` que hardcoda `totalOrders: 0` e `recentProducts: []` ao construir o objeto `Client` a partir do endpoint de lista `/api/v1/clients`, que não retorna dados de pedidos.
+
+**Target:** Ao selecionar um cliente, o `ClientProfileCard` exibe o total de pedidos correto, o valor total gasto, a data do último pedido e os últimos 5 produtos comprados — todos buscados dos endpoints `/api/v1/clients/{id}` e `/api/v1/clients/{id}/orders` já existentes no API Service.
+
+**Status:** PLANNED — aguarda M9-A ✅
+
+### Root Cause
+
+O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segment, countryCode }`. A função `toClient()` no `ClientSelectorDropdown` preenche `totalOrders: 0` e `recentProducts: []` hardcoded. Os endpoints individuais com dados completos existem mas nunca são chamados:
+
+- `GET /api/v1/clients/{id}` → retorna `purchaseSummary: { totalOrders, totalItems, totalSpent, lastOrderAt }`
+- `GET /api/v1/clients/{id}/orders` → retorna histórico de pedidos com itens e nomes de produtos
+
+### Features
+
+**Enriquecimento do perfil do cliente ao selecionar** — PLANNED
+
+- Ao selecionar cliente no dropdown, chamar `GET /api/v1/clients/{id}` para obter `purchaseSummary`
+- Chamar `GET /api/v1/clients/{id}/orders` para obter os últimos pedidos e extrair `recentProducts`
+- Atualizar o objeto `Client` no Zustand store (`clientSlice`) com os dados enriquecidos
+- Loading skeleton no `ClientProfileCard` durante o fetch de enriquecimento
+- Erro silencioso (mantém `totalOrders: 0`) se o fetch falhar — sem quebrar o fluxo principal
+
+---
+
 ## M9-B — Deep Retrain Showcase — PLANNED
 
 **Goal:** Demonstrar retreinamento completo da rede neural com barra de progresso ao vivo e comparação "antes/depois" no painel de Análise.
 
 **Target:** Avaliador clica "Retreinar Modelo", acompanha progresso epoch por epoch, e vê as métricas de qualidade antes e depois do treino na aba "Análise".
 
-**Status:** PLANNED — aguarda M9-A ✅
+**Status:** PLANNED — spec.md criado (32 reqs, M9B-01..M9B-32) | design.md aprovado (ADR-023 · ADR-024 · ADR-025) | tasks.md criado (9 tarefas, 4 fases, 32/32 reqs) | ✅ COMPLETE — 32/32 reqs, 9/9 tasks
 
 ### Features
 

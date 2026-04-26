@@ -1,18 +1,48 @@
 # Project State
 
-_Last updated: 2026-04-26 — Session: Specify M9-A — spec.md criado (33 reqs, M9A-01..M9A-33); 3 rotas (POST /demo-buy, DELETE /demo-buy, DELETE /demo-buy/all); componentes existentes mapeados; latência estimada 160–230ms p95 ≤ 350ms_
+_Last updated: 2026-04-26 — Session: Execute M9-B — 9/9 tasks complete; lib/types.ts (5 tipos M9-B) + lib/adapters/train.ts + 3 proxy routes (model/train, model/status, model/train/status/[jobId]) + useRetrainJob hook (ADR-025 jobIdRef, polling backoff, circuit-breaker 3 erros) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted ADR-023 + E2E m9b-deep-retrain.spec.ts; npm run build ✓; ESLint ✓ 0 warnings_
 
 ---
 
 ## Current Focus
 
-**Status:** M8 — UX Journey Refactor ✅ COMPLETE | M9-A — Demo Buy + Live Reorder — SPECIFIED (33 reqs)
+**Status:** M-CF — Client Profile Enrichment Fix — PLANNED | M9-B — Deep Retrain Showcase ✅ COMPLETE (32/32 reqs, 9/9 tasks)
 
-**Previous:** M7 — Production Readiness ✅ COMPLETE (37/37 reqs; TrainingJobRegistry + VersionedModelStore + CronScheduler + adminRoutes)
+**Previous:** M9-A — Demo Buy + Live Reorder ✅ COMPLETE (33/33 reqs, 9/9 tasks)
 
 ---
 
 ## Decisions
+
+### AD-025: M9-B — useRetrainJob com jobIdRef para evitar stale closure no setInterval (2026-04-26)
+
+**Decision:** `useRetrainJob` usa `jobIdRef = useRef<string | null>(null)` sincronizado com `jobId` state via `useEffect([jobId])`. O callback do `setInterval` lê `jobIdRef.current` (sempre o valor mais recente) em vez do valor capturado na closure.
+
+**Reason:** `setInterval` callback captura o `jobId` no momento de criação — stale closure. Se React batcheia updates, o callback lê `null`. Staff Engineering High severity no Phase 4 da Design Complex UI. Padrão documentado em React docs como "escape hatch" para closures de timers.
+
+**Status:** Accepted ✓ (ADR-025)
+
+---
+
+### AD-024: M9-B — Progress bar via transform scaleX em vez de width (2026-04-26)
+
+**Decision:** `TrainingProgressBar` anima o progresso via `transform: scaleX(fraction)` com `transform-origin: left` em uma div fill de `width: 100%`. Usa `motion-safe:transition-transform duration-300 ease-out`. Modo indeterminado: `animate-pulse` no fill.
+
+**Reason:** Animar `width` aciona layout → paint → composite a cada poll update (thrashing). `transform` é GPU-composited — sem recálculo de layout. Staff UI Designer High severity no Phase 4. Consistente com AD-017 (ReorderableGrid só anima `transform`).
+
+**Status:** Accepted ✓ (ADR-024)
+
+---
+
+### AD-023: M9-B — AnalysisPanel always-mounted para preservar estado do retrain entre tabs (2026-04-26)
+
+**Decision:** `AnalysisPanel` renderizado incondicionalmente em `page.tsx`. Visibilidade via Tailwind `hidden`/`block`. Container recebe `aria-hidden={activeTab !== 'analysis'}` para remover elementos ocultos da árvore de acessibilidade.
+
+**Reason:** Render condicional `{activeTab === 'analysis' && <AnalysisPanel />}` destrói `useRetrainJob` state ao sair da aba — viola M9B-22. Padrão always-mounted já estabelecido em AD-018 (RAGDrawer). Phase 3 Self-Consistency convergiu em Node C via dois caminhos independentes.
+
+**Status:** Accepted ✓ (ADR-023)
+
+---
 
 ### AD-020: M8 nav quick fix — Abas Cliente/Recomendações removidas; aba Análise criada (2026-04-26)
 
@@ -56,7 +86,27 @@ _Last updated: 2026-04-26 — Session: Specify M9-A — spec.md criado (33 reqs,
 
 ---
 
-### AD-013: M9 — Demo Buy usa profile vector incremental, não retreinamento da rede neural (2026-04-26)
+### AD-021: M9-A — Transação unificada Neo4j para createDemoBought + getEmbeddings (2026-04-26)
+
+**Decision:** `createDemoBoughtAndGetEmbeddings(clientId, productId)` (e variantes delete/clear) executam MERGE/DELETE e SELECT de embeddings na mesma `session.executeWrite()` — escopo transacional único. `session.executeWrite()` ativa retry automático do driver Neo4j em deadlocks.
+
+**Reason:** Dois `session.run()` separados criam timing gap: o MATCH de embeddings pode rodar antes que o MERGE anterior tenha sido visível, produzindo `profileVector` sem a compra demo e feedback visual incorreto (Staff Engineering High severity; QA Staff cold start M9A-32).
+
+**Status:** Accepted ✓ (ADR-021)
+
+---
+
+### AD-022: M9-A — DELETE /demo-buy usa path params em vez de request body (2026-04-26)
+
+**Decision:** `DELETE /api/v1/demo-buy/:clientId/:productId` (individual) e `DELETE /api/v1/demo-buy/:clientId` (bulk) sem body. Frontend chama sem `Content-Type`.
+
+**Reason:** DELETE com body é ignorado silenciosamente por proxies e gateways — causaria `clientId`/`productId` ausentes e 400s não rastreáveis (Staff Engineering Medium severity).
+
+**Status:** Accepted ✓ (ADR-022)
+
+---
+
+
 
 **Decision:** A feature "Demo Buy + Live Reorder" (M9) opera exclusivamente no espaço do **clientProfileVector** (mean-pooling dos embeddings), não no espaço dos pesos da rede neural. Ao clicar "Demo Comprar", o ai-service: (1) cria edge `BOUGHT {is_demo: true}` no Neo4j via `syncBoughtRelationships()`; (2) relê os embeddings via `getClientPurchasedEmbeddings()`; (3) recalcula `meanPooling()` em memória; (4) chama `recommend()` existente com o novo profileVector. O `ModelTrainer` não é alterado. Latência estimada: 180–350ms.
 
@@ -263,8 +313,13 @@ _None at this time._
 - [x] Execute M8 — 14 tasks complete; Zustand store (3 slices) + 4 domain hooks + ReorderableGrid (FLIP ADR-017) + ClientSelectorDropdown + RAGDrawer (always-mounted ADR-018) + ScoreBadge + CatalogPanel toolbar + Header wiring + layout.tsx Providers removed + ClientPanel read-only + RecommendationPanel banner + sonner toasts + E2E m8-ux-journey.spec.ts; `npm run build` ✓; ESLint ✓ 0 warnings; M8 ✅ COMPLETE
 - [x] M8 nav quick fix — abas Cliente/Recomendações removidas; nova aba Análise (ClientProfileCard + comparação Sem IA vs Com IA); ShuffledColumn migrada para useSelectedClient; antecipa estrutura prevista no M9-B; `npm run build` ✓; ESLint ✓
 - [x] Specify M9-A — Demo Buy + Live Reorder (profile vector incremental, nova rota demo-buy) — spec.md criado (33 reqs, M9A-01..M9A-33); 3 rotas mapeadas; componentes existentes reutilizáveis identificados; latência estimada 160–230ms
-- [ ] Design M9-A — definir arquitetura das novas rotas no AI Service + mudanças no demoSlice + integração com ReorderableGrid
-- [ ] Specify M9-B — Deep Retrain Showcase (POST /model/train com progresso ao vivo, aba "Análise" com comparação antes/depois) — aguarda M9-A
+- [x] Design Complex M9-A — design.md (Approved) + ADR-021 (write transaction unificada Neo4j) + ADR-022 (DELETE path params); DemoBuyService + recommendFromVector() + 3 métodos Neo4jRepository; demoSlice loading state; 4 committee findings incorporados; 3 ToT nodes; committee review 3 personas
+- [x] Break M9-A into tasks — tasks.md criado (9 tarefas, 4 fases, 33/33 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
+- [x] Execute M9-A — 9 tasks complete; DemoBuyService + recommendFromVector + Neo4jRepository (createDemoBoughtAndGetEmbeddings, deleteDemoBoughtAndGetEmbeddings, clearAllDemoBoughtAndGetEmbeddings) + demoBuyRoutes (ADR-022) + demoSlice loading state + ProductCard demo buttons/badge + CatalogPanel wiring (handlers + Limpar Demo toolbar) + 3 Next.js proxy routes + E2E m9a-demo-buy.spec.ts; ClientNotFoundError moved to Neo4jRepository; 63 AI tests (Vitest); `npm run build` ✓; ESLint ✓ 0 warnings; `tsc --noEmit` ✓; M9-A ✅ COMPLETE
+- [x] Specify M9-B — Deep Retrain Showcase — spec.md criado (32 reqs, M9B-01..M9B-32); 6 stories P1/P2/P3; 4 novos componentes (RetrainPanel, TrainingProgressBar, ModelMetricsComparison, useRetrainJob); 0 mudanças de backend; layout integrado na aba "Análise"
+- [x] Design M9-B — design.md (Approved) + ADR-023 (AnalysisPanel always-mounted) + ADR-024 (progress bar scaleX) + ADR-025 (jobIdRef stale closure); 3 proxy routes; lib/adapters/train.ts; 8 committee findings incorporados
+- [x] Break M9-B into tasks — tasks.md criado (9 tarefas, 4 fases, 32/32 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
+- [x] Execute M9-B — 9 tasks complete; lib/types.ts (5 tipos M9-B) + lib/adapters/train.ts + 3 proxy routes + useRetrainJob hook (ADR-025 jobIdRef, polling backoff, circuit-breaker 3 erros) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted ADR-023 + E2E m9b-deep-retrain.spec.ts; npm run build ✓; ESLint ✓ 0 warnings; M9-B ✅ COMPLETE
 
 ---
 
