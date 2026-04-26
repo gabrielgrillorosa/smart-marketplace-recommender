@@ -1,3 +1,6 @@
+'use client';
+
+import ReactMarkdown from 'react-markdown';
 import type { Message } from '@/lib/types';
 import { ContextChunks } from './ContextChunks';
 
@@ -23,7 +26,20 @@ export function ChatMessage({ message }: ChatMessageProps) {
               : 'bg-gray-100 text-gray-900 rounded-bl-sm'
         }`}
       >
-        {message.content}
+        {isUser ? (
+          message.content
+        ) : (
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc pl-4 space-y-1">{children}</ul>,
+              li: ({ children }) => <li>{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        )}
       </div>
       <span className="text-xs text-gray-400">{formatTime(message.timestamp)}</span>
       {!isUser && message.chunks && message.chunks.length > 0 && (

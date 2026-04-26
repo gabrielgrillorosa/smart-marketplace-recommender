@@ -4,6 +4,7 @@ import type { Product } from '@/lib/types';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CategoryIcon } from './CategoryIcon';
+import { ScoreBadge, type ScoreBadgeProps } from './ScoreBadge';
 
 const FLAG_EMOJI: Record<string, string> = {
   BR: '🇧🇷',
@@ -16,9 +17,10 @@ const FLAG_EMOJI: Record<string, string> = {
 interface ProductCardProps {
   product: Product;
   onClick?: () => void;
+  scoreBadge?: ScoreBadgeProps;
 }
 
-export function ProductCard({ product, onClick }: ProductCardProps) {
+export function ProductCard({ product, onClick, scoreBadge }: ProductCardProps) {
   return (
     <Card
       className="cursor-pointer transition-shadow hover:shadow-md"
@@ -29,7 +31,12 @@ export function ProductCard({ product, onClick }: ProductCardProps) {
           <span className="text-3xl">
             <CategoryIcon category={product.category} />
           </span>
-          {product.similarityScore !== undefined && (
+          {scoreBadge && (
+            <span className="ml-auto group">
+              <ScoreBadge {...scoreBadge} />
+            </span>
+          )}
+          {!scoreBadge && product.similarityScore !== undefined && (
             <Badge variant="info" className="ml-auto text-xs">
               {Math.round(product.similarityScore * 100)}% match
             </Badge>

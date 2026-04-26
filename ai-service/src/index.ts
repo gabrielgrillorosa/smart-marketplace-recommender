@@ -74,7 +74,7 @@ const start = async () => {
     )
 
     const searchService = new SearchService(embeddingService, repo)
-    const ragService = new RAGService(embeddingService, repo, ENV.OPENROUTER_API_KEY, ENV.LLM_MODEL)
+    const ragService = new RAGService(embeddingService, repo, ENV.OPENROUTER_API_KEY, ENV.LLM_MODEL, ENV.OPENROUTER_BASE_URL)
 
     fastify.get('/health', async () => ({ status: 'ok', service: 'ai-service' }))
 

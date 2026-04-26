@@ -1,7 +1,6 @@
 'use client';
 
-import { useRecommendations } from '@/lib/contexts/RecommendationContext';
-import { EmptyState } from './EmptyState';
+import { useRecommendations } from '@/lib/hooks/useRecommendations';
 import { FallbackBanner } from './FallbackBanner';
 import { RecommendationSkeleton } from './RecommendationSkeleton';
 import { RecommendedColumn } from './RecommendedColumn';
@@ -26,7 +25,15 @@ export function RecommendationPanel() {
   }
 
   if (recommendations.length === 0) {
-    return <EmptyState />;
+    return (
+      <div className="rounded-lg border border-dashed border-blue-200 bg-blue-50 px-6 py-10 text-center text-blue-700">
+        <p className="text-3xl mb-2">✨</p>
+        <p className="text-sm font-medium">Use &quot;✨ Ordenar por IA&quot; no Catálogo para obter recomendações.</p>
+        <p className="mt-1 text-xs text-blue-500">
+          Selecione um cliente na navbar, vá ao Catálogo e clique em &quot;✨ Ordenar por IA&quot;.
+        </p>
+      </div>
+    );
   }
 
   return (

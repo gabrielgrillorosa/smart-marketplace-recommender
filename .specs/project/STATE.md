@@ -1,18 +1,88 @@
 # Project State
 
-_Last updated: 2026-04-25 — Session: M7 Execute — COMPLETE — 21 tasks, 8 fases, 37/37 reqs; 42 AI tests (Vitest: 19 existing + 23 new); 16 Java tests; ESLint ✓; Checkstyle 0 violations; Playwright E2E suite criada_
+_Last updated: 2026-04-26 — Session: Specify M9-A — spec.md criado (33 reqs, M9A-01..M9A-33); 3 rotas (POST /demo-buy, DELETE /demo-buy, DELETE /demo-buy/all); componentes existentes mapeados; latência estimada 160–230ms p95 ≤ 350ms_
 
 ---
 
 ## Current Focus
 
-**Status:** M7 — Production Readiness ✅ COMPLETE
+**Status:** M8 — UX Journey Refactor ✅ COMPLETE | M9-A — Demo Buy + Live Reorder — SPECIFIED (33 reqs)
 
-**Previous:** M6 — Quality & Publication ✅ COMPLETE (55/55 reqs, testes, Dockerfiles, README bilíngue)
+**Previous:** M7 — Production Readiness ✅ COMPLETE (37/37 reqs; TrainingJobRegistry + VersionedModelStore + CronScheduler + adminRoutes)
 
 ---
 
 ## Decisions
+
+### AD-020: M8 nav quick fix — Abas Cliente/Recomendações removidas; aba Análise criada (2026-04-26)
+
+**Decision:** As abas "Cliente" e "Recomendações" foram removidas do `TabNav`. Uma nova aba "📊 Análise" foi criada fundindo: (1) `ClientProfileCard` lendo de `useSelectedClient()`; (2) comparação "Sem IA vs Com IA" (`ShuffledColumn` + `RecommendedColumn`) lendo de `useRecommendations()`. A aba "Chat RAG" foi mantida (duplica o drawer, mas preserva acessibilidade via teclado sem exigir interação com o header). `ShuffledColumn` foi migrada de `useClient()` (Context antigo) para `useSelectedClient()` (domain hook do M8).
+
+**Reason:** Com o M8, o cliente é selecionado na navbar e o fluxo de recomendação vive no catálogo. A aba "Cliente" passou a ser um card estático sem ação. A aba "Recomendações" redirecionava o usuário para outra aba (link broken UX). Fundir ambas em "Análise" elimina o impasse, mantém o valor pedagógico da comparação lado a lado, e antecipa a estrutura já prevista no roadmap para o M9-B (Deep Retrain Showcase).
+
+**Status:** Accepted ✓ (Parecer do Comitê — decisão de quick fix documentada em M8)
+
+---
+
+### AD-017: M8 — FLIP animation sem flushSync no ReorderableGrid (2026-04-26)
+
+**Decision:** `<ReorderableGrid>` usa padrão `prevPositionsRef` com dois `useLayoutEffect` consecutivos para FLIP animation — sem `flushSync`. Snapshot "First" é capturado via ref antes do render; transforms são aplicados e removidos via `requestAnimationFrame` para criar dois frames visuais distintos. Apenas `transform` é animado (GPU-composited). `@media (prefers-reduced-motion)` suportado via `motion-safe:transition-transform`.
+
+**Reason:** `flushSync` dentro de `useLayoutEffect` é anti-pattern React 18 — causa double-render em StrictMode e warnings no commit phase (Principal SW Architect, High severity). CSS Grid `order` não é animável. Animar `top`/`left` causa layout thrashing (Node B, Phase 2, High severity).
+
+**Status:** Accepted ✓ (ADR-017)
+
+---
+
+### AD-018: M8 — RAGDrawer always-mounted para preservar histórico de chat (2026-04-26)
+
+**Decision:** `<RAGDrawer>` é renderizado incondicionalmente no `Header` (always-mounted); visibilidade controlada via prop `open` do Radix `Sheet`. `isOpen` boolean é estado local do `Header`. Histórico de chat permanece em `useState` local do `RAGChatPanel` — sem elevação para o store global. Focus trap e `returnFocus` delegados ao Radix Sheet (não suprimir `onOpenAutoFocus`).
+
+**Reason:** Conditional render `{isOpen && <RAGDrawer />}` destrói o estado do chat ao fechar — viola M8-41 diretamente (QA Staff, High severity). Elevar `chatHistory` para `demoSlice` violaria SRP do slice.
+
+**Status:** Accepted ✓ (ADR-018)
+
+---
+
+### AD-019: M8 — Zustand slices + domain hooks substituem React Contexts (2026-04-26)
+
+**Decision:** Três Zustand slices compostos em `useAppStore`: `clientSlice` (persist `smr-client`), `recommendationSlice` (volátil, `loading` no slice), `demoSlice` (volátil). Cross-slice dependency via `subscribe` no store init (não `useEffect` em componente). Domain hooks `useSelectedClient`, `useRecommendations`, `useCatalogOrdering`, `useRecommendationFetcher` abstraem o shape do store. Cache de recomendações limitado a 1 entrada (`cachedForClientId`). `tailwindcss-animate` instalado para keyframes do Sheet.
+
+**Reason:** React Contexts não suportam `persist`, cross-slice dependency sem `useEffect` manual, nem crescimento de slices sem novos Providers. Zustand elimina Provider wrappers e entrega todas as features com 1/5 do boilerplate do Redux.
+
+**Impact:** `layout.tsx` remove `<ClientProvider>` e `<RecommendationProvider>`. `useClient()` e `useRecommendations()` existentes continuam funcionando via domain hooks compatíveis. Risco de hydration flash com `persist` — mitigado via `skipHydration` + `rehydrate()` no `useEffect` do `Header`.
+
+**Status:** Accepted ✓ (ADR-019)
+
+---
+
+### AD-013: M9 — Demo Buy usa profile vector incremental, não retreinamento da rede neural (2026-04-26)
+
+**Decision:** A feature "Demo Buy + Live Reorder" (M9) opera exclusivamente no espaço do **clientProfileVector** (mean-pooling dos embeddings), não no espaço dos pesos da rede neural. Ao clicar "Demo Comprar", o ai-service: (1) cria edge `BOUGHT {is_demo: true}` no Neo4j via `syncBoughtRelationships()`; (2) relê os embeddings via `getClientPurchasedEmbeddings()`; (3) recalcula `meanPooling()` em memória; (4) chama `recommend()` existente com o novo profileVector. O `ModelTrainer` não é alterado. Latência estimada: 180–350ms.
+
+**Reason:** Retreinamento completo dura ~2min — inviável para feedback ao vivo. O profile vector incremental entrega 95% do valor visual com 5% do risco. Online learning via `model.trainOnBatch()` foi avaliado pelo Comitê (Sessão 002, Caminho G) e rejeitado por risco de catastrophic forgetting + thread safety no Fastify. O Deep Retrain completo (Sprint B) foi separado como feature independente (M9-B) que usa `POST /model/train` existente com tela de progresso ao vivo.
+
+**Trade-off:** A demo não modifica os pesos da rede — o efeito é visível apenas para o cliente selecionado na sessão. Para aprendizado que beneficia todos os clientes com perfil similar, o retrain completo (Sprint B) é necessário.
+
+**Impact:** Nova rota `POST /api/v1/demo-buy` e `DELETE /api/v1/demo-buy` no ai-service. Novo método `clearDemoBought(clientId)` no Neo4jRepository. Flag `is_demo: true` nas edges BOUGHT demo para isolamento e limpeza.
+
+**Status:** Accepted ✓ (ToT + Self-Consistency 87% — Comitê Ampliado Sessão 002)
+
+---
+
+### AD-012: M8/M9 — Arquitetura frontend unificada com Zustand + componente de reordenação reutilizável (2026-04-26)
+
+**Decision:** As features M8 (UX Journey Refactor) e M9 (Demo Buy) compartilham duas fundações de código que devem ser implementadas em Sprint 0 antes de qualquer feature: (1) **Zustand store** com slices `selectedClient` (persistente na navbar) e `demoState` (lista de compras demo por clientId, limpa automaticamente ao trocar de cliente); (2) **componente `<ReorderableGrid>`** reutilizável que recebe scores como parâmetro e executa a animação CSS de reordenação. O M8 usa o componente via botão "✨ Ordenar por IA" na toolbar; o M9 usa o mesmo componente via botão "Demo Comprar" no card.
+
+**Reason:** Sem estado global do cliente, nenhuma feature de recomendação funciona em contexto de página única. Sem componente reutilizável, a animação seria implementada duas vezes com risco de divergência visual. A análise de conflitos entre os documentos do Comitê (Sessão 001 vs Sessão 002) identificou estas três tensões: (T1) dois gatilhos para a mesma animação — resolvida com componente único; (T2) `demoState` deve ser limpo ao trocar `selectedClient` — dependência explícita entre slices; (T3) aba "Análise" absorve tanto a comparação "Sem IA vs Com IA" (M8) quanto o botão de Deep Retrain (M9-B) — layout interno a ser definido no design.md do M9.
+
+**Trade-off:** Sprint 0 adiciona ~3h de setup antes de qualquer entrega visível. Justificado pela eliminação de retrabalho nos sprints seguintes.
+
+**Impact:** `frontend/src/store/` com `clientSlice.ts` + `demoSlice.ts`. `frontend/src/components/ReorderableGrid/` como componente independente. Query params `?client=&ai=on` na URL para deep link e testes automatizados (sugestão do Arquiteto Rafael Alves, Sessão 001).
+
+**Status:** Accepted ✓ (Análise de conflitos entre documentos — Sessão 002)
+
+---
 
 ### AD-011: M7 Production Readiness — backlog formalizado como próximo milestone (2026-04-25)
 
@@ -187,12 +257,20 @@ _None at this time._
 - [x] Design complex M7 — design.md + ADR-012 (TrainingJobRegistry) + ADR-013 (VersionedModelStore) + ADR-014 (admin key scoped plugin) + ADR-015 (AiSyncClient fire-and-forget) criados; 3 nós ToT, committee review com 3 personas, 8 findings incorporados
 - [x] Break M7 into tasks — tasks.md criado (21 tarefas, 8 fases, 37/37 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
 - [x] Execute M7 — 21 tasks complete; 42 AI service tests (Vitest: 19 existing + 23 new); 16 Java tests; ESLint ✓; Checkstyle 0 violations; Playwright E2E suite (search, recommend, rag); VersionedModelStore, TrainingJobRegistry, CronScheduler, adminRoutes, sync-product, AiSyncClient all implemented; M7 ✅ COMPLETE
+- [x] Specify M8 — UX Journey Refactor (página única, client selector na navbar, "Ordenar por IA", RAG side drawer) — spec.md criado (55 reqs, M8-01..M8-55)
+- [x] Design complex UI M8 — design.md (Approved) + ADR-017 (FLIP sem flushSync) + ADR-018 (RAGDrawer always-mounted) + ADR-019 (Zustand slices + domain hooks); 5 personas; 3 High findings incorporados
+- [x] Break M8 into tasks — tasks.md criado (14 tarefas, 6 fases, 55/55 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
+- [x] Execute M8 — 14 tasks complete; Zustand store (3 slices) + 4 domain hooks + ReorderableGrid (FLIP ADR-017) + ClientSelectorDropdown + RAGDrawer (always-mounted ADR-018) + ScoreBadge + CatalogPanel toolbar + Header wiring + layout.tsx Providers removed + ClientPanel read-only + RecommendationPanel banner + sonner toasts + E2E m8-ux-journey.spec.ts; `npm run build` ✓; ESLint ✓ 0 warnings; M8 ✅ COMPLETE
+- [x] M8 nav quick fix — abas Cliente/Recomendações removidas; nova aba Análise (ClientProfileCard + comparação Sem IA vs Com IA); ShuffledColumn migrada para useSelectedClient; antecipa estrutura prevista no M9-B; `npm run build` ✓; ESLint ✓
+- [x] Specify M9-A — Demo Buy + Live Reorder (profile vector incremental, nova rota demo-buy) — spec.md criado (33 reqs, M9A-01..M9A-33); 3 rotas mapeadas; componentes existentes reutilizáveis identificados; latência estimada 160–230ms
+- [ ] Design M9-A — definir arquitetura das novas rotas no AI Service + mudanças no demoSlice + integração com ReorderableGrid
+- [ ] Specify M9-B — Deep Retrain Showcase (POST /model/train com progresso ao vivo, aba "Análise" com comparação antes/depois) — aguarda M9-A
 
 ---
 
 ## Deferred Ideas
 
-- **Remoção de `spring-boot-starter-webflux` do api-service:** `AiSyncClient` foi reescrito com `java.net.http.HttpClient` (ADR-015 revisado). Resta `AiServiceClient.recommend()` como único consumidor do `WebClient`. Reescrevê-lo com `java.net.http.HttpClient` eliminaria o `spring-boot-starter-webflux` do classpath, removendo o Netty como dependência transitiva e reduzindo o modelo mental do projeto para servlet puro + virtual threads. Deferred por baixo risco atual e escopo do M7.
+- **Remoção de `spring-boot-starter-webflux` do api-service:** `AiSyncClient` foi reescrito com `java.net.http.HttpClient` (ADR-015 revisado). Resta `AiServiceClient.recommend()` como único consumidor do `WebClient`. Reescrevê-lo com `java.net.http.HttpClient` eliminaria o `spring-boot-starter-webflux` do classpath, removendo o Netty como dependência transitiva e reduzindo o modelo mental do projeto para servlet puro + virtual threads. **Endereçar em M9 como primeira task técnica (pre-feature cleanup).**
 
 - **`StructuredTaskScope` para paralelismo awaitable intra-request:** Avaliado pelo Comitê como alternativa ao `Thread.ofVirtual().start()` em `AiSyncClient` e rejeitado — `StructuredTaskScope` requer `scope.join()` antes de fechar o scope, bloqueando o thread pai. É incompatível com fire-and-forget por design (JEP 453/480). O caso de uso correto no projeto seria: montar DTOs compondo múltiplas fontes de dados em paralelo dentro do mesmo request — ex: `productRepo.findById()` + `reviewRepo.findByProductId()` em paralelo com `ShutdownOnFailure`. Endereçar quando houver call site com N resultados awaitable paralelos. Nota: `StructuredTaskScope` era Preview no Java 21; Feature somente no Java 23 — requer atenção ao `java.version` do `pom.xml`.
 
@@ -217,6 +295,14 @@ _None at this time._
 - **Weighted mean pooling por frequência de compra (Comitê Achado #3):** O perfil do cliente é calculado como média aritmética dos embeddings. Um produto comprado 50x tem o mesmo peso que um comprado 1x. Solução: ponderar cada embedding pelo `quantity` do pedido — `clientProfile = Σ(embedding_i × quantity_i) / Σ(quantity_i)`. Requer buscar `quantity` das edges `:BOUGHT` no Neo4j. Severidade: Baixa. Melhoria de qualidade do modelo pós-MVP.
 
 - **Autenticação no endpoint POST /model/train (Comitê Achado #10):** Qualquer cliente que conhece a URL pode retreinar o modelo ou causar carga excessiva. Solução: header `X-Admin-Key` validado contra env var `ADMIN_API_KEY`, ou JWT com role `admin`. Na rede interna Docker do MVP, risco irrelevante. Severidade: Baixa. Endereçar antes de qualquer exposição pública.
+
+- **Online learning via `model.trainOnBatch()` para compras individuais (M9 — Sessão 002, Caminho G — Rejeitado):** Avaliado pelo Comitê Ampliado como alternativa para "aprendizado em tempo real" sem retreinamento completo. Rejeitado por dois riscos: (1) *catastrophic forgetting* — `trainOnBatch()` com uma única amostra sobrescreve o aprendizado generalizado da rede, degradando recomendações para outros clientes; (2) *thread safety* — TensorFlow.js usa um backend global; chamadas concorrentes de Fastify sem lock podem corromper o estado interno dos tensores. O padrão seguro para produção seria uma fila de treinamento serial (um job por vez), que converge para o padrão 202 + async já deferido (Comitê Achado #6). Deferred indefinidamente — risco supera o benefício para o escopo de demonstração.
+
+- **Animação de reordenação com física (M8 — Sessão 001, Sugestão UI Designer):** O UI Designer Léa Santana sugeriu Framer Motion `layout` prop para a animação de reordenação dos cards após "Ordenar por IA". O sprint do M8 pode usar CSS transitions simples (`transform: translate`, `transition: transform 500ms ease`) para entregar o efeito visual sem nova dependência; Framer Motion pode ser adicionado se a animação CSS revelar limitações em cards que mudam de coluna no grid. Deferred para pós-M8.
+
+- **Query params `?client=&ai=on` para deep link e testes (M8/M9 — Sessão 001, Sugestão Arquiteto Rafael):** Serializar o estado da UI na URL permite compartilhar links e simplifica asserções nos testes Playwright (`await page.goto('/catalog?client=1&ai=on')`). Verificar qual roteador o projeto usa (App Router vs Pages Router) antes de implementar `useSearchParams` ou `router.push({ shallow: true })`. Deferred para o design.md do M8.
+
+- **Aba "Análise" — layout interno a ser definido no design.md do M9-B (Tensão T3 — Sessão 002):** O documento de UX (Sessão 001) propõe a aba "Análise" para comparar "Sem IA vs Com IA". O Feature Committee (Sessão 002) reusa a mesma aba para o botão "Deep Retrain + progresso ao vivo". Resolução aprovada: a aba contém ambos os painéis (comparação à esquerda, controles de retrain à direita em tela grande; tabs empilhadas em mobile). Layout exato a ser definido no `design.md` do M9-B, referenciando os dois documentos de comitê como contexto.
 
 - **Cron diário de retreinamento automático (GAP-01):** O modelo neural fica desatualizado silenciosamente após novos pedidos serem criados. O `staleDays` e `staleWarning` foram implementados no M6 como observabilidade passiva — o sistema avisa que está velho, mas nenhum mecanismo reage automaticamente. Retreinar a cada compra é incorreto (custo computacional, catastrophic forgetting, race conditions); o padrão correto para sistemas B2B é retreinamento em batch diário. Solução: cron interno no `ai-service` (ex: `node-cron`) disparando `modelTrainer.train()` em background todo dia às 02h. Pré-condição: implementar o padrão 202 + async (Comitê Achado #6) para que o cron não bloqueie o event loop. Os dois itens se encaixam: o cron precisa do treino assíncrono; o treino assíncrono precisa de um disparador que não seja manual. Severidade: Média-Alta para produção. Pré-requisito: Comitê Achado #6 (202 + polling).
 

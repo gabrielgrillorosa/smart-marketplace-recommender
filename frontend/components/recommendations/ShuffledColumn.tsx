@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import type { RecommendationResult } from '@/lib/types';
-import { useClient } from '@/lib/contexts/ClientContext';
+import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
 import { seededShuffle } from '@/lib/utils/shuffle';
 import { RecommendationCard } from './RecommendationCard';
 
@@ -11,7 +11,7 @@ interface ShuffledColumnProps {
 }
 
 export function ShuffledColumn({ results }: ShuffledColumnProps) {
-  const { selectedClient } = useClient();
+  const { selectedClient } = useSelectedClient();
   const shuffled = useMemo(
     () => seededShuffle(results, selectedClient?.id ?? 'default'),
     [results, selectedClient?.id]

@@ -1,15 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Product, ProductDetail, SearchResult } from '@/lib/types';
 import { apiFetch } from '@/lib/fetch-wrapper';
-import { ProductGrid } from './ProductGrid';
 import { ProductFilters, type FilterState } from './ProductFilters';
 import { SemanticSearchBar } from './SemanticSearchBar';
 import { ProductDetailModal } from './ProductDetailModal';
+import { ProductCard } from './ProductCard';
 import { Skeleton } from '@/components/ui/skeleton';
-
-const API_SERVICE_URL = '';
+import { ReorderableGrid } from '@/components/ReorderableGrid/ReorderableGrid';
+import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
+import { useCatalogOrdering } from '@/lib/hooks/useCatalogOrdering';
+import { useRecommendationFetcher } from '@/lib/hooks/useRecommendationFetcher';
+import { useRecommendations } from '@/lib/hooks/useRecommendations';
 
 interface PageResponse {
   content?: Product[];
@@ -43,19 +46,24 @@ export function CatalogPanel() {
   const [filters, setFilters] = useState<FilterState>({ category: '', country: '', supplier: '' });
   const [searchResults, setSearchResults] = useState<SearchResult[] | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<ProductDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const { selectedClient } = useSelectedClient();
+  const { ordered, reset } = useCatalogOrdering();
+  const { fetch: fetchRecommendations } = useRecommendationFetcher();
+  const { recommendations, loading: recLoading } = useRecommendations();
+
   useEffect(() => {
-      apiFetch<PageResponse | Product[]>(`/backend/api/v1/products?size=100`)
+    apiFetch<PageResponse | Product[]>('/backend/api/v1/products?size=100')
       .then((data) => {
         let raw: RawProduct[] | Product[];
         if (Array.isArray(data)) {
           raw = data;
-        } else if (data.items) {
-          raw = data.items;
+        } else if ((data as PageResponse).items) {
+          raw = (data as PageResponse).items!;
         } else {
-          raw = data.content ?? [];
+          raw = (data as PageResponse).content ?? [];
         }
         const products = (raw as RawProduct[]).map((item) =>
           'supplier' in item ? (item as unknown as Product) : toProduct(item)
@@ -63,7 +71,7 @@ export function CatalogPanel() {
         setAllProducts(products);
       })
       .catch(() => setError('Não foi possível carregar os produtos. Verifique se o API Service está disponível.'))
-      .finally(() => setLoading(false));
+      .finally(() => setLoadingProducts(false));
   }, []);
 
   function applyFilters(products: Product[]): Product[] {
@@ -75,9 +83,18 @@ export function CatalogPanel() {
     });
   }
 
-  const displayedProducts: Product[] = searchResults !== null
-    ? searchResults.map((r) => ({ ...r.product, similarityScore: r.score }))
-    : applyFilters(allProducts);
+  const displayedProducts: Product[] =
+    searchResults !== null
+      ? searchResults.map((r) => ({ ...r.product, similarityScore: r.score }))
+      : applyFilters(allProducts);
+
+  // Build a score map from recommendations for quick lookup
+  const scoreMap = new Map(
+    recommendations.map((r) => [
+      r.product.id,
+      { finalScore: r.finalScore, neuralScore: r.neuralScore ?? 0, semanticScore: r.semanticScore ?? 0 },
+    ])
+  );
 
   async function handleProductClick(product: Product) {
     try {
@@ -88,7 +105,27 @@ export function CatalogPanel() {
     }
   }
 
-  if (loading) {
+  async function handleSortByAI() {
+    if (!selectedClient) return;
+    await fetchRecommendations(selectedClient.id);
+  }
+
+  const renderItem = useCallback(
+    (product: Product) => {
+      const scores = ordered ? scoreMap.get(product.id) : undefined;
+      return (
+        <ProductCard
+          product={product}
+          onClick={() => handleProductClick(product)}
+          scoreBadge={scores}
+        />
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ordered, recommendations]
+  );
+
+  if (loadingProducts) {
     return (
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {Array.from({ length: 10 }).map((_, i) => (
@@ -105,17 +142,61 @@ export function CatalogPanel() {
       )}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
         <ProductFilters products={allProducts} filters={filters} onChange={setFilters} />
-        <SemanticSearchBar
-          onResults={setSearchResults}
-          onClear={() => setSearchResults(null)}
-        />
+        <SemanticSearchBar onResults={setSearchResults} onClear={() => setSearchResults(null)} />
       </div>
+
+      {/* AI Sort toolbar */}
+      <div className="flex items-center gap-2">
+        {!ordered ? (
+          <span title={!selectedClient ? 'Selecione um cliente na navbar' : undefined}>
+            <button
+              type="button"
+              aria-disabled={!selectedClient}
+              aria-pressed={false}
+              onClick={selectedClient ? handleSortByAI : undefined}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                selectedClient
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'cursor-not-allowed bg-gray-100 text-gray-400'
+              }`}
+            >
+              {recLoading ? (
+                <>
+                  <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                  </svg>
+                  Carregando...
+                </>
+              ) : (
+                <>✨ Ordenar por IA</>
+              )}
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-pressed={true}
+            onClick={reset}
+            className="inline-flex items-center gap-1.5 rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-300 transition-colors"
+          >
+            ✕ Ordenação original
+          </button>
+        )}
+      </div>
+
       {searchResults !== null && (
-        <p className="text-xs text-blue-600">
-          {searchResults.length} resultado(s) para busca semântica
-        </p>
+        <p className="text-xs text-blue-600">{searchResults.length} resultado(s) para busca semântica</p>
       )}
-      <ProductGrid products={displayedProducts} onProductClick={handleProductClick} />
+
+      <ReorderableGrid
+        items={displayedProducts}
+        getKey={(p) => p.id}
+        getScore={(p) => scoreMap.get(p.id)?.finalScore}
+        renderItem={renderItem}
+        ordered={ordered}
+      />
+
       <ProductDetailModal product={selectedProduct} onClose={() => setSelectedProduct(null)} />
     </div>
   );

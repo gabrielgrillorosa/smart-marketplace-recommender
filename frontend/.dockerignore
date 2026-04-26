@@ -1,0 +1,7 @@
+node_modules
+.next
+.env*.local
+e2e
+*.test.ts
+*.spec.ts
+coverage

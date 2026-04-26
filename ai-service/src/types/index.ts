@@ -16,6 +16,7 @@ export interface SearchResult {
   price: number
   sku: string
   score: number
+  countries: string[]
 }
 
 export interface SearchFilters {

@@ -2,19 +2,25 @@ import { test, expect } from '@playwright/test'
 
 test('RAG chat returns non-empty response', async ({ page }) => {
   await page.goto('/')
+  await page.waitForLoadState('networkidle')
+
+  // Navigate to Chat RAG tab
+  await page.locator('nav button:has-text("Chat RAG")').click()
+  await page.waitForTimeout(500)
 
   // Find the RAG chat textarea
-  const chatInput = page.locator('textarea[placeholder*="catálogo"], textarea[placeholder*="pergunta"]')
+  const chatInput = page.locator('textarea').first()
   await chatInput.waitFor({ timeout: 10000 })
-  await chatInput.fill('Quais produtos sem açúcar estão disponíveis no México?')
-
-  // Submit (Enter or send button)
+  await chatInput.fill('Quais produtos estão disponíveis?')
   await chatInput.press('Enter')
 
-  // Wait for a non-empty response message to appear
-  await page.waitForTimeout(5000)
-  const responseText = page.locator('[class*="ChatMessage"], [class*="message"], [class*="assistant"]').first()
-  await expect(responseText).toBeVisible({ timeout: 20000 })
-  const text = await responseText.textContent()
+  // Wait for loading spinner to disappear
+  await page.locator('text=⏳ Consultando...').waitFor({ state: 'detached', timeout: 60000 })
+  await page.waitForTimeout(300)
+
+  // Assert assistant message is visible (rounded-bl-sm is exclusive to assistant bubbles)
+  const responseEl = page.locator('.rounded-bl-sm').first()
+  await expect(responseEl).toBeVisible({ timeout: 5000 })
+  const text = await responseEl.textContent()
   expect(text?.trim().length).toBeGreaterThan(0)
 })

@@ -1,9 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M7 — Production Readiness ✅ COMPLETE
-**Status:** COMPLETE
+**Current Milestone:** M9-A — Demo Buy + Live Reorder 🔄 PLANNED
+**Status:** PLANNED
 
-**Previous:** M6 — Quality & Publication ✅ COMPLETE — 55/55 reqs, 19 AI tests (Vitest), 15 Java tests (JUnit 5), Testcontainers IT, multi-stage Dockerfiles, ai-model-data volume, README bilíngue, ESLint ✓, Checkstyle 0 violations
+**Previous:** M8 — UX Journey Refactor ✅ COMPLETE — 55/55 reqs; Zustand store (3 slices + 4 domain hooks) + ReorderableGrid (FLIP ADR-017) + ClientSelectorDropdown + RAGDrawer (always-mounted ADR-018) + ScoreBadge + CatalogPanel toolbar + sonner toasts + E2E suite; `npm run build` ✓; ESLint ✓ 0 warnings
 
 ---
 
@@ -133,6 +133,7 @@
 - Final score: `0.6 * neuralScore + 0.4 * semanticScore` (configurable weights via env)
 - Returns top-N products sorted by final score, with score breakdown per product
 - Candidate pool: products available in client's country and not yet purchased
+- **ADR-016**: Parecer do Comitê Técnico confirma que híbrido é superior ao neural puro no regime de dados esparsos — calibração empírica dos pesos registrada como Feature Futura (ver `m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md`)
 
 ---
 
@@ -207,7 +208,7 @@
 
 ---
 
-## M7 — Production Readiness
+## M7 — Production Readiness ✅ COMPLETE
 
 **Goal:** Fechar os gaps operacionais críticos identificados pelo Comitê de Arquitetura e pela análise pós-M6. Modelo neural retreinado automaticamente toda madrugada. Produtos novos sincronizados com Neo4j e embeddings gerados sem intervenção manual. Treino assíncrono que não bloqueia o cliente HTTP. Model versioning com rollback. Segurança mínima para deploy público.
 
@@ -259,6 +260,102 @@
 
 ---
 
+## M8 — UX Journey Refactor ✅ COMPLETE
+
+**Goal:** Reorganizar a experiência de demo em uma jornada de página única fluida. Seleção de cliente persistente na navbar, catálogo com reordenação por IA animada, chat RAG acessível como drawer lateral — sem precisar trocar de aba para completar o fluxo principal.
+
+**Target:** Avaliador seleciona cliente uma vez na navbar e explora catálogo, reordenação por IA e chat RAG sem sair da tela do catálogo.
+
+**Status:** ✅ COMPLETE — 55/55 reqs (M8-01..M8-55); Zustand store (clientSlice + demoSlice + recommendationSlice) + 4 domain hooks; ReorderableGrid (FLIP ADR-017) + ClientSelectorDropdown + RAGDrawer (always-mounted ADR-018) + ScoreBadge + CatalogPanel toolbar + Header wiring + layout migration + ClientPanel read-only + RecommendationPanel banner + sonner toasts + E2E suite; `npm run build` ✓; ESLint ✓ 0 warnings
+
+**Post-M8 nav fix (AD-020):** Abas "Cliente" e "Recomendações" removidas; nova aba "📊 Análise" criada fundindo ClientProfileCard + comparação Sem IA vs Com IA — antecipa estrutura do M9-B.
+
+### Features
+
+**Sprint 0 — Zustand Store** — PLANNED
+
+- Substituir React Contexts por Zustand: `clientSlice` (persistente) + `demoSlice` (volátil)
+- `selectedClient` persiste entre abas e reloads; `demoState` limpo automaticamente ao trocar de cliente
+- Hook único `useAppStore` — sem Provider wrappers no layout
+
+**Sprint 0 — Componente `<ReorderableGrid>`** — PLANNED
+
+- Componente genérico com props `items`, `getScore`, `ordered`, `renderItem`
+- Animação CSS pura (`transform + transition 500ms`) ao alternar `ordered true/false`
+- Reutilizado por M8 (catálogo) e M9 (demo buy) sem modificação
+
+**Client Selector na Navbar** — PLANNED
+
+- Dropdown de clientes embutido no Header, visível em qualquer aba
+- Badge de país (emoji de bandeira) ao lado do nome do cliente selecionado
+- Persiste entre navegações; troca de cliente limpa demoState automaticamente
+
+**Botão "✨ Ordenar por IA" no Catálogo** — PLANNED
+
+- Toolbar do catálogo ganha botão "✨ Ordenar por IA" (habilitado apenas com cliente selecionado)
+- Dispara `POST /recommend`, anima reordenação dos cards por score híbrido descrescente
+- Toggle para "✕ Ordenação original" com animação de reversão
+- Respeita filtros ativos; cache de recomendações evita chamadas desnecessárias
+
+**Score Badge nos Cards do Catálogo** — PLANNED
+
+- Cards exibem badge "XX% match" quando em modo ordenado por IA
+- Tooltip com breakdown: `Neural: X.XX`, `Semântico: X.XX`
+- Desaparece ao reverter para ordem original
+
+**RAG Side Drawer** — PLANNED
+
+- Botão "💬 Chat RAG" no Header abre drawer lateral (420px desktop / 100% mobile)
+- Histórico de chat preservado ao fechar/reabrir
+- Contexto do cliente selecionado visível no cabeçalho do drawer
+- Fechar com clique fora ou Escape
+
+---
+
+## M9-A — Demo Buy + Live Reorder — PLANNED
+
+**Goal:** Demonstrar aprendizado incremental em tempo real: clicar "Demo Comprar" em um produto atualiza o perfil vector do cliente e reordena as recomendações ao vivo, sem retreinar a rede neural.
+
+**Target:** Avaliador clica "Demo Comprar", espera ~300ms, e vê os cards de recomendação se reordenarem refletindo a nova compra — feedback visual imediato do motor de recomendação.
+
+**Status:** PLANNED — aguarda M8 ✅
+
+### Features
+
+**Rota demo-buy no AI Service** — PLANNED
+
+- `POST /api/v1/demo-buy` — cria edge `BOUGHT {is_demo: true}` no Neo4j, recalcula `clientProfileVector` via mean-pooling incremental, retorna novas recomendações (latência estimada: 180–350ms)
+- `DELETE /api/v1/demo-buy` — remove todas as edges `is_demo: true` para o `clientId`, restaurando o perfil original
+- Sem alteração no `ModelTrainer` — opera exclusivamente no espaço do `clientProfileVector` (AD-013)
+
+**Botão "Demo Comprar" nos cards** — PLANNED
+
+- Card de produto no catálogo exibe botão "🛒 Demo Comprar" quando cliente está selecionado
+- Ao clicar: `demoSlice` registra compra, chama `POST /demo-buy`, `<ReorderableGrid>` anima nova ordem
+- Badge "demo" no card após compra simulada; botão muda para "↩ Desfazer"
+- "↩ Desfazer" chama `DELETE /demo-buy`, restaura ordem anterior com animação
+
+---
+
+## M9-B — Deep Retrain Showcase — PLANNED
+
+**Goal:** Demonstrar retreinamento completo da rede neural com barra de progresso ao vivo e comparação "antes/depois" no painel de Análise.
+
+**Target:** Avaliador clica "Retreinar Modelo", acompanha progresso epoch por epoch, e vê as métricas de qualidade antes e depois do treino na aba "Análise".
+
+**Status:** PLANNED — aguarda M9-A ✅
+
+### Features
+
+**Aba "Análise" com Deep Retrain** — PLANNED
+
+- Botão "Retreinar Modelo" chama `POST /model/train` existente (202 + polling — M7)
+- Barra de progresso ao vivo via polling `GET /model/train/status/{jobId}`
+- Comparação "antes/depois": métricas `precisionAt5`, `loss`, `epoch` do modelo anterior vs novo
+- Layout: comparação "Sem IA vs Com IA" à esquerda; controles de retrain à direita (tela grande); tabs empilhadas em mobile (Tensão T3 — AD-012)
+
+---
+
 ## Future Considerations
 
 - Graph-augmented RAG: multi-hop Cypher como contexto adicional no pipeline RAG
@@ -268,5 +365,6 @@
 - CI/CD pipeline (GitHub Actions) com gates de lint, testes e build
 - Multi-model LLM comparison no RAG via OpenRouter (Mistral vs Llama vs Gemma)
 - `p-limit(10)` no `fetchAllPages` para controlar concorrência em datasets grandes
-- Weighted mean pooling por frequência de compra no perfil do cliente
-- Multi-model LLM comparison no RAG via OpenRouter (Mistral vs Llama vs Gemma)
+- **[ADR-016] Calibração empírica dos pesos do score híbrido** — grid search sobre `NEURAL_WEIGHT`/`SEMANTIC_WEIGHT` usando `precisionAt5` como métrica de decisão (requer ≥ 100 clientes com ≥ 10 pedidos cada); inclui comparação: neural puro × semântico puro × híbrido calibrado. Infra de `computePrecisionAtK` já existe em `ModelTrainer.ts`. Ver `m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md`.
+- **[ADR-016] Weighted mean pooling** — substituir `meanPooling` por média ponderada por frequência de compra no perfil do cliente (`weightedMeanPooling`), aumentando a influência de produtos com histórico de recompra.
+- **[ADR-016] Endpoint `/api/v1/model/benchmark`** — API que retorna métricas comparativas (precisionAt5, recallAt10) para múltiplas configurações de peso, expondo os resultados do grid search no painel admin.

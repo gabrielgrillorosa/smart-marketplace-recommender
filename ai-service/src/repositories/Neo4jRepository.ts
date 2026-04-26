@@ -93,8 +93,10 @@ export class Neo4jRepository {
         CALL db.index.vector.queryNodes('product_embeddings', $limit, $embedding)
         YIELD node AS p, score
         WHERE ${whereClauses.join(' AND ')}
+        OPTIONAL MATCH (p)-[:AVAILABLE_IN]->(c:Country)
         RETURN p.id AS id, p.name AS name, p.description AS description,
-               p.category AS category, p.price AS price, p.sku AS sku, score
+               p.category AS category, p.price AS price, p.sku AS sku, score,
+               collect(c.code) AS countries
         ORDER BY score DESC
       `
 
@@ -109,6 +111,7 @@ export class Neo4jRepository {
           : Number(record.get('price')),
         sku: record.get('sku'),
         score: record.get('score'),
+        countries: (record.get('countries') as string[]) ?? [],
       }))
     } catch (err) {
       if (err instanceof Neo4jUnavailableError) throw err

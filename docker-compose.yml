@@ -101,6 +101,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_SERVICE_URL: http://api-service:8080
+        NEXT_PUBLIC_AI_SERVICE_URL: http://ai-service:3001
     image: smart-marketplace/frontend:latest
     container_name: frontend
     env_file:

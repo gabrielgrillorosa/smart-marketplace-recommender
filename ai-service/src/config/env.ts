@@ -42,6 +42,7 @@ export const ENV = Object.freeze({
   NEO4J_USER,
   NEO4J_PASSWORD,
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY as string | undefined,
+  OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
   PORT: parseInt(process.env.PORT ?? '3001', 10),
   // Model for local HuggingFace embeddings (sentence-transformers, runs inside the container)
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL ?? 'sentence-transformers/all-MiniLM-L6-v2',

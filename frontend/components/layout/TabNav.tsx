@@ -1,6 +1,6 @@
 'use client';
 
-export type TabId = 'catalog' | 'client' | 'recommendations' | 'chat';
+export type TabId = 'catalog' | 'analysis' | 'chat';
 
 interface Tab {
   id: TabId;
@@ -10,8 +10,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'catalog', label: 'Catálogo', icon: '📦' },
-  { id: 'client', label: 'Cliente', icon: '👤' },
-  { id: 'recommendations', label: 'Recomendações', icon: '⭐' },
+  { id: 'analysis', label: 'Análise', icon: '📊' },
   { id: 'chat', label: 'Chat RAG', icon: '💬' },
 ];
 

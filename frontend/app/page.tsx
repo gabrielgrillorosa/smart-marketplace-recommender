@@ -4,8 +4,7 @@ import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { TabNav, type TabId } from '@/components/layout/TabNav';
 import { CatalogPanel } from '@/components/catalog/CatalogPanel';
-import { ClientPanel } from '@/components/client/ClientPanel';
-import { RecommendationPanel } from '@/components/recommendations/RecommendationPanel';
+import { AnalysisPanel } from '@/components/recommendations/AnalysisPanel';
 import { RAGChatPanel } from '@/components/chat/RAGChatPanel';
 
 export default function Home() {
@@ -17,8 +16,7 @@ export default function Home() {
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6">
         {activeTab === 'catalog' && <CatalogPanel />}
-        {activeTab === 'client' && <ClientPanel />}
-        {activeTab === 'recommendations' && <RecommendationPanel />}
+        {activeTab === 'analysis' && <AnalysisPanel />}
         {activeTab === 'chat' && <RAGChatPanel />}
       </main>
     </div>
