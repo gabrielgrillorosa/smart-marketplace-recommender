@@ -63,3 +63,31 @@ export interface Message {
 }
 
 export type ServiceStatus = 'up' | 'down' | 'unknown';
+
+export type JobStatus = 'idle' | 'queued' | 'running' | 'done' | 'failed' | 'network-error';
+
+export interface ModelMetrics {
+  precisionAt5: number;
+  loss: number;
+  epoch: number;
+  trainedAt: string;
+}
+
+export interface TrainJobResponse {
+  jobId: string;
+  status: 'queued';
+}
+
+export interface TrainStatusResponse {
+  status: 'queued' | 'running' | 'done' | 'failed';
+  epoch: number;
+  totalEpochs: number;
+  loss: number | null;
+  eta: number | null;
+}
+
+export interface ModelStatusResponse {
+  currentJobId: string | null;
+  currentModel: ModelMetrics | null;
+  versionHistory: ModelMetrics[];
+}
