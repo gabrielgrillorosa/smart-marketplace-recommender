@@ -3,6 +3,7 @@ import { ModelStore } from './ModelStore.js'
 import { Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { EmbeddingService } from './EmbeddingService.js'
 import { TrainingResult } from '../types/index.js'
+import { buildTrainingDataset, type ClientDTO, type ProductDTO } from './training-utils.js'
 
 export class ConflictError extends Error {
   readonly statusCode = 409
@@ -18,22 +19,6 @@ export class ApiServiceUnavailableError extends Error {
     super('API Service unavailable. Cannot fetch training data.')
     this.name = 'ApiServiceUnavailableError'
   }
-}
-
-interface ClientDTO {
-  id: string
-  name: string
-  segment: string
-  countryCode: string
-}
-
-interface ProductDTO {
-  id: string
-  name: string
-  description?: string
-  category: string
-  price: number
-  sku: string
 }
 
 interface OrderItemDTO {
@@ -123,13 +108,28 @@ function meanPooling(embeddings: number[][]): number[] {
 
 function buildModel(): tf.Sequential {
   const model = tf.sequential()
-  model.add(tf.layers.dense({ units: 256, activation: 'relu', inputShape: [768] }))
-  model.add(tf.layers.dropout({ rate: 0.3 }))
-  model.add(tf.layers.dense({ units: 128, activation: 'relu' }))
+  model.add(
+    tf.layers.dense({
+      units: 64,
+      activation: 'relu',
+      inputShape: [768],
+      kernelRegularizer: tf.regularizers.l2({ l2: 1e-4 }),
+    })
+  )
   model.add(tf.layers.dropout({ rate: 0.2 }))
-  model.add(tf.layers.dense({ units: 64, activation: 'relu' }))
   model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }))
   return model
+}
+
+function seedFromClientIds(clients: ClientDTO[]): number {
+  let seed = 0
+  for (const client of clients) {
+    const prefix = client.id.slice(0, 8)
+    for (let i = 0; i < prefix.length; i++) {
+      seed += prefix.charCodeAt(i)
+    }
+  }
+  return seed
 }
 
 export class ModelTrainer {
@@ -285,36 +285,29 @@ export class ModelTrainer {
         clientOrderMap.get(clientId)!.add(productId)
       }
 
-      const inputVectors: number[][] = []
-      const labels: number[] = []
-
-      for (const client of clients) {
-        const purchasedIds = clientOrderMap.get(client.id) ?? new Set<string>()
-        const purchasedEmbeddings: number[][] = []
-
-        for (const pid of purchasedIds) {
-          const emb = productEmbeddingMap.get(pid)
-          if (!emb) {
-            console.warn(`[ModelTrainer] Product ${pid} skipped: no embedding`)
-            continue
-          }
-          purchasedEmbeddings.push(emb)
+      const { inputVectors, labels } = buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        productEmbeddingMap,
+        products,
+        {
+          negativeSamplingRatio: 4,
+          seed: seedFromClientIds(clients),
+          useClassWeight: true,
         }
-        if (purchasedEmbeddings.length === 0) continue
+      )
 
-        const clientProfileVector = meanPooling(purchasedEmbeddings)
-
-        for (const product of products) {
-          const productEmb = productEmbeddingMap.get(product.id)
-          if (!productEmb) continue
-          inputVectors.push([...productEmb, ...clientProfileVector])
-          labels.push(purchasedIds.has(product.id) ? 1 : 0)
-        }
+      if (inputVectors.length === 0) {
+        throw new Error('No training samples')
       }
 
       const trainingSamples = inputVectors.length
-      const EPOCHS = 20
-      const BATCH_SIZE = 32
+      const EPOCHS = 30
+      const BATCH_SIZE = 16
+
+      if (inputVectors[0]?.length !== 768) {
+        throw new Error(`Expected input dimension 768, got ${inputVectors[0]?.length ?? 0}`)
+      }
 
       // xs and ys are passed to async model.fit() — must be disposed manually after (ADR-008)
       const xs = tf.tensor2d(inputVectors, [trainingSamples, 768])
@@ -325,6 +318,10 @@ export class ModelTrainer {
 
       let finalLoss = 0
       let finalAccuracy = 0
+      let prevLoss = Infinity
+      let patienceCounter = 0
+      const PATIENCE = 5
+      const LOSS_MIN_DELTA = 1e-4
 
       const model = buildModel()
       model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
@@ -343,6 +340,17 @@ export class ModelTrainer {
             )
             this.modelStore.setProgress(epoch + 1, EPOCHS)
             this._progressCallback?.(epoch + 1, EPOCHS, loss)
+
+            if (prevLoss - loss > LOSS_MIN_DELTA) {
+              patienceCounter = 0
+            } else {
+              patienceCounter++
+              if (patienceCounter >= PATIENCE) {
+                console.info(`[ModelTrainer] Early stopping at epoch ${epoch + 1} (patience=${PATIENCE})`)
+                model.stopTraining = true
+              }
+            }
+            prevLoss = loss
           },
         },
       })

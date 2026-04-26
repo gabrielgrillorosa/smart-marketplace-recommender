@@ -1,11 +1,19 @@
 'use client';
 
 import { cn } from '@/lib/utils';
-import { useRetrainJob } from '@/lib/hooks/useRetrainJob';
+import { useRetrainJob, type UseRetrainJobResult } from '@/lib/hooks/useRetrainJob';
+import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
 import { TrainingProgressBar } from './TrainingProgressBar';
 import { ModelMetricsComparison } from './ModelMetricsComparison';
 
-export function RetrainPanel() {
+interface RetrainPanelProps {
+  retrainJob?: UseRetrainJobResult;
+}
+
+export function RetrainPanel({ retrainJob }: RetrainPanelProps) {
+  const ownJob = useRetrainJob();
+  const job = retrainJob ?? ownJob;
+
   const {
     status,
     epoch,
@@ -15,10 +23,13 @@ export function RetrainPanel() {
     beforeMetrics,
     afterMetrics,
     startRetrain,
-  } = useRetrainJob();
+  } = job;
+
+  const { selectedClient } = useSelectedClient();
 
   const isActive = status === 'queued' || status === 'running';
-  const isDisabled = isActive;
+  const isNoClient = !selectedClient;
+  const isDisabled = isActive || isNoClient;
 
   const buttonLabel = isActive ? 'Retreinando...' : '🔄 Retreinar Modelo';
 
@@ -32,7 +43,7 @@ export function RetrainPanel() {
           onClick={startRetrain}
           disabled={isDisabled}
           aria-disabled={isDisabled ? 'true' : undefined}
-          aria-label={isDisabled ? 'Retreinamento em andamento' : undefined}
+          aria-label={isDisabled ? (isActive ? 'Retreinamento em andamento' : 'Selecione um cliente para retreinar') : undefined}
           className={cn(
             'min-h-11 rounded-md px-4 text-sm font-medium transition-colors',
             isDisabled

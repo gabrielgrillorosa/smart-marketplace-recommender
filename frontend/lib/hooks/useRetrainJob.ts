@@ -21,15 +21,6 @@ export interface UseRetrainJobResult extends RetrainJobState {
   startRetrain: () => void;
 }
 
-function toModelMetrics(data: TrainStatusResponse): ModelMetrics {
-  return {
-    precisionAt5: 0,
-    loss: data.loss ?? 0,
-    epoch: data.epoch,
-    trainedAt: new Date().toISOString(),
-  };
-}
-
 export function useRetrainJob(): UseRetrainJobResult {
   const [state, setState] = useState<RetrainJobState>({
     status: 'idle',
@@ -103,13 +94,26 @@ export function useRetrainJob(): UseRetrainJobResult {
 
           if (data.status === 'done') {
             stopPolling();
+            // Fetch final precisionAt5 from model/status since job status doesn't include it
+            let precisionAt5 = 0;
+            try {
+              const modelStatus = await getModelStatus();
+              precisionAt5 = modelStatus.precisionAt5 ?? 0;
+            } catch {
+              // non-fatal — afterMetrics will show 0 for precisionAt5
+            }
             setState((prev) => ({
               ...prev,
               status: 'done',
-              epoch: data.epoch,
+              epoch: data.epoch ?? prev.epoch,
               totalEpochs: data.totalEpochs ?? prev.totalEpochs,
-              loss: data.loss,
-              afterMetrics: toModelMetrics(data),
+              loss: data.loss != null ? data.loss : prev.loss,
+              afterMetrics: {
+                precisionAt5,
+                loss: data.loss != null ? data.loss : 0,
+                epoch: data.epoch ?? 20,
+                trainedAt: new Date().toISOString(),
+              },
             }));
             return;
           }
@@ -127,9 +131,9 @@ export function useRetrainJob(): UseRetrainJobResult {
           setState((prev) => ({
             ...prev,
             status: data.status,
-            epoch: data.epoch,
-            totalEpochs: data.totalEpochs ?? 0,
-            loss: data.loss,
+            epoch: data.epoch ?? prev.epoch,
+            totalEpochs: data.totalEpochs ?? prev.totalEpochs,
+            loss: data.loss != null ? data.loss : prev.loss,
             eta: typeof data.eta === 'number' && !isNaN(data.eta) ? data.eta : null,
           }));
         } catch (err) {

@@ -165,7 +165,7 @@ describe('POST /api/v1/recommend — recommendFromVector path', () => {
     })
 
     const profileVector = Array.from({ length: 384 }, () => 0.1)
-    const response = await app.inject({
+    await app.inject({
       method: 'POST',
       url: '/api/v1/demo-buy',
       payload: { clientId: 'client-001', productId: 'prod-002', limit: 5 },

@@ -1,9 +1,9 @@
 # Roadmap
 
-**Current Milestone:** M-CF — Client Profile Enrichment Fix 🔄 PLANNED
-**Status:** PLANNED
+**Current Milestone:** M11 — AI Learning Showcase ✅ COMPLETE
+**Status:** COMPLETE — 8/8 tasks, 4 phases, 27/27 reqs; training-utils.ts (buildTrainingDataset + hard negative mining + seed LCG) + ModelTrainer (Dense[64]→Dropout→Dense[1], EPOCHS=30, BATCH_SIZE=16, early stopping) + analysisSlice (4-phase discriminated union) + RecommendationColumn (empty/loading/populated, 4 colorSchemes) + AnalysisPanel (snapshot orchestration + xl:grid-cols-4 + accordion md + mobile tabs) + RetrainPanel (disabled when phase=empty, lifted useRetrainJob) + useAppStore (analysisSlice composed + reset chain) + E2E spec; ESLint ✓; npm run build ✓; 72 AI tests (Vitest)
 
-**Previous:** M9-B — Deep Retrain Showcase ✅ COMPLETE — 32/32 reqs; useRetrainJob (ADR-025) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted (ADR-023) + 3 proxy routes + lib/adapters/train.ts + E2E spec; `npm run build` ✓; ESLint ✓ 0 warnings
+**Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
 ---
 
@@ -364,13 +364,13 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 ---
 
-## M9-B — Deep Retrain Showcase — PLANNED
+## M9-B — Deep Retrain Showcase ✅ COMPLETE
 
 **Goal:** Demonstrar retreinamento completo da rede neural com barra de progresso ao vivo e comparação "antes/depois" no painel de Análise.
 
 **Target:** Avaliador clica "Retreinar Modelo", acompanha progresso epoch por epoch, e vê as métricas de qualidade antes e depois do treino na aba "Análise".
 
-**Status:** PLANNED — spec.md criado (32 reqs, M9B-01..M9B-32) | design.md aprovado (ADR-023 · ADR-024 · ADR-025) | tasks.md criado (9 tarefas, 4 fases, 32/32 reqs) | ✅ COMPLETE — 32/32 reqs, 9/9 tasks
+**Status:** ✅ COMPLETE — 32/32 reqs, 9/9 tasks; useRetrainJob (ADR-025) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted (ADR-023) + 3 proxy routes + lib/adapters/train.ts + E2E spec; `npm run build` ✓; ESLint ✓ 0 warnings
 
 ### Features
 
@@ -380,6 +380,38 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 - Barra de progresso ao vivo via polling `GET /model/train/status/{jobId}`
 - Comparação "antes/depois": métricas `precisionAt5`, `loss`, `epoch` do modelo anterior vs novo
 - Layout: comparação "Sem IA vs Com IA" à esquerda; controles de retrain à direita (tela grande); tabs empilhadas em mobile (Tensão T3 — AD-012)
+
+---
+
+## M11 — AI Learning Showcase ✅ COMPLETE
+
+**Goal:** Demonstrar aprendizado incremental visível na aba "Análise" com 4 colunas de recomendação comparando: Sem IA → Com IA → Com Demo → Pós-Retreino. O avaliador experimenta o ciclo completo de aprendizado de máquina de forma guiada e visualmente clara.
+
+**Target:** Avaliador seleciona cliente, vê coluna "Com IA" populada automaticamente; faz compras demo no catálogo, vê coluna "Com Demo" atualizada; clica "Retreinar Modelo", vê coluna "Pós-Retreino" aparecer com recomendações que refletem as compras demo. Modelo neural melhora qualitativamente: produtos da categoria comprada sobem no ranking após retreino.
+
+**Status:** ✅ COMPLETE — 8/8 tasks, 27/27 reqs; training-utils.ts + ModelTrainer (Dense[64]→Dropout→Dense[1], ADR-027/028) + analysisSlice (4-phase union, ADR-029) + RecommendationColumn (4 colorSchemes, ADR-030) + AnalysisPanel (snapshot orchestration + xl:grid-cols-4 + accordion md) + RetrainPanel (phase-gate disable) + useAppStore composição + E2E spec; ESLint ✓; npm run build ✓; 72 AI tests (Vitest)
+
+### Features
+
+**Backend ML Refactor (ADR-027 + ADR-028)** — PLANNED
+
+- `buildTrainingDataset` em `training-utils.ts`: função pura com negative sampling N=4, hard negative mining por categoria, seed determinístico derivado de `clientId`, fallback upsampling
+- `ModelTrainer` atualizado: arquitetura `Dense[64, relu, l2(1e-4)] → Dropout[0.2] → Dense[1, sigmoid]`, `classWeight: {0:1.0, 1:4.0}`, `EPOCHS=30`, `BATCH_SIZE=16`, early stopping patience=5
+
+**analysisSlice — Type Discriminada 4 Fases (ADR-029)** — PLANNED
+
+- Zustand slice volátil com fases `empty | initial | demo | retrained`, cada uma com snapshots tipados por `clientId`
+- Reset automático ao trocar de cliente; impossibilita estados inválidos em compile-time
+
+**RecommendationColumn Presentacional (ADR-030)** — PLANNED
+
+- Componente genérico com estados empty/loading/populated, `colorScheme` semântico (gray/blue/emerald/violet), timestamp `capturedAt`
+- `AnalysisPanel` orquestra 4 instâncias com snapshots do `analysisSlice`
+
+**AnalysisPanel — Layout Responsivo + Snapshot Orchestration** — PLANNED
+
+- Layout `grid-cols-1 md:grid-cols-2 xl:grid-cols-4`; accordion para colunas 3/4 em viewport `< xl`
+- Captura automática de snapshots: `initial` ao montar, `demo` ao detectar mudança no `demoSlice`, `retrained` ao `useRetrainJob.status === 'done'`
 
 ---
 

@@ -1,14 +1,14 @@
 # Project State
 
-_Last updated: 2026-04-26 — Session: Bug fix — botão Retreinar preso em "Retreinando..." — Next.js fetch cache nos proxies de polling; corrigido com cache: 'no-store' nos 3 Route Handlers de model train/status_
+_Last updated: 2026-04-26 — Session: M11 — AI Learning Showcase ✅ COMPLETE — 8/8 tasks; training-utils.ts + ModelTrainer refactor (ADR-027/028) + analysisSlice (ADR-029) + RecommendationColumn (ADR-030) + AnalysisPanel snapshot orchestration + RetrainPanel phase-gate + useAppStore composição + E2E spec; ESLint ✓; npm run build ✓; 72 AI Vitest tests_
 
 ---
 
 ## Current Focus
 
-**Status:** M-CF — Client Profile Enrichment Fix — PLANNED | M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
+**Status:** M11 — AI Learning Showcase ✅ COMPLETE (ADR-027..ADR-030)
 
-**Previous:** M9-B — Deep Retrain Showcase ✅ COMPLETE (32/32 reqs, 9/9 tasks)
+**Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
 ---
 
@@ -338,6 +338,8 @@ _None at this time._
 - [x] Break M9-B into tasks — tasks.md criado (9 tarefas, 4 fases, 32/32 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
 - [x] Execute M9-B — 9 tasks complete; lib/types.ts (5 tipos M9-B) + lib/adapters/train.ts + 3 proxy routes + useRetrainJob hook (ADR-025 jobIdRef, polling backoff, circuit-breaker 3 erros) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted ADR-023 + E2E m9b-deep-retrain.spec.ts; npm run build ✓; ESLint ✓ 0 warnings; M9-B ✅ COMPLETE
 - [x] M10 — Demo-Retrain Integration — Neo4jRepository.getAllDemoBoughtPairs() + ModelTrainer mescla demos no clientOrderMap (ADR-026); compras demo feitas antes do retreinamento agora participam do tensor de treino
+- [x] Break M11 into tasks — tasks.md criado (8 tarefas, 4 fases, 27/27 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
+- [x] Execute M11 — 8/8 tasks complete; training-utils.ts (buildTrainingDataset + hard negative mining N=4 + seed LCG + upsampling fallback + 9 unit tests) + ModelTrainer (Dense[64, relu, l2(1e-4)]→Dropout[0.2]→Dense[1], EPOCHS=30, BATCH_SIZE=16, early stopping patience=5, seedFromClientIds, ADR-027/028) + analysisSlice.ts (4-phase discriminated union: empty|initial|demo|retrained, 4 actions, ADR-029) + RecommendationColumn.tsx (empty/loading/populated, colorScheme gray/blue/emerald/violet, capturedAt, fade-in animation, ADR-030) + AnalysisPanel (snapshot orchestration: captureInitial/captureDemo/captureRetrained via useEffect chains, xl:grid-cols-4 + md:grid-cols-2 + accordion + mobile stacked, lifted useRetrainJob shared with RetrainPanel) + RetrainPanel (disabled when phase=empty, M11-26, optional retrainJob prop) + useAppStore (analysisSlice composed, resetAnalysis() encadeado no setSelectedClient, ADR-029) + E2E m11-ai-learning-showcase.spec.ts (7 testes: initial/demo/retrain/disable/reset/accordion/mobile); ESLint ✓ 0 warnings; npm run build ✓; 72 AI tests (Vitest); M11 ✅ COMPLETE
 
 ---
 
