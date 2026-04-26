@@ -58,8 +58,18 @@ export function useRetrainJob(): UseRetrainJobResult {
     getModelStatus()
       .then((data) => {
         if (cancelled) return;
-        if (data.currentModel) {
-          setState((prev) => ({ ...prev, beforeMetrics: data.currentModel }));
+        if (data.status === 'trained' && data.trainedAt) {
+          setState((prev) => ({
+            ...prev,
+            beforeMetrics: {
+              precisionAt5: data.precisionAt5 ?? 0,
+              loss: data.finalLoss ?? 0,
+              accuracy: data.finalAccuracy ?? 0,
+              trainingSamples: data.trainingSamples ?? 0,
+              epoch: 20,
+              trainedAt: data.trainedAt!,
+            },
+          }));
         }
       })
       .catch(() => {
@@ -80,14 +90,8 @@ export function useRetrainJob(): UseRetrainJobResult {
   const startPolling = useCallback(
     (initialStatus: JobStatus) => {
       stopPolling();
-
-      const getInterval = (currentStatus: JobStatus, fraction: number): number => {
-        if (currentStatus === 'queued') return 1000;
-        if (currentStatus === 'running' && fraction < 0.5) return 1000;
-        return 2000;
-      };
-
-      let currentIntervalMs = getInterval(initialStatus, 0);
+      // Fixed 2s interval — simpler and avoids stale-closure bugs from dynamic interval adjustment
+      void initialStatus;
 
       const tick = async () => {
         const id = jobIdRef.current;
@@ -97,23 +101,14 @@ export function useRetrainJob(): UseRetrainJobResult {
           const data = await pollTrainStatus(id);
           consecutiveErrorsRef.current = 0;
 
-          const fraction =
-            data.totalEpochs && data.totalEpochs > 0 ? data.epoch / data.totalEpochs : 0;
-
-          setState((prev) => ({
-            ...prev,
-            status: data.status === 'done' || data.status === 'failed' ? data.status : data.status,
-            epoch: data.epoch,
-            totalEpochs: data.totalEpochs ?? 0,
-            loss: data.loss,
-            eta: data.eta,
-          }));
-
           if (data.status === 'done') {
             stopPolling();
             setState((prev) => ({
               ...prev,
               status: 'done',
+              epoch: data.epoch,
+              totalEpochs: data.totalEpochs ?? prev.totalEpochs,
+              loss: data.loss,
               afterMetrics: toModelMetrics(data),
             }));
             return;
@@ -129,14 +124,24 @@ export function useRetrainJob(): UseRetrainJobResult {
             return;
           }
 
-          // Adjust interval dynamically
-          const newInterval = getInterval(data.status, fraction);
-          if (newInterval !== currentIntervalMs) {
-            currentIntervalMs = newInterval;
+          setState((prev) => ({
+            ...prev,
+            status: data.status,
+            epoch: data.epoch,
+            totalEpochs: data.totalEpochs ?? 0,
+            loss: data.loss,
+            eta: typeof data.eta === 'number' && !isNaN(data.eta) ? data.eta : null,
+          }));
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 404) {
             stopPolling();
-            intervalRef.current = setInterval(tick, currentIntervalMs);
+            setState((prev) => ({
+              ...prev,
+              status: 'idle',
+              errorMessage: null,
+            }));
+            return;
           }
-        } catch {
           consecutiveErrorsRef.current += 1;
           if (consecutiveErrorsRef.current >= 3) {
             stopPolling();
@@ -149,7 +154,12 @@ export function useRetrainJob(): UseRetrainJobResult {
         }
       };
 
-      intervalRef.current = setInterval(tick, currentIntervalMs);
+      // Register interval first, then fire immediately so stopPolling() inside tick
+      // always has a valid ref to cancel
+      intervalRef.current = setInterval(tick, 2000);
+      // Small delay before first tick ensures setInterval ref is set
+      // before any async done/failed handling calls stopPolling()
+      setTimeout(() => void tick(), 100);
     },
     [stopPolling]
   );

@@ -1,18 +1,28 @@
 # Project State
 
-_Last updated: 2026-04-26 — Session: Execute M9-B — 9/9 tasks complete; lib/types.ts (5 tipos M9-B) + lib/adapters/train.ts + 3 proxy routes (model/train, model/status, model/train/status/[jobId]) + useRetrainJob hook (ADR-025 jobIdRef, polling backoff, circuit-breaker 3 erros) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted ADR-023 + E2E m9b-deep-retrain.spec.ts; npm run build ✓; ESLint ✓ 0 warnings_
+_Last updated: 2026-04-26 — Session: Bug fix — botão Retreinar preso em "Retreinando..." — Next.js fetch cache nos proxies de polling; corrigido com cache: 'no-store' nos 3 Route Handlers de model train/status_
 
 ---
 
 ## Current Focus
 
-**Status:** M-CF — Client Profile Enrichment Fix — PLANNED | M9-B — Deep Retrain Showcase ✅ COMPLETE (32/32 reqs, 9/9 tasks)
+**Status:** M-CF — Client Profile Enrichment Fix — PLANNED | M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
-**Previous:** M9-A — Demo Buy + Live Reorder ✅ COMPLETE (33/33 reqs, 9/9 tasks)
+**Previous:** M9-B — Deep Retrain Showcase ✅ COMPLETE (32/32 reqs, 9/9 tasks)
 
 ---
 
 ## Decisions
+
+### AD-026: M10 — getAllDemoBoughtPairs + mescla no clientOrderMap para incluir demos no retreinamento (2026-04-26)
+
+**Decision:** `Neo4jRepository.getAllDemoBoughtPairs()` retorna todos os pares `{clientId, productId}` de edges `BOUGHT {is_demo: true}` em uma query batch. `ModelTrainer.train()` chama este método após `fetchTrainingData()` e mescla os pares no `clientOrderMap` antes de construir os tensores — com `try/catch` non-fatal idêntico ao padrão de `syncNeo4j`.
+
+**Reason:** `fetchTrainingData()` busca pedidos exclusivamente do PostgreSQL — edges demo no Neo4j eram invisíveis ao retreinamento. Comitê de Design (5 personas) convergiu em Node B (query batch) por menor pressão de I/O vs Node A (N queries por cliente) e por preservar o isolamento `is_demo:true` que sustenta o `clearAllDemoBought` do M9-A (descartando Node C). Staff Engineering e QA Staff (2 personas) confirmaram o filtro `WHERE r.is_demo = true` explícito como non-negotiable para evitar inclusão acidental de edges sem o atributo.
+
+**Status:** Accepted ✓ (ADR-026)
+
+---
 
 ### AD-025: M9-B — useRetrainJob com jobIdRef para evitar stale closure no setInterval (2026-04-26)
 
@@ -266,6 +276,13 @@ _None at this time._
 - Order seed data must use deterministic UUIDs (e.g., `uuid/v5` with a stable namespace) to guarantee idempotency across re-runs. `uuid/v4` generates random IDs that defeat `ON CONFLICT (id) DO NOTHING`.
 - Port conflicts on developer machines: use non-standard host port mappings (e.g., `5433:5432`) with a `POSTGRES_HOST_PORT` env var to avoid conflicts with other running PostgreSQL instances.
 
+### L-005 — Next.js 14 fetch cache em Route Handlers quebra polling de jobs assíncronos
+**Source:** Bug fix — botão Retreinar preso (2026-04-26)
+- Next.js 14 faz cache agressivo de respostas de `fetch()` em Route Handlers por padrão. Qualquer proxy de polling que não declare `cache: 'no-store'` congela a primeira resposta recebida e a repete indefinidamente.
+- Sintoma: `POST /model/train` retornava `202 queued`, mas os polls subsequentes via proxy sempre retornavam o primeiro estado capturado (`running` sem epoch), nunca avançando para `done`. O backend treinava corretamente — o bug era exclusivamente no cache do proxy.
+- Fix: adicionar `cache: 'no-store'` em todos os `fetch()` dentro de Route Handlers que servem dados mutáveis ou em tempo real (`/api/proxy/model/train/status/[jobId]`, `/api/proxy/model/status`, `/api/proxy/model/train`).
+- Regra geral: qualquer proxy Next.js → serviço externo que retorna dados que mudam por request deve ter `cache: 'no-store'` explícito.
+
 ### L-004 — Next.js 14 ESLint version requirements
 **Source:** M5 Execute — `npm run lint` setup
 - `next lint` with Next.js 14 requires ESLint 8, NOT ESLint 9. Installing the latest `eslint` package pulls in ESLint 9 which causes incompatible CLI options errors.
@@ -320,6 +337,7 @@ _None at this time._
 - [x] Design M9-B — design.md (Approved) + ADR-023 (AnalysisPanel always-mounted) + ADR-024 (progress bar scaleX) + ADR-025 (jobIdRef stale closure); 3 proxy routes; lib/adapters/train.ts; 8 committee findings incorporados
 - [x] Break M9-B into tasks — tasks.md criado (9 tarefas, 4 fases, 32/32 reqs mapeados); Granularity ✅, Diagram-Definition ✅, Test Co-location ✅
 - [x] Execute M9-B — 9 tasks complete; lib/types.ts (5 tipos M9-B) + lib/adapters/train.ts + 3 proxy routes + useRetrainJob hook (ADR-025 jobIdRef, polling backoff, circuit-breaker 3 erros) + TrainingProgressBar (ADR-024 scaleX) + ModelMetricsComparison + RetrainPanel + AnalysisPanel lg:grid-cols-2 + mobile Tabs + page.tsx always-mounted ADR-023 + E2E m9b-deep-retrain.spec.ts; npm run build ✓; ESLint ✓ 0 warnings; M9-B ✅ COMPLETE
+- [x] M10 — Demo-Retrain Integration — Neo4jRepository.getAllDemoBoughtPairs() + ModelTrainer mescla demos no clientOrderMap (ADR-026); compras demo feitas antes do retreinamento agora participam do tensor de treino
 
 ---
 

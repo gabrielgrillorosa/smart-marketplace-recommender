@@ -8,9 +8,9 @@ export async function POST(request: NextRequest) {
     const response = await fetch(`${AI_SERVICE_URL}/api/v1/model/train`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'X-Admin-Key': adminKey,
       },
+      cache: 'no-store',
     });
 
     const data = await response.json().catch(() => ({}));

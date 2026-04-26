@@ -21,7 +21,7 @@ export function TrainingProgressBar({
   if (status === 'idle') return null;
 
   const isIndeterminate =
-    status === 'queued' || totalEpochs === 0 || totalEpochs == null;
+    status === 'queued' || (status === 'running' && (totalEpochs === 0 || totalEpochs == null));
 
   const fraction = !isIndeterminate && status === 'running'
     ? Math.min(epoch / totalEpochs, 1)
@@ -39,7 +39,7 @@ export function TrainingProgressBar({
       : 'bg-blue-500';
 
   let statusText: string;
-  if (status === 'queued' || isIndeterminate) {
+  if (status === 'queued') {
     statusText = 'Aguardando início...';
   } else if (status === 'running') {
     const lossText = loss !== null ? ` — Loss: ${loss.toFixed(4)}` : '';
@@ -53,7 +53,7 @@ export function TrainingProgressBar({
   }
 
   let etaText: string | null = null;
-  if (status === 'running' && eta !== null) {
+  if (status === 'running' && eta != null && !isNaN(eta)) {
     etaText = eta <= 3 ? 'Finalizando...' : `~${Math.round(eta)}s restantes`;
   }
 
@@ -71,7 +71,7 @@ export function TrainingProgressBar({
           className={cn(
             'absolute inset-y-0 left-0 w-full origin-left rounded-full',
             fillColor,
-            isIndeterminate && status !== 'done' && status !== 'failed' && status !== 'network-error'
+            isIndeterminate && (status === 'queued' || status === 'running')
               ? 'motion-safe:animate-pulse'
               : 'motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-out'
           )}

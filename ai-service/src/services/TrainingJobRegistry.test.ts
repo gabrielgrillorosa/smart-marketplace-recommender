@@ -75,13 +75,13 @@ describe('TrainingJobRegistry', () => {
     expect(() => busyRegistry.enqueue()).toThrow()
   })
 
-  it('job transitions queued → running → complete when train() resolves', async () => {
+  it('job transitions queued → running → done when train() resolves', async () => {
     const { jobId } = registry.enqueue()
 
     await new Promise<void>((resolve) => {
       const check = setInterval(() => {
         const job = registry.getJob(jobId)
-        if (job?.status === 'complete') {
+        if (job?.status === 'done') {
           clearInterval(check)
           resolve()
         }
@@ -89,7 +89,7 @@ describe('TrainingJobRegistry', () => {
     })
 
     const job = registry.getJob(jobId)
-    expect(job?.status).toBe('complete')
+    expect(job?.status).toBe('done')
     expect(job?.completedAt).toBeTruthy()
   })
 

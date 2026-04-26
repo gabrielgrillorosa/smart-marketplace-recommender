@@ -4,7 +4,9 @@ const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://localhost:3001';
 
 export async function GET() {
   try {
-    const response = await fetch(`${AI_SERVICE_URL}/api/v1/model/status`);
+    const response = await fetch(`${AI_SERVICE_URL}/api/v1/model/status`, {
+      cache: 'no-store',
+    });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (err) {

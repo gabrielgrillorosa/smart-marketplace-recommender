@@ -4,6 +4,7 @@ import type { EmbeddingService } from '../../services/EmbeddingService.js'
 import type { ModelStore } from '../../services/ModelStore.js'
 import type { TrainingJobRegistry } from '../../services/TrainingJobRegistry.js'
 import type { RecommendationService } from '../../services/RecommendationService.js'
+import type { DemoBuyService } from '../../services/DemoBuyService.js'
 import type { RAGService } from '../../services/RAGService.js'
 import type { SearchService } from '../../services/SearchService.js'
 import { embeddingsRoutes } from '../../routes/embeddings.js'
@@ -12,6 +13,7 @@ import { ragRoutes } from '../../routes/rag.js'
 import { modelRoutes } from '../../routes/model.js'
 import { recommendRoutes } from '../../routes/recommend.js'
 import { adminRoutes } from '../../routes/adminRoutes.js'
+import { demoBuyRoutes } from '../../routes/demoBuyRoutes.js'
 
 export interface AppDeps {
   neo4jRepo: Partial<Neo4jRepository>
@@ -21,6 +23,7 @@ export interface AppDeps {
   trainingJobRegistry?: Partial<TrainingJobRegistry>
   adminApiKey?: string
   recommendationService: Partial<RecommendationService>
+  demoBuyService?: Partial<DemoBuyService>
   ragService: Partial<RAGService>
   searchService: Partial<SearchService>
 }
@@ -47,6 +50,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await fastify.register(modelRoutes, {
     prefix: '/api/v1',
     modelStore: deps.modelStore as ModelStore,
+    registry: deps.trainingJobRegistry as TrainingJobRegistry | undefined,
   })
 
   await fastify.register(recommendRoutes, {
@@ -59,6 +63,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       prefix: '/api/v1',
       registry: deps.trainingJobRegistry as TrainingJobRegistry,
       adminApiKey: deps.adminApiKey,
+    })
+  }
+
+  if (deps.demoBuyService) {
+    await fastify.register(demoBuyRoutes, {
+      prefix: '/api/v1',
+      demoBuyService: deps.demoBuyService as DemoBuyService,
     })
   }
 

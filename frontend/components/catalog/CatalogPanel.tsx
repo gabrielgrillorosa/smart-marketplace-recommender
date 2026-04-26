@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import type { Product, ProductDetail, SearchResult } from '@/lib/types';
+import { toast } from 'sonner';
+import type { Product, ProductDetail, SearchResult, RecommendationResult } from '@/lib/types';
 import { apiFetch } from '@/lib/fetch-wrapper';
 import { ProductFilters, type FilterState } from './ProductFilters';
 import { SemanticSearchBar } from './SemanticSearchBar';
@@ -13,6 +14,7 @@ import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
 import { useCatalogOrdering } from '@/lib/hooks/useCatalogOrdering';
 import { useRecommendationFetcher } from '@/lib/hooks/useRecommendationFetcher';
 import { useRecommendations } from '@/lib/hooks/useRecommendations';
+import { useAppStore } from '@/store';
 
 interface PageResponse {
   content?: Product[];
@@ -41,6 +43,10 @@ function toProduct(raw: RawProduct): Product {
   };
 }
 
+interface DemoBuyApiResponse {
+  recommendations: RecommendationResult[];
+}
+
 export function CatalogPanel() {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [filters, setFilters] = useState<FilterState>({ category: '', country: '', supplier: '' });
@@ -53,6 +59,18 @@ export function CatalogPanel() {
   const { ordered, reset } = useCatalogOrdering();
   const { fetch: fetchRecommendations } = useRecommendationFetcher();
   const { recommendations, loading: recLoading } = useRecommendations();
+
+  const demoBoughtByClient = useAppStore((s) => s.demoBoughtByClient);
+  const demoBuyLoading = useAppStore((s) => s.demoBuyLoading);
+  const addDemoBought = useAppStore((s) => s.addDemoBought);
+  const removeDemoBought = useAppStore((s) => s.removeDemoBought);
+  const clearDemoForClient = useAppStore((s) => s.clearDemoForClient);
+  const setDemoBuyLoading = useAppStore((s) => s.setDemoBuyLoading);
+  const setRecommendations = useAppStore((s) => s.setRecommendations);
+  const cachedForClientId = useAppStore((s) => s.cachedForClientId);
+
+  const clientId = selectedClient?.id ?? '';
+  const demoBoughtForClient = demoBoughtByClient[clientId] ?? [];
 
   useEffect(() => {
     apiFetch<PageResponse | Product[]>('/backend/api/v1/products?size=100')
@@ -88,7 +106,6 @@ export function CatalogPanel() {
       ? searchResults.map((r) => ({ ...r.product, similarityScore: r.score }))
       : applyFilters(allProducts);
 
-  // Build a score map from recommendations for quick lookup
   const scoreMap = new Map(
     recommendations.map((r) => [
       r.product.id,
@@ -110,19 +127,75 @@ export function CatalogPanel() {
     await fetchRecommendations(selectedClient.id);
   }
 
+  async function handleDemoBuy(productId: string) {
+    if (!selectedClient) return;
+    setDemoBuyLoading(productId, true);
+    try {
+      const data = await apiFetch<DemoBuyApiResponse>('/api/proxy/demo-buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: selectedClient.id, productId, limit: 10 }),
+      });
+      addDemoBought(selectedClient.id, productId);
+      setRecommendations(data.recommendations, false, cachedForClientId ?? selectedClient.id);
+    } catch {
+      toast.error('Erro ao simular compra — tente novamente');
+    } finally {
+      setDemoBuyLoading(productId, false);
+    }
+  }
+
+  async function handleDemoUndo(productId: string) {
+    if (!selectedClient) return;
+    setDemoBuyLoading(productId, true);
+    try {
+      const data = await apiFetch<DemoBuyApiResponse>(
+        `/api/proxy/demo-buy/${selectedClient.id}/${productId}`,
+        { method: 'DELETE' }
+      );
+      removeDemoBought(selectedClient.id, productId);
+      setRecommendations(data.recommendations, false, cachedForClientId ?? selectedClient.id);
+    } catch {
+      toast.error('Erro ao desfazer compra — tente novamente');
+    } finally {
+      setDemoBuyLoading(productId, false);
+    }
+  }
+
+  async function handleClearAllDemo() {
+    if (!selectedClient) return;
+    try {
+      const data = await apiFetch<DemoBuyApiResponse>(
+        `/api/proxy/demo-buy/${selectedClient.id}`,
+        { method: 'DELETE' }
+      );
+      clearDemoForClient(selectedClient.id);
+      setRecommendations(data.recommendations, false, cachedForClientId ?? selectedClient.id);
+    } catch {
+      toast.error('Erro ao limpar demos — tente novamente');
+    }
+  }
+
   const renderItem = useCallback(
     (product: Product) => {
       const scores = ordered ? scoreMap.get(product.id) : undefined;
+      const isDemo = demoBoughtForClient.includes(product.id);
+      const showDemoBuy = ordered && !!selectedClient;
       return (
         <ProductCard
           product={product}
           onClick={() => handleProductClick(product)}
           scoreBadge={scores}
+          isDemo={isDemo}
+          isDemoBuyLoading={demoBuyLoading[product.id] ?? false}
+          showDemoBuy={showDemoBuy}
+          onDemoBuy={() => handleDemoBuy(product.id)}
+          onDemoUndo={() => handleDemoUndo(product.id)}
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [ordered, recommendations]
+    [ordered, recommendations, demoBoughtForClient, demoBuyLoading, selectedClient]
   );
 
   if (loadingProducts) {
@@ -145,8 +218,8 @@ export function CatalogPanel() {
         <SemanticSearchBar onResults={setSearchResults} onClear={() => setSearchResults(null)} />
       </div>
 
-      {/* AI Sort toolbar */}
-      <div className="flex items-center gap-2">
+      {/* AI Sort + Demo toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
         {!ordered ? (
           <span title={!selectedClient ? 'Selecione um cliente na navbar' : undefined}>
             <button
@@ -181,6 +254,15 @@ export function CatalogPanel() {
             className="inline-flex items-center gap-1.5 rounded-md bg-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-300 transition-colors"
           >
             ✕ Ordenação original
+          </button>
+        )}
+        {ordered && demoBoughtForClient.length > 0 && (
+          <button
+            type="button"
+            onClick={handleClearAllDemo}
+            className="inline-flex items-center gap-1.5 rounded-md bg-orange-100 px-3 py-1.5 text-sm font-medium text-orange-700 hover:bg-orange-200 transition-colors"
+          >
+            🗑 Limpar Demo ({demoBoughtForClient.length})
           </button>
         )}
       </div>

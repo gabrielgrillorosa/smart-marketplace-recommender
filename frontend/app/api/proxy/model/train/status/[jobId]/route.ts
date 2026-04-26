@@ -8,7 +8,9 @@ export async function GET(
 ) {
   try {
     const { jobId } = params;
-    const response = await fetch(`${AI_SERVICE_URL}/api/v1/model/train/status/${jobId}`);
+    const response = await fetch(`${AI_SERVICE_URL}/api/v1/model/train/status/${jobId}`, {
+      cache: 'no-store',
+    });
     const data = await response.json().catch(() => ({}));
     return NextResponse.json(data, { status: response.status });
   } catch (err) {

@@ -18,9 +18,23 @@ interface ProductCardProps {
   product: Product;
   onClick?: () => void;
   scoreBadge?: ScoreBadgeProps;
+  isDemo?: boolean;
+  isDemoBuyLoading?: boolean;
+  onDemoBuy?: () => void;
+  onDemoUndo?: () => void;
+  showDemoBuy?: boolean;
 }
 
-export function ProductCard({ product, onClick, scoreBadge }: ProductCardProps) {
+export function ProductCard({
+  product,
+  onClick,
+  scoreBadge,
+  isDemo,
+  isDemoBuyLoading,
+  onDemoBuy,
+  onDemoUndo,
+  showDemoBuy,
+}: ProductCardProps) {
   return (
     <Card
       className="cursor-pointer transition-shadow hover:shadow-md"
@@ -39,6 +53,11 @@ export function ProductCard({ product, onClick, scoreBadge }: ProductCardProps) 
           {!scoreBadge && product.similarityScore !== undefined && (
             <Badge variant="info" className="ml-auto text-xs">
               {Math.round(product.similarityScore * 100)}% match
+            </Badge>
+          )}
+          {isDemo && (
+            <Badge className="ml-auto bg-yellow-100 text-yellow-800 text-xs border border-yellow-300">
+              demo
             </Badge>
           )}
         </div>
@@ -61,6 +80,37 @@ export function ProductCard({ product, onClick, scoreBadge }: ProductCardProps) 
             </span>
           ))}
         </div>
+        {(showDemoBuy || isDemo) && (
+          <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+            {isDemo ? (
+              <button
+                type="button"
+                onClick={onDemoUndo}
+                disabled={isDemoBuyLoading}
+                className={`w-full rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  isDemoBuyLoading
+                    ? 'cursor-not-allowed bg-gray-100 text-gray-400 opacity-60'
+                    : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                }`}
+              >
+                {isDemoBuyLoading ? '...' : '↩ Desfazer'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onDemoBuy}
+                disabled={isDemoBuyLoading}
+                className={`w-full rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  isDemoBuyLoading
+                    ? 'cursor-not-allowed bg-gray-100 text-gray-400 opacity-60'
+                    : 'bg-green-100 text-green-700 hover:bg-green-200'
+                }`}
+              >
+                {isDemoBuyLoading ? '...' : '🛒 Demo Comprar'}
+              </button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

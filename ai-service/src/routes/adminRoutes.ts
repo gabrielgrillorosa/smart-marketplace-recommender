@@ -26,18 +26,10 @@ export const adminRoutes: FastifyPluginAsync<AdminRoutesOptions> = async (
       return reply.code(202).send(result)
     } catch (err) {
       if (err instanceof ConflictError) {
-        return reply.code(409).send({ error: err.message })
+        const activeJobId = registry.getActiveJobId()
+        return reply.code(409).send({ error: err.message, jobId: activeJobId })
       }
       throw err
     }
-  })
-
-  fastify.get('/model/train/status/:jobId', async (request, reply) => {
-    const { jobId } = request.params as { jobId: string }
-    const job = registry.getJob(jobId)
-    if (!job) {
-      return reply.code(404).send({ error: 'Job not found' })
-    }
-    return reply.code(200).send(job)
   })
 }

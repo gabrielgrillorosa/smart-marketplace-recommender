@@ -2,7 +2,7 @@ import * as tf from '@tensorflow/tfjs-node'
 import { FastifyBaseLogger } from 'fastify'
 import { ModelStore } from './ModelStore.js'
 import { Neo4jRepository } from '../repositories/Neo4jRepository.js'
-import { Neo4jUnavailableError } from '../repositories/Neo4jRepository.js'
+import { Neo4jUnavailableError, ClientNotFoundError } from '../repositories/Neo4jRepository.js'
 import { RecommendationResult, MatchReason } from '../types/index.js'
 
 export class ModelNotTrainedError extends Error {
@@ -13,13 +13,7 @@ export class ModelNotTrainedError extends Error {
   }
 }
 
-export class ClientNotFoundError extends Error {
-  readonly statusCode = 404
-  constructor() {
-    super('Client not found')
-    this.name = 'ClientNotFoundError'
-  }
-}
+export { ClientNotFoundError } from '../repositories/Neo4jRepository.js'
 
 export class ClientNoPurchaseHistoryError extends Error {
   readonly statusCode = 422
@@ -32,7 +26,7 @@ export class ClientNoPurchaseHistoryError extends Error {
 type EmptyRecommendationResponse = { recommendations: []; reason: string }
 type RecommendResponse = RecommendationResult[] | EmptyRecommendationResponse
 
-function cosine(a: number[], b: number[]): number {
+export function cosine(a: number[], b: number[]): number {
   let dot = 0
   let normA = 0
   let normB = 0
@@ -45,7 +39,7 @@ function cosine(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom
 }
 
-function meanPooling(embeddings: number[][]): number[] {
+export function meanPooling(embeddings: number[][]): number[] {
   const dims = embeddings[0].length
   const mean = new Array<number>(dims).fill(0)
   for (const emb of embeddings) {
@@ -170,6 +164,74 @@ export class RecommendationService {
     }
 
     return sliced
+  }
+
+  async recommendFromVector(
+    clientId: string,
+    limit: number,
+    profileVector: number[]
+  ): Promise<RecommendationResult[]> {
+    const model = this.modelStore.getModel()
+    if (!model) throw new ModelNotTrainedError()
+
+    const client = await this.repo.getClientWithCountry(clientId)
+    if (!client) throw new ClientNotFoundError()
+
+    const purchasedIds = await this.repo.getPurchasedProductIds(clientId)
+    const rawCandidates = await this.repo.getCandidateProducts(client.country, purchasedIds)
+
+    const candidates = rawCandidates.filter((c) => {
+      if (!c.embedding || c.embedding.length === 0) {
+        return false
+      }
+      return true
+    })
+
+    if (candidates.length === 0) {
+      return []
+    }
+
+    const cappedLimit = Math.min(limit, 50)
+
+    const results: RecommendationResult[] = tf.tidy(() => {
+      const batchMatrix = tf.tensor2d(
+        candidates.map((c) => [...c.embedding, ...profileVector]),
+        [candidates.length, 768]
+      )
+      const outputTensor = model.predict(batchMatrix) as tf.Tensor
+      const neuralScores = outputTensor.dataSync() as Float32Array
+
+      return candidates.map((candidate, i) => {
+        const neuralScore = neuralScores[i]
+        const semanticScore = cosine(profileVector, candidate.embedding)
+        const finalScore = computeFinalScore(neuralScore, semanticScore, this.neuralWeight, this.semanticWeight)
+
+        const diff = Math.abs(neuralScore - semanticScore)
+        let matchReason: MatchReason
+        if (diff < 0.05) {
+          matchReason = 'hybrid'
+        } else if (neuralScore > semanticScore) {
+          matchReason = 'neural'
+        } else {
+          matchReason = 'semantic'
+        }
+
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          category: candidate.category,
+          price: candidate.price,
+          sku: candidate.sku,
+          finalScore,
+          neuralScore,
+          semanticScore,
+          matchReason,
+        }
+      })
+    })
+
+    results.sort((a, b) => b.finalScore - a.finalScore)
+    return results.slice(0, cappedLimit)
   }
 }
 

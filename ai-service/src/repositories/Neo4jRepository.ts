@@ -11,6 +11,22 @@ export class Neo4jUnavailableError extends Error {
   }
 }
 
+export class ProductNotFoundError extends Error {
+  readonly statusCode = 404
+  constructor() {
+    super('Product not found')
+    this.name = 'ProductNotFoundError'
+  }
+}
+
+export class ClientNotFoundError extends Error {
+  readonly statusCode = 404
+  constructor() {
+    super('Client not found')
+    this.name = 'ClientNotFoundError'
+  }
+}
+
 export class Neo4jRepository {
   constructor(private readonly driver: Driver) {}
 
@@ -249,6 +265,25 @@ export class Neo4jRepository {
     }
   }
 
+  async getAllDemoBoughtPairs(): Promise<{ clientId: string; productId: string }[]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        `MATCH (c:Client)-[r:BOUGHT]->(p:Product)
+         WHERE r.is_demo = true
+         RETURN c.id AS clientId, p.id AS productId`
+      )
+      return result.records.map((r) => ({
+        clientId: r.get('clientId') as string,
+        productId: r.get('productId') as string,
+      }))
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
   async close(): Promise<void> {
     await this.driver.close()
   }
@@ -308,6 +343,120 @@ export class Neo4jRepository {
       const embedding = result.records[0].get('embedding')
       return embedding ?? null
     } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async createDemoBoughtAndGetEmbeddings(clientId: string, productId: string): Promise<number[][]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.executeWrite((tx) =>
+        tx.run(
+          `MATCH (c:Client {id: $clientId})
+           MATCH (p:Product {id: $productId})
+           MERGE (c)-[r:BOUGHT {is_demo: true}]->(p)
+           ON CREATE SET r.date = datetime()
+           WITH c
+           MATCH (c)-[:BOUGHT]->(bought:Product)
+           WHERE bought.embedding IS NOT NULL
+           RETURN bought.embedding AS embedding`,
+          { clientId, productId }
+        )
+      )
+      if (result.records.length === 0) {
+        // Check if client exists at all
+        const clientCheck = await session.run(
+          'MATCH (c:Client {id: $clientId}) RETURN count(c) AS cnt',
+          { clientId }
+        )
+        const cnt = clientCheck.records[0]?.get('cnt')
+        const count = typeof cnt === 'object' && cnt?.toNumber ? cnt.toNumber() : Number(cnt ?? 0)
+        if (count === 0) throw new ClientNotFoundError()
+        // Product not found
+        const productCheck = await session.run(
+          'MATCH (p:Product {id: $productId}) RETURN count(p) AS cnt',
+          { productId }
+        )
+        const pcnt = productCheck.records[0]?.get('cnt')
+        const pcount = typeof pcnt === 'object' && pcnt?.toNumber ? pcnt.toNumber() : Number(pcnt ?? 0)
+        if (pcount === 0) throw new ProductNotFoundError()
+        return []
+      }
+      return result.records.map((r) => r.get('embedding') as number[])
+    } catch (err) {
+      if (err instanceof ClientNotFoundError || err instanceof ProductNotFoundError) throw err
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteDemoBoughtAndGetEmbeddings(clientId: string, productId: string): Promise<number[][]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.executeWrite((tx) =>
+        tx.run(
+          `MATCH (c:Client {id: $clientId})
+           OPTIONAL MATCH (c)-[r:BOUGHT {is_demo: true}]->(p:Product {id: $productId})
+           DELETE r
+           WITH c
+           MATCH (c)-[:BOUGHT]->(bought:Product)
+           WHERE bought.embedding IS NOT NULL
+           RETURN bought.embedding AS embedding`,
+          { clientId, productId }
+        )
+      )
+      if (result.records.length === 0) {
+        const clientCheck = await session.run(
+          'MATCH (c:Client {id: $clientId}) RETURN count(c) AS cnt',
+          { clientId }
+        )
+        const cnt = clientCheck.records[0]?.get('cnt')
+        const count = typeof cnt === 'object' && cnt?.toNumber ? cnt.toNumber() : Number(cnt ?? 0)
+        if (count === 0) throw new ClientNotFoundError()
+        return []
+      }
+      return result.records.map((r) => r.get('embedding') as number[])
+    } catch (err) {
+      if (err instanceof ClientNotFoundError) throw err
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async clearAllDemoBoughtAndGetEmbeddings(clientId: string): Promise<number[][]> {
+    const session = this.driver.session()
+    try {
+      const result = await session.executeWrite((tx) =>
+        tx.run(
+          `MATCH (c:Client {id: $clientId})
+           OPTIONAL MATCH (c)-[r:BOUGHT {is_demo: true}]->()
+           DELETE r
+           WITH c
+           OPTIONAL MATCH (c)-[:BOUGHT]->(bought:Product)
+           WHERE bought.embedding IS NOT NULL
+           RETURN bought.embedding AS embedding`,
+          { clientId }
+        )
+      )
+      if (result.records.length === 0) {
+        const clientCheck = await session.run(
+          'MATCH (c:Client {id: $clientId}) RETURN count(c) AS cnt',
+          { clientId }
+        )
+        const cnt = clientCheck.records[0]?.get('cnt')
+        const count = typeof cnt === 'object' && cnt?.toNumber ? cnt.toNumber() : Number(cnt ?? 0)
+        if (count === 0) throw new ClientNotFoundError()
+        return []
+      }
+      return result.records
+        .filter((r) => r.get('embedding') !== null)
+        .map((r) => r.get('embedding') as number[])
+    } catch (err) {
+      if (err instanceof ClientNotFoundError) throw err
       throw new Neo4jUnavailableError(err)
     } finally {
       await session.close()

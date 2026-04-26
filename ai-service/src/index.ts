@@ -11,12 +11,14 @@ import { ModelTrainer } from './services/ModelTrainer.js'
 import { TrainingJobRegistry } from './services/TrainingJobRegistry.js'
 import { CronScheduler } from './services/CronScheduler.js'
 import { RecommendationService } from './services/RecommendationService.js'
+import { DemoBuyService } from './services/DemoBuyService.js'
 import { embeddingsRoutes } from './routes/embeddings.js'
 import { searchRoutes } from './routes/search.js'
 import { ragRoutes } from './routes/rag.js'
 import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
+import { demoBuyRoutes } from './routes/demoBuyRoutes.js'
 
 const fastify = Fastify({ logger: true })
 
@@ -73,6 +75,8 @@ const start = async () => {
       fastify.log,
     )
 
+    const demoBuyService = new DemoBuyService(repo, recommendationService)
+
     const searchService = new SearchService(embeddingService, repo)
     const ragService = new RAGService(embeddingService, repo, ENV.OPENROUTER_API_KEY, ENV.LLM_MODEL, ENV.OPENROUTER_BASE_URL)
 
@@ -110,11 +114,17 @@ const start = async () => {
       modelStore: versionedModelStore,
       cronScheduler,
       versionedModelStore,
+      registry: trainingJobRegistry,
     })
 
     await fastify.register(recommendRoutes, {
       prefix: '/api/v1',
       recommendationService,
+    })
+
+    await fastify.register(demoBuyRoutes, {
+      prefix: '/api/v1',
+      demoBuyService,
     })
 
     // Step 10: Start accepting traffic

@@ -261,12 +261,28 @@ export class ModelTrainer {
         console.warn('[ModelTrainer] Neo4j sync failed (non-fatal):', syncErr)
       }
 
+      let demoPairs: { clientId: string; productId: string }[] = []
+      try {
+        demoPairs = await this.repo.getAllDemoBoughtPairs()
+        if (demoPairs.length > 0) {
+          console.info(`[ModelTrainer] ${demoPairs.length} demo purchase(s) will be included in training`)
+        }
+      } catch (demoErr) {
+        console.warn('[ModelTrainer] Failed to fetch demo purchases (non-fatal):', demoErr)
+      }
+
       const clientOrderMap = new Map<string, Set<string>>()
       for (const order of orders) {
         if (!clientOrderMap.has(order.clientId)) clientOrderMap.set(order.clientId, new Set())
         for (const item of order.items) {
           clientOrderMap.get(order.clientId)!.add(item.productId)
         }
+      }
+
+      // Merge demo purchases — ADR-026: creates new entries for clients with demos but no real orders
+      for (const { clientId, productId } of demoPairs) {
+        if (!clientOrderMap.has(clientId)) clientOrderMap.set(clientId, new Set())
+        clientOrderMap.get(clientId)!.add(productId)
       }
 
       const inputVectors: number[][] = []

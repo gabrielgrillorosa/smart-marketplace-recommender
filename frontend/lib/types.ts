@@ -70,6 +70,8 @@ export interface ModelMetrics {
   precisionAt5: number;
   loss: number;
   epoch: number;
+  accuracy?: number;
+  trainingSamples?: number;
   trainedAt: string;
 }
 
@@ -87,7 +89,10 @@ export interface TrainStatusResponse {
 }
 
 export interface ModelStatusResponse {
-  currentJobId: string | null;
-  currentModel: ModelMetrics | null;
-  versionHistory: ModelMetrics[];
+  status?: string;
+  trainedAt?: string;
+  finalLoss?: number;
+  finalAccuracy?: number;
+  trainingSamples?: number;
+  precisionAt5?: number;
 }

@@ -17,6 +17,7 @@ const makeRegistry = (opts: { conflictOnEnqueue?: boolean } = {}) => ({
     }
     return undefined
   }),
+  getActiveJobId: vi.fn(() => opts.conflictOnEnqueue ? 'job-123' : undefined),
 })
 
 const buildTestApp = async (registry: ReturnType<typeof makeRegistry>) =>
@@ -72,13 +73,13 @@ describe('adminRoutes — X-Admin-Key auth', () => {
     expect(body.status).toBe('queued')
   })
 
-  it('GET /model/train/status/:jobId with valid jobId → 200 TrainingJob (M7-08)', async () => {
+  it('GET /model/train/status/:jobId is public — no X-Admin-Key required (M7-08)', async () => {
     const app = await buildTestApp(makeRegistry())
 
+    // Route is now in public modelRoutes; buildTestApp does pass registry through buildApp
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/model/train/status/job-123',
-      headers: { 'x-admin-key': VALID_KEY },
     })
 
     expect(response.statusCode).toBe(200)
@@ -91,14 +92,13 @@ describe('adminRoutes — X-Admin-Key auth', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/v1/model/train/status/nonexistent-id',
-      headers: { 'x-admin-key': VALID_KEY },
     })
 
     expect(response.statusCode).toBe(404)
     expect(JSON.parse(response.payload).error).toBe('Job not found')
   })
 
-  it('POST /model/train while training in progress → 409 (concurrent guard)', async () => {
+  it('POST /model/train while training in progress → 409 with jobId (concurrent guard)', async () => {
     const app = await buildTestApp(makeRegistry({ conflictOnEnqueue: true }))
 
     const response = await app.inject({
@@ -108,5 +108,7 @@ describe('adminRoutes — X-Admin-Key auth', () => {
     })
 
     expect(response.statusCode).toBe(409)
+    const body = JSON.parse(response.payload)
+    expect(body.jobId).toBe('job-123')
   })
 })

@@ -13,6 +13,12 @@ export class TrainingJobRegistry {
     private readonly versionedModelStore: VersionedModelStore,
   ) {}
 
+  getActiveJobId(): string | undefined {
+    return Array.from(this.jobs.values()).find(
+      (j) => j.status === 'queued' || j.status === 'running'
+    )?.jobId
+  }
+
   enqueue(): { jobId: string; status: JobStatus; message: string } {
     if (this.modelTrainer.isTraining) {
       throw new ConflictError()
@@ -54,7 +60,7 @@ export class TrainingJobRegistry {
         await this.versionedModelStore.saveVersioned(trainedModel, result)
       }
       this._updateJob(jobId, {
-        status: 'complete',
+        status: 'done',
         completedAt: new Date().toISOString(),
         loss: result.finalLoss,
       })

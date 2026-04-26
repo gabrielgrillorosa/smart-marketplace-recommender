@@ -106,7 +106,7 @@ export interface RecommendationResult {
 
 // M7 — Production Readiness types
 
-export type JobStatus = 'queued' | 'running' | 'complete' | 'failed'
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed'
 
 export interface TrainingJob {
   jobId: string
