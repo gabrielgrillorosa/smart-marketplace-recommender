@@ -7,14 +7,15 @@ import { FallbackBanner } from './FallbackBanner';
 import { RecommendationSkeleton } from './RecommendationSkeleton';
 import { RecommendedColumn } from './RecommendedColumn';
 import { ShuffledColumn } from './ShuffledColumn';
+import { RetrainPanel } from '@/components/retrain/RetrainPanel';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
 export function AnalysisPanel() {
   const { selectedClient } = useSelectedClient();
   const { recommendations, loading, isFallback } = useRecommendations();
 
-  return (
-    <div className="space-y-6">
-      {/* Client profile section */}
+  const comparisonContent = (
+    <div className="space-y-4">
       {selectedClient ? (
         <ClientProfileCard client={selectedClient} />
       ) : (
@@ -24,7 +25,6 @@ export function AnalysisPanel() {
         </div>
       )}
 
-      {/* Recommendation comparison section */}
       <div>
         <h2 className="mb-4 text-base font-semibold text-gray-800">
           Comparação: Sem IA vs Com IA
@@ -62,5 +62,35 @@ export function AnalysisPanel() {
         )}
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: two-column grid */}
+      <div className="hidden lg:grid lg:grid-cols-2 lg:gap-8">
+        <div>{comparisonContent}</div>
+        <div>
+          <RetrainPanel />
+        </div>
+      </div>
+
+      {/* Mobile: shadcn Tabs */}
+      <div className="lg:hidden">
+        <Tabs defaultValue="comparacao">
+          <TabsList className="mb-4 w-full">
+            <TabsTrigger value="comparacao" className="flex-1">
+              📊 Comparação
+            </TabsTrigger>
+            <TabsTrigger value="retreinar" className="flex-1">
+              🔄 Retreinar
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="comparacao">{comparisonContent}</TabsContent>
+          <TabsContent value="retreinar">
+            <RetrainPanel />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </>
   );
 }
