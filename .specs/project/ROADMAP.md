@@ -393,6 +393,8 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 **Post-M11 quick fix (ADR-031, 2026-04-27):** Corrigido comportamento de queda de score pós-retreino em produtos correlacionados (ex: Knorr Pasta Sauce 64% → 32% após compras demo food/Unilever). Causa raiz: False Negative Contamination — produtos da mesma (categoria + supplier) dos comprados na demo entravam como negativos, recebendo gradiente oposto amplificado pelo `classWeight: {0:1, 1:4}`. Fix: `supplierName?: string` adicionado ao `ProductDTO`; filtro `positiveCategorySupplierPairs` exclui soft negatives do pool antes do sampling. Diagnóstico validado por Comitê de IA (4 personas). Prática equivalente ao exposure-aware sampling de produção (MNAR). 2 novos testes unitários; 74/74 Vitest ✓; ESLint ✓. Commit `e4c9004`.
 
+**Post-M11 quick fix (ADR-032, 2026-04-27) — pendente de implementação:** ADR-031 cobre apenas mesma (categoria + supplier). Produtos de outros suppliers na mesma categoria (ex: food/Nestlé após compras food/Unilever) com embeddings próximos no espaço latente continuam sujeitos a penalização residual (~5–15 pontos). Decisão aprovada pelo Comitê de IA: adicionar segundo filtro de soft negatives por **similaridade coseno** em `buildTrainingDataset` — candidatos com `maxCosineSim(candidato, qualquer_positivo) > SOFT_NEGATIVE_SIM_THRESHOLD` são excluídos do pool. Threshold via `process.env.SOFT_NEGATIVE_SIM_THRESHOLD` (default `0.65`). Os dois filtros (ADR-031 + ADR-032) são aditivos. Equivalente ao ANCE simplificado — padrão de produção. Implementação: `cosineSimilarity` pura + segundo filtro em `training-utils.ts` + testes unitários.
+
 ### Features
 
 **Backend ML Refactor (ADR-027 + ADR-028)** — PLANNED

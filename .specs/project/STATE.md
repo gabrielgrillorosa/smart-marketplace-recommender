@@ -1,18 +1,32 @@
 # Project State
 
-_Last updated: 2026-04-27 — Session: M11 quick fix ✅ COMPLETE — Soft negative exclusion (ADR-031); `supplierId?` no ProductDTO; filtro positiveCategorySupplierPairs em buildTrainingDataset; 2 novos testes; ESLint ✓; 74/74 Vitest ✓_
+_Last updated: 2026-04-27 — Session: M11 quick fix — ADR-032 registrado (soft negative exclusion por similaridade coseno); implementação pendente_
 
 ---
 
 ## Current Focus
 
-**Status:** M11 quick fix — Soft Negative Exclusion (ADR-031) ✅ COMPLETE
+**Status:** M11 quick fix — ADR-032 (soft negative cosine similarity) — decisão registrada, implementação pendente
 
 **Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
 ---
 
 ## Decisions
+
+### AD-032: M11 quick fix — Exclusão de Soft Negatives por Similaridade Coseno (ADR-032) (2026-04-27)
+
+**Decision:** Adicionar segundo filtro de soft negatives em `buildTrainingDataset`: candidatos com `max(cosineSimilarity(candidateEmb, positiveEmb)) > SOFT_NEGATIVE_SIM_THRESHOLD` são excluídos do `negativePool`. Threshold configurável via `process.env.SOFT_NEGATIVE_SIM_THRESHOLD` (default `0.65`). Filtro aplicado após ADR-031 (categoria+supplier) — os dois são aditivos: um produto é excluído se satisfizer qualquer um dos dois critérios. `cosineSimilarity` implementada como função pura local.
+
+**Reason:** ADR-031 cobre apenas mesma (categoria + supplier). Produtos food/Nestlé próximos de food/Unilever no espaço de embedding continuam no pool de negativos e recebem gradiente negativo residual (~5–15 pontos). A exclusão por similaridade coseno é equivalente ao que ANCE realiza em produção — matematicamente correta para eliminar False Negative Contamination independente de supplier. Debatido e aprovado por Comitê de IA (4 personas, 2026-04-27). ADR-032.
+
+**Trade-off:** Introduz `SOFT_NEGATIVE_SIM_THRESHOLD` como hiperparâmetro novo. Mitigado por env var com default calibrado (0.65). Pool de negativos reduz adicionalmente (~3–8 produtos com 52 no catálogo) — compensado pelo `negativeSamplingRatio: 4`.
+
+**Impact:** `training-utils.ts` (função `cosineSimilarity` + segundo filtro no loop) + `training-utils.test.ts` (testes de exclusão por similaridade).
+
+**Status:** Accepted ✓ (ADR-032) — implementação pendente
+
+---
 
 ### AD-031: M11 quick fix — Exclusão de Soft Negatives por Categoria+Supplier no negative sampling (2026-04-27)
 
@@ -313,6 +327,7 @@ _None at this time._
 ## Todos
 
 - [x] **M11 quick fix (ADR-031):** `supplierId?: string` adicionado ao `ProductDTO`; filtro soft negatives em `buildTrainingDataset` (exclusão de categoria+supplierName); 2 novos testes unitários; ESLint ✓; 74/74 Vitest ✓. Commit: `fix(ai-service): exclude soft negatives by category+supplier to prevent gradient interference (ADR-031)`
+- [ ] **M11 quick fix (ADR-032):** Adicionar `cosineSimilarity` pura em `training-utils.ts`; segundo filtro `softPositiveIdsBySimilarity` após ADR-031; threshold via `process.env.SOFT_NEGATIVE_SIM_THRESHOLD` (default 0.65); testes unitários (exclusão por cosine + retrocompatibilidade sem embeddings); gate: `npm run lint && npm run test` — ESLint ✓, Vitest ✓. Commit: `fix(ai-service): add cosine similarity soft negative filter to complement ADR-031 (ADR-032)`
 - [x] Specify M1 features (monorepo structure, seed, Neo4j schema) — spec.md created (28 reqs, M1-01..M1-28)
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)
