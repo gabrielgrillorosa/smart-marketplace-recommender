@@ -39,6 +39,13 @@ interface PageResponse<T> {
   totalPages: number
 }
 
+export interface TrainingDataProbe {
+  hasTrainingData: boolean
+  clients: number
+  products: number
+  orders: number
+}
+
 async function fetchAllPages<T>(
   baseUrl: string,
   fetchOrThrow: (url: string) => Promise<unknown>
@@ -152,6 +159,18 @@ export class ModelTrainer {
 
   setProgressCallback(cb: (epoch: number, totalEpochs: number, loss: number) => void): void {
     this._progressCallback = cb
+  }
+
+  async probeTrainingDataAvailability(): Promise<TrainingDataProbe> {
+    const { clients, products, orders } = await fetchTrainingData(this.apiServiceUrl)
+    const hasOrdersWithItems = orders.some((order) => order.items.length > 0)
+
+    return {
+      hasTrainingData: clients.length > 0 && products.length > 0 && hasOrdersWithItems,
+      clients: clients.length,
+      products: products.length,
+      orders: orders.length,
+    }
   }
 
   private async syncNeo4j(
