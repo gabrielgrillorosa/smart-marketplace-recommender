@@ -419,6 +419,32 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 ---
 
+---
+
+## M12 — Self-Healing Model Startup — PLANNED
+
+**Goal:** Tornar o ai-service totalmente autônomo na inicialização. Em ambiente limpo (`docker compose up` pela primeira vez ou após `docker compose down -v`), o serviço deve detectar a ausência de modelo, gerar embeddings se necessário, treinar o modelo v1 em background e sinalizar prontidão via `/ready` — sem nenhuma intervenção manual do operador.
+
+**Target:** `docker compose up` em ambiente limpo resulta em sistema totalmente operacional após ~3 minutos, sem nenhum comando adicional. O avaliador abre `http://localhost:3000` e as recomendações funcionam.
+
+**Status:** PLANNED — ADR-033 registrado (2026-04-27)
+
+### Features
+
+**`autoHealModel()` — Background Self-Healing** — PLANNED
+
+- Disparado em background após `versionedModelStore.loadCurrent()` quando `modelStore.getModel() === null`
+- Sequência: (1) verifica embeddings no Neo4j → gera via `embeddingService.generateEmbeddings()` se ausentes; (2) verifica se PostgreSQL tem clientes com pedidos (seed rodou); (3) dispara `trainingJobRegistry` em background; (4) loga progresso; non-fatal em caso de erro
+- `/ready` retorna `503` durante o processo — Docker Compose aguarda via readiness probe
+- Flag `AUTO_HEAL_MODEL=false` (env var) para desabilitar em testes E2E e unitários
+
+**`docker-compose.yml` — Healthcheck ajustado** — PLANNED
+
+- `start_period` do ai-service aumentado de `60s` para `180s` para cobrir: HuggingFace model download (~90MB, cacheado em `ai-hf-cache` após primeiro uso) + geração de embeddings (~30s para 52 produtos) + treino (~20s com EPOCHS=30 BATCH=16)
+- `interval`, `retries` e `timeout` inalterados
+
+---
+
 ## Future Considerations
 
 - Graph-augmented RAG: multi-hop Cypher como contexto adicional no pipeline RAG

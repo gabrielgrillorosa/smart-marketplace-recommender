@@ -1,18 +1,32 @@
 # Project State
 
-_Last updated: 2026-04-27 — Session: M11 quick fix ✅ COMPLETE — ADR-032 implementado; cosineSimilarity + softPositiveIdsBySimilarity em training-utils.ts; 2 novos testes; ESLint ✓; 76/76 Vitest ✓_
+_Last updated: 2026-04-27 — Session: M11 quick fixes ✅ COMPLETE (ADR-031 + ADR-032); M12 Self-Healing Model Startup planejado (ADR-033 registrado)_
 
 ---
 
 ## Current Focus
 
-**Status:** M11 quick fix ✅ COMPLETE — ADR-031 + ADR-032 implementados
+**Status:** M11 quick fixes ✅ COMPLETE — próximo: M12 Self-Healing Model Startup (PLANNED)
 
 **Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
 ---
 
 ## Decisions
+
+### AD-033: M12 — Self-Healing Model Initialization no Startup do AI Service (2026-04-27)
+
+**Decision:** Implementar `autoHealModel()` em `index.ts` do ai-service, disparado em background após `loadCurrent()` quando nenhum modelo for encontrado. Fluxo: (1) verificar embeddings no Neo4j → gerar se ausentes via `embeddingService.generateEmbeddings()`; (2) verificar se PostgreSQL tem dados (seed rodou); (3) disparar `TrainingJobRegistry.train()` em background; (4) `/ready` retorna `503` durante o processo — Docker Compose readiness probe aguarda corretamente. `start_period` no healthcheck aumentado de `60s` para `180s`. Flag `AUTO_HEAL_MODEL=false` para desabilitar em testes.
+
+**Reason:** `docker compose up` em ambiente limpo resulta em `ModelNotTrainedError` em todas as recomendações até intervenção manual (`POST /embeddings/generate` + `POST /model/train`). Para portfolio project onde avaliador faz `docker compose up` e espera funcionar, essa experiência é inaceitável. Self-healing é padrão de sistemas bem projetados — o serviço deve recuperar seu estado operacional de forma autônoma. Aprovado por Comitê de IA (4 personas, 2026-04-27). ADR-033.
+
+**Trade-off:** `start_period: 180s` aumenta o tempo de healthcheck em ambiente limpo. Mitigado pelo volume `ai-hf-cache` que evita re-download do modelo HuggingFace em usos subsequentes (~20s no segundo `up`).
+
+**Impact:** `index.ts` (autoHealModel) + `docker-compose.yml` (start_period) + `.env.example` (AUTO_HEAL_MODEL). Feature M12 — spec + design + tasks + execute.
+
+**Status:** Accepted ✓ (ADR-033) — implementação planejada como M12
+
+---
 
 ### AD-032: M11 quick fix — Exclusão de Soft Negatives por Similaridade Coseno (ADR-032) (2026-04-27)
 
