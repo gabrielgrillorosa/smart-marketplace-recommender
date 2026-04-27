@@ -113,7 +113,7 @@ graph TB
     class User user
 ```
 
-**5 Docker services:** `postgres`, `neo4j`, `api-service`, `ai-service`, `frontend` — all with health checks and `depends_on: service_healthy` ordering.
+**5 Docker services:** `postgres`, `neo4j`, `api-service`, `ai-service`, `frontend` — all with health checks. `ai-service` health is readiness-based (`/ready`), and `api-service` waits for `ai-service` startup (`service_started`) to avoid compose startup cycles while AI self-healing runs.
 
 ---
 
@@ -127,18 +127,11 @@ docker compose up -d
 ```
 
 The system is ready when `docker compose ps` shows all services as `healthy`.
+No manual recovery command is required anymore: on clean startup, the AI service self-heals model state in background and flips `/ready` to `200` only when recommendations are truly usable.
 
 ```bash
-# Generate embeddings for all products
-curl -X POST http://localhost:3001/api/v1/embeddings/generate \
-  -H "X-Admin-Key: $ADMIN_API_KEY"
-
-# Train the neural model (~12-15s)
-curl -X POST http://localhost:3001/api/v1/model/train \
-  -H "X-Admin-Key: $ADMIN_API_KEY"
-
 # Open the demo UI
-open http://localhost:3000
+xdg-open http://localhost:3000 2>/dev/null || open http://localhost:3000
 ```
 
 > **Persistent data** — The trained neural model, PostgreSQL database, and Neo4j graph are stored in named Docker volumes (`ai-model-data`, `postgres_data`, `neo4j_data`). They survive `docker compose down`. Use `docker compose down -v` **only** for a full environment reset.
@@ -150,6 +143,41 @@ docker compose stop          # Stop services, preserve all data
 docker compose down          # Stop and remove containers, preserve volumes
 docker compose up -d         # Restart after stop
 docker compose down -v       # Full reset — deletes model, data, and graph
+```
+
+### Startup Self-Healing Flow (M12)
+
+```mermaid
+flowchart TD
+    BOOT([🚀 ai-service boot]) --> LOAD["📦 loadCurrent()"]
+    LOAD --> HAS_MODEL{"Model loaded?"}
+    HAS_MODEL -->|Yes| READY_OK["✅ /ready = 200"]
+    HAS_MODEL -->|No| LISTEN["🌐 fastify.listen()"]
+    LISTEN --> FLAG{"AUTO_HEAL_MODEL=true?"}
+    FLAG -->|No| UNREADY["⏸️ keep /ready = 503\n(no recovery in tests)"]
+    FLAG -->|Yes| MISS["🔎 check missing embeddings"]
+    MISS -->|Missing| GEN["🧠 generateEmbeddings()"]
+    MISS -->|None missing| PROBE["📊 probe training data"]
+    GEN --> PROBE
+    PROBE --> DATA{"Trainable data available?"}
+    DATA -->|No| BLOCKED["⚠️ blocked/no-training-data\n/health=200 /ready=503"]
+    DATA -->|Yes| JOB["⚙️ reuse active job or enqueue"]
+    JOB --> WAIT["⌛ waitFor(jobId)"]
+    WAIT --> MODEL_OK{"Model present after job?"}
+    MODEL_OK -->|No| FAIL["❌ blocked/training-failed\n/ready=503"]
+    MODEL_OK -->|Yes| READY_OK
+
+    classDef process fill:#87CEEB,stroke:#333,stroke-width:2px,color:#002244
+    classDef decision fill:#FFE66D,stroke:#333,stroke-width:2px,color:#1F1F1F
+    classDef success fill:#90EE90,stroke:#333,stroke-width:2px,color:#003300
+    classDef warning fill:#FFD1A9,stroke:#333,stroke-width:2px,color:#5A2D00
+    classDef failure fill:#FFB6C1,stroke:#333,stroke-width:2px,color:#5A0015
+
+    class BOOT,LOAD,LISTEN,MISS,GEN,PROBE,JOB,WAIT process
+    class HAS_MODEL,FLAG,DATA,MODEL_OK decision
+    class READY_OK success
+    class UNREADY,BLOCKED warning
+    class FAIL failure
 ```
 
 ---
@@ -554,7 +582,9 @@ flowchart TD
 ```
 
 - **Promotion gate:** A new model only becomes `current` if its `precisionAt5` is ≥ the previous model's. Regressions are saved to history but never deployed.
-- **Startup recovery:** `loadCurrent()` resolves the `/tmp/model/current` symlink on startup; if absent, falls back to the most recently modified file.
+- **Startup recovery (M12):** after startup, if model is missing and `AUTO_HEAL_MODEL=true`, `StartupRecoveryService` runs in background, generates only missing embeddings, probes trainable data, and reuses or enqueues training via `TrainingJobRegistry.waitFor()`.
+- **Readiness contract:** `/health` stays liveness-only (`200`), while `/ready` is `200` only when `embeddingService.isReady && modelStore.getModel() !== null && !startupRecoveryService.isBlockingReadiness()`.
+- **Blocked semantics:** if seed/training data is missing, service remains alive with `/ready=503` and explicit blocked reason in logs (no crash, no tight retry loop).
 - **Docker persistence:** The `ai-model-data` volume preserves trained models across container restarts and `docker compose down`.
 - **History:** `GET /api/v1/model/status` returns the last 5 model versions with timestamps and metrics.
 - **FsPort interface:** All filesystem operations (`symlink`, `unlink`, `readdir`, `stat`, `mkdir`) go through an injected `FsPort` interface — the production implementation uses `node:fs/promises`; tests use `vi.fn()` mocks.
@@ -782,7 +812,7 @@ Full OpenAPI documentation: `http://localhost:8080/swagger-ui.html`
 | `/api/v1/search/semantic` | POST | — | Semantic product search via vector similarity |
 | `/api/v1/rag/query` | POST | — | LLM-grounded natural language product query |
 | `/api/v1/model/train` | POST | `X-Admin-Key` | Trigger async neural model training → 202 + jobId |
-| `/api/v1/model/train/status/:jobId` | GET | `X-Admin-Key` | Poll training job progress |
+| `/api/v1/model/train/status/:jobId` | GET | — | Poll training job progress |
 | `/api/v1/model/status` | GET | — | Model health, metrics, version history |
 | `/api/v1/embeddings/generate` | POST | `X-Admin-Key` | Generate embeddings for all products |
 | `/api/v1/embeddings/sync-product` | POST | — | Internal: sync single product to Neo4j + generate embedding |

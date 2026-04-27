@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-04-27 — Session: M11 quick fixes ✅ COMPLETE (ADR-031 + ADR-032); M12 Self-Healing Model Startup planejado (ADR-033 registrado)_
+_Last updated: 2026-04-27 — Session: M12 execute concluido (Self-Healing Model Startup); self-healing ativo no boot + readiness contract atualizado_
 
 ---
 
 ## Current Focus
 
-**Status:** M11 quick fixes ✅ COMPLETE — próximo: M12 Self-Healing Model Startup (PLANNED)
+**Status:** M12 Self-Healing Model Startup — execute concluido ✅
 
 **Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
@@ -14,17 +14,45 @@ _Last updated: 2026-04-27 — Session: M11 quick fixes ✅ COMPLETE (ADR-031 + A
 
 ## Decisions
 
-### AD-033: M12 — Self-Healing Model Initialization no Startup do AI Service (2026-04-27)
+### AD-033: M12 — StartupRecoveryService para self-healing do modelo no boot do AI Service (2026-04-27)
 
-**Decision:** Implementar `autoHealModel()` em `index.ts` do ai-service, disparado em background após `loadCurrent()` quando nenhum modelo for encontrado. Fluxo: (1) verificar embeddings no Neo4j → gerar se ausentes via `embeddingService.generateEmbeddings()`; (2) verificar se PostgreSQL tem dados (seed rodou); (3) disparar `TrainingJobRegistry.train()` em background; (4) `/ready` retorna `503` durante o processo — Docker Compose readiness probe aguarda corretamente. `start_period` no healthcheck aumentado de `60s` para `180s`. Flag `AUTO_HEAL_MODEL=false` para desabilitar em testes.
+**Decision:** Introduzir `StartupRecoveryService` no `ai-service`, instanciado no `index.ts`, para orquestrar o recovery em background quando `VersionedModelStore.loadCurrent()` termina sem modelo carregado. O serviço: (1) verifica embeddings ausentes e reaproveita `embeddingService.generateEmbeddings()` quando necessario; (2) valida se existe dado minimo de treino; (3) reutiliza `TrainingJobRegistry.enqueue()` + `waitFor(jobId)` para disparar ou aguardar o treino; (4) bloqueia `/ready` ate que `versionedModelStore.getModel()` volte a ser nao-nulo. `AUTO_HEAL_MODEL=false` continua sendo o opt-out oficial para testes.
 
-**Reason:** `docker compose up` em ambiente limpo resulta em `ModelNotTrainedError` em todas as recomendações até intervenção manual (`POST /embeddings/generate` + `POST /model/train`). Para portfolio project onde avaliador faz `docker compose up` e espera funcionar, essa experiência é inaceitável. Self-healing é padrão de sistemas bem projetados — o serviço deve recuperar seu estado operacional de forma autônoma. Aprovado por Comitê de IA (4 personas, 2026-04-27). ADR-033.
+**Reason:** `docker compose up` apos perda do modelo ainda expõe `ModelNotTrainedError` ate intervençao manual. O projeto ja possui as pecas operacionais do recovery (embeddings + treino assíncrono + model store versionado); faltava um orquestrador de boot. A decisao preserva o caminho unico de treino assíncrono do M7, evita duplicar lifecycle em `index.ts` e cria um seam claro para testes unitarios e de startup. ADR-033.
 
-**Trade-off:** `start_period: 180s` aumenta o tempo de healthcheck em ambiente limpo. Mitigado pelo volume `ai-hf-cache` que evita re-download do modelo HuggingFace em usos subsequentes (~20s no segundo `up`).
+**Trade-off:** M12 continua tratando ausencia de modelo, nao orquestraçao do seed. Se o ambiente estiver vazio porque o seed nunca rodou, o processo fica vivo, registra warning e mantem `/ready = 503` em vez de esconder a causa.
 
-**Impact:** `index.ts` (autoHealModel) + `docker-compose.yml` (start_period) + `.env.example` (AUTO_HEAL_MODEL). Feature M12 — spec + design + tasks + execute.
+**Impact:** `StartupRecoveryService` + `index.ts` + `TrainingJobRegistry.waitFor()` + `.env.example`/`env.ts` (AUTO_HEAL_MODEL) + startup integration tests + compose `/ready` health contract. Feature M12 concluida e validada em cold/warm boot.
 
-**Status:** Accepted ✓ (ADR-033) — implementação planejada como M12
+**Status:** Accepted ✓ (ADR-033)
+
+---
+
+### AD-034: M12 — `/ready` como probe operacional do ai-service sem ciclo de startup no Compose (2026-04-27)
+
+**Decision:** O healthcheck do `ai-service` passa a usar `/ready`, com `start_period: 180s`, enquanto o `api-service` deixa de depender de `ai-service: service_healthy` e passa a depender apenas de o container estar iniciado (`service_started`). `/health` permanece liveness puro.
+
+**Reason:** O auto-healing depende do `api-service` para buscar clientes, produtos e pedidos usados no treino. Se o Compose mantivesse `api-service` esperando o `ai-service` ficar saudável, e o `ai-service` ficasse saudável apenas quando `/ready = 200`, o boot entraria em ciclo. Ao mesmo tempo, manter o healthcheck em `/health` faria o Compose enxergar o serviço como pronto cedo demais. ADR-034 resolve as duas tensões com a menor mudança estrutural possível.
+
+**Trade-off:** O `api-service` pode subir antes de o modelo do `ai-service` estar pronto, mas isso é aceitável porque o proxy Java já possui circuit breaker + fallback para indisponibilidade temporaria da IA.
+
+**Impact:** `docker-compose.yml` (probe do ai-service + `depends_on` do api-service) + `design.md`/ADR-034 do M12.
+
+**Status:** Accepted ✓ (ADR-034)
+
+---
+
+### AD-035: M12 — Retry limitado no probe de dados de treino para mitigar race de startup (2026-04-27)
+
+**Decision:** `StartupRecoveryService` executa probe de dados de treino com retry limitado (`trainingDataProbeAttempts` + `trainingDataProbeDelayMs`) antes de concluir `blocked/no-training-data`.
+
+**Reason:** Em boot frio do stack, `api-service` pode estar disponível parcialmente durante os primeiros segundos após o `listen()` do `ai-service`, retornando contagens transitórias (ex.: clientes/pedidos presentes e produtos ainda não visíveis), o que poderia bloquear readiness cedo demais.
+
+**Trade-off:** Aumenta alguns segundos no pior caso de cold boot, mas evita falso negativo de prontidão sem introduzir loop infinito.
+
+**Impact:** `StartupRecoveryService.ts` e configuração no `index.ts` para tentativa limitada de probe durante startup recovery.
+
+**Status:** Accepted ✓ (M12 Execute)
 
 ---
 
@@ -342,6 +370,10 @@ _None at this time._
 
 - [x] **M11 quick fix (ADR-031):** `supplierId?: string` adicionado ao `ProductDTO`; filtro soft negatives em `buildTrainingDataset` (exclusão de categoria+supplierName); 2 novos testes unitários; ESLint ✓; 74/74 Vitest ✓. Commit: `fix(ai-service): exclude soft negatives by category+supplier to prevent gradient interference (ADR-031)`
 - [x] **M11 quick fix (ADR-032):** `cosineSimilarity` pura adicionada a `training-utils.ts`; filtro `softPositiveIdsBySimilarity` (threshold via `SOFT_NEGATIVE_SIM_THRESHOLD`, default 0.65) aplicado após ADR-031; 2 novos testes (exclusão por cosine + threshold=1.0 desabilitado); ESLint ✓; 76/76 Vitest ✓. Commit: `fix(ai-service): add cosine similarity soft negative filter to complement ADR-031 (ADR-032)`
+- [x] **Specify M12:** `spec.md` criado para Self-Healing Model Startup (12 reqs, M12-01..M12-12)
+- [x] **Design M12:** `design.md` criado + ADR-033 (`StartupRecoveryService`) + ADR-034 (`/ready` probe + compose startup cycle); proximo: tasks
+- [x] **Tasks M12:** `tasks.md` criado (T1..T6) com dependências, gates e traceability 12/12
+- [x] **Execute M12:** T1..T6 concluídas; `TrainingJobRegistry.waitFor()`, `StartupRecoveryService`, `AUTO_HEAL_MODEL`, bootstrap testável (`startup.test.ts`), compose `/ready` + `start_period: 180s`, build gate (`lint + build + test`) e validação cold/warm boot com recomendações funcionando sem chamada manual de geração/treino
 - [x] Specify M1 features (monorepo structure, seed, Neo4j schema) — spec.md created (28 reqs, M1-01..M1-28)
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)
