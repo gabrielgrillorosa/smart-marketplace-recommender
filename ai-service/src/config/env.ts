@@ -37,6 +37,20 @@ if (Math.abs(NEURAL_WEIGHT + SEMANTIC_WEIGHT - 1.0) > 1e-9) {
   console.warn('[ai-service] Warning: NEURAL_WEIGHT + SEMANTIC_WEIGHT != 1.0 — scores may not sum to 1')
 }
 
+function parseAutoHealModel(rawValue: string | undefined): boolean {
+  if (!rawValue) return true
+  if (rawValue === 'false') return false
+  if (rawValue === 'true') return true
+
+  console.warn(
+    `[ai-service] WARNING: AUTO_HEAL_MODEL="${rawValue}" is invalid. ` +
+    'Using default true. Set AUTO_HEAL_MODEL=false to disable startup recovery.'
+  )
+  return true
+}
+
+const AUTO_HEAL_MODEL = parseAutoHealModel(process.env.AUTO_HEAL_MODEL)
+
 export const ENV = Object.freeze({
   NEO4J_URI,
   NEO4J_USER,
@@ -51,5 +65,6 @@ export const ENV = Object.freeze({
   API_SERVICE_URL: process.env.API_SERVICE_URL ?? '',
   NEURAL_WEIGHT,
   SEMANTIC_WEIGHT,
+  AUTO_HEAL_MODEL,
   ADMIN_API_KEY: process.env.ADMIN_API_KEY as string | undefined,
 })
