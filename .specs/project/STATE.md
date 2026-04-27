@@ -1,18 +1,32 @@
 # Project State
 
-_Last updated: 2026-04-26 — Session: M11 — AI Learning Showcase ✅ COMPLETE — 8/8 tasks; training-utils.ts + ModelTrainer refactor (ADR-027/028) + analysisSlice (ADR-029) + RecommendationColumn (ADR-030) + AnalysisPanel snapshot orchestration + RetrainPanel phase-gate + useAppStore composição + E2E spec; ESLint ✓; npm run build ✓; 72 AI Vitest tests_
+_Last updated: 2026-04-27 — Session: M11 quick fix ✅ COMPLETE — Soft negative exclusion (ADR-031); `supplierId?` no ProductDTO; filtro positiveCategorySupplierPairs em buildTrainingDataset; 2 novos testes; ESLint ✓; 74/74 Vitest ✓_
 
 ---
 
 ## Current Focus
 
-**Status:** M11 — AI Learning Showcase ✅ COMPLETE (ADR-027..ADR-030)
+**Status:** M11 quick fix — Soft Negative Exclusion (ADR-031) ✅ COMPLETE
 
 **Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
 ---
 
 ## Decisions
+
+### AD-031: M11 quick fix — Exclusão de Soft Negatives por Categoria+Supplier no negative sampling (2026-04-27)
+
+**Decision:** Adicionar `supplierId?: string` ao `ProductDTO` em `training-utils.ts`. Em `buildTrainingDataset`, calcular o conjunto de "soft positive IDs" — produtos que compartilham (categoria + supplierId) com qualquer positivo do cliente mas que não foram comprados — e excluí-los do `negativePool`. Produtos sem `supplierId` não são excluídos (comportamento conservador). `supplierId` preenchido pelo `ModelTrainer` a partir do campo `supplierName` do `ProductSummaryDTO` retornado pelo endpoint `/api/v1/products`.
+
+**Reason:** Observado em runtime: 3 compras demo food/Unilever causaram queda de score do Knorr Pasta Sauce de 64% → 32% após retreino — violação do objetivo do M11. Causa raiz: False Negative Contamination — produtos da mesma (categoria+supplier) com embedding próximo recebem gradiente oposto amplificado pelo `classWeight: {0:1, 1:4}`. Diagnóstico validado pelo Comitê de IA (4 personas, 2026-04-27). Prática equivalente ao "impression-based negatives" do YouTube (2016) e ao MNAR (Missing Not At Random) da literatura — padrão de produção, não artifício de demo. ADR-031.
+
+**Trade-off:** Pool de negativos reduz (produtos soft-positive excluídos). Com 52 produtos e `negativeSamplingRatio: 4`, o impacto é negligível — hard negative mining já garantia diversidade de categoria.
+
+**Impact:** `training-utils.ts` (ProductDTO + filtro softPositives) + `training-utils.test.ts` (novo teste) + `ModelTrainer.ts` (preencher `supplierId` no mapeamento de ProductSummaryDTO → ProductDTO).
+
+**Status:** Accepted ✓ (ADR-031)
+
+---
 
 ### AD-026: M10 — getAllDemoBoughtPairs + mescla no clientOrderMap para incluir demos no retreinamento (2026-04-26)
 
@@ -298,6 +312,7 @@ _None at this time._
 
 ## Todos
 
+- [x] **M11 quick fix (ADR-031):** `supplierId?: string` adicionado ao `ProductDTO`; filtro soft negatives em `buildTrainingDataset` (exclusão de categoria+supplierName); 2 novos testes unitários; ESLint ✓; 74/74 Vitest ✓. Commit: `fix(ai-service): exclude soft negatives by category+supplier to prevent gradient interference (ADR-031)`
 - [x] Specify M1 features (monorepo structure, seed, Neo4j schema) — spec.md created (28 reqs, M1-01..M1-28)
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)

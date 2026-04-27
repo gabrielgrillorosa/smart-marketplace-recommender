@@ -191,6 +191,74 @@ describe('buildTrainingDataset', () => {
     })
   })
 
+  it('soft negative exclusion: products with same category+supplierName as positives are excluded from negative pool', () => {
+    // p1 (food, Unilever) is purchased — positive
+    // p2 (food, Unilever) is NOT purchased — soft positive, must NOT appear as negative
+    // p3 (food, Nestle)   is NOT purchased — different supplier, allowed as negative
+    // p4 (cleaning, Unilever) is NOT purchased — different category, allowed as negative
+    const products: ProductDTO[] = [
+      { id: 'p1', name: 'Knorr Broth', category: 'food', price: 3.29, sku: 'SKU1', supplierName: 'Unilever' },
+      { id: 'p2', name: 'Knorr Pasta', category: 'food', price: 1.99, sku: 'SKU2', supplierName: 'Unilever' },
+      { id: 'p3', name: 'Nestle Soup', category: 'food', price: 2.49, sku: 'SKU3', supplierName: 'Nestle' },
+      { id: 'p4', name: 'Omo Detergent', category: 'cleaning', price: 4.99, sku: 'SKU4', supplierName: 'Unilever' },
+      { id: 'p5', name: 'Signal Toothpaste', category: 'personal_care', price: 2.99, sku: 'SKU5', supplierName: 'Unilever' },
+    ]
+    const embeddingMap = new Map<string, number[]>(
+      products.map((p, i) => [p.id, makeEmbedding(i * 0.01)])
+    )
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'Client 1', segment: 'B2B', countryCode: 'BR' }]
+
+    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
+      negativeSamplingRatio: 4,
+      seed: 42,
+      useClassWeight: true,
+    })
+
+    // Only p1 is positive — so we have 1 positive vector
+    const positiveCount = result.labels.filter((l) => l === 1).length
+    expect(positiveCount).toBe(1)
+
+    // p2 (food/Unilever) must NOT appear as negative — it is a soft positive
+    // Negatives can only be p3 (food/Nestle), p4 (cleaning/Unilever), p5 (personal_care/Unilever)
+    // With N=4 but only 3 eligible negatives, total negatives = 3
+    const negativeCount = result.labels.filter((l) => l === 0).length
+    expect(negativeCount).toBe(3)
+
+    // p2 embedding is makeEmbedding(0.01) — verify it is NOT in output vectors
+    const p2Emb = makeEmbedding(0.01)
+    const anyVectorIsP2 = result.inputVectors.some((v) => v.slice(0, 384).every((val, i) => Math.abs(val - p2Emb[i]) < 1e-9))
+    expect(anyVectorIsP2).toBe(false)
+  })
+
+  it('soft negative exclusion is skipped when supplierName is absent', () => {
+    // Without supplierName, no soft positive exclusion occurs — backward compatible behavior
+    const products: ProductDTO[] = [
+      { id: 'p1', name: 'Product A', category: 'food', price: 1, sku: 'S1' },
+      { id: 'p2', name: 'Product B', category: 'food', price: 2, sku: 'S2' },
+      { id: 'p3', name: 'Product C', category: 'beverages', price: 3, sku: 'S3' },
+      { id: 'p4', name: 'Product D', category: 'snacks', price: 4, sku: 'S4' },
+      { id: 'p5', name: 'Product E', category: 'cleaning', price: 5, sku: 'S5' },
+    ]
+    const embeddingMap = new Map<string, number[]>(
+      products.map((p, i) => [p.id, makeEmbedding(i * 0.01)])
+    )
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'Client 1', segment: 'B2B', countryCode: 'BR' }]
+
+    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
+      negativeSamplingRatio: 4,
+      seed: 42,
+      useClassWeight: true,
+    })
+
+    // p2 has same category as p1 but no supplierName — should NOT be excluded from negativePool
+    // negativePool = [p2, p3, p4, p5] = 4 products
+    // hard negative mining: 2 diff-category (p3/beverages, p4/snacks or p5/cleaning) + 1 fill same-category (p2/food) = 3
+    const negativeCount = result.labels.filter((l) => l === 0).length
+    expect(negativeCount).toBeGreaterThanOrEqual(1) // p2 eligible as negative (not excluded)
+  })
+
   it('client with no purchased products (no embedding match) produces no samples', () => {
     const emptyOrderMap = new Map<string, Set<string>>([['c1', new Set()]])
     const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)

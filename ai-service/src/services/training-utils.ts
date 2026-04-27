@@ -12,6 +12,7 @@ export interface ProductDTO {
   category: string
   price: number
   sku: string
+  supplierName?: string
 }
 
 export interface TrainingDatasetOptions {
@@ -54,7 +55,29 @@ export function buildTrainingDataset(
     const clientProfileVector = meanPooling(purchasedEmbeddings)
 
     const positiveProducts = productsWithEmbeddings.filter((p) => purchasedIds.has(p.id))
-    const negativePool = productsWithEmbeddings.filter((p) => !purchasedIds.has(p.id))
+
+    // Soft positive exclusion (ADR-031): products sharing (category + supplierName) with any
+    // positive but not purchased are treated as "unknown" — not negative — to prevent
+    // gradient interference on correlated products (False Negative Contamination).
+    const positiveCategorySupplierPairs = new Set(
+      positiveProducts
+        .filter((p) => p.supplierName)
+        .map((p) => `${p.category}::${p.supplierName}`)
+    )
+    const softPositiveIds = new Set(
+      productsWithEmbeddings
+        .filter(
+          (p) =>
+            !purchasedIds.has(p.id) &&
+            p.supplierName != null &&
+            positiveCategorySupplierPairs.has(`${p.category}::${p.supplierName}`)
+        )
+        .map((p) => p.id)
+    )
+
+    const negativePool = productsWithEmbeddings.filter(
+      (p) => !purchasedIds.has(p.id) && !softPositiveIds.has(p.id)
+    )
 
     for (const posProduct of positiveProducts) {
       const posEmb = productEmbeddingMap.get(posProduct.id)!
