@@ -259,6 +259,91 @@ describe('buildTrainingDataset', () => {
     expect(negativeCount).toBeGreaterThanOrEqual(1) // p2 eligible as negative (not excluded)
   })
 
+  it('cosine similarity soft negative exclusion: semantically close products excluded from negative pool', () => {
+    // p1 purchased — embedding [1, 0, 0, 0]
+    // p2 NOT purchased — embedding [0.99, 0.14, 0, 0] → cosine ~0.99 > 0.65 → excluded (soft positive)
+    // p3 NOT purchased — embedding [0, 0, 1, 0] → cosine ~0 < 0.65 → stays in pool (valid negative)
+    const products: ProductDTO[] = [
+      { id: 'p1', name: 'Positive', category: 'food', price: 1, sku: 'S1' },
+      { id: 'p2', name: 'SimilarToPositive', category: 'food', price: 2, sku: 'S2' },
+      { id: 'p3', name: 'Dissimilar', category: 'cleaning', price: 3, sku: 'S3' },
+      { id: 'p4', name: 'AlsoDissimilar', category: 'snacks', price: 4, sku: 'S4' },
+      { id: 'p5', name: 'AlsoDissimilar2', category: 'beverages', price: 5, sku: 'S5' },
+    ]
+    const p1Emb = [1, 0, 0, 0]
+    const p2Emb = [0.99, 0.14, 0, 0] // high cosine similarity with p1
+    const p3Emb = [0, 0, 1, 0]       // orthogonal to p1 → cosine = 0
+    const p4Emb = [0, 1, 0, 0]       // orthogonal to p1
+    const p5Emb = [0, 0, 0, 1]       // orthogonal to p1
+
+    const embeddingMap = new Map<string, number[]>([
+      ['p1', p1Emb],
+      ['p2', p2Emb],
+      ['p3', p3Emb],
+      ['p4', p4Emb],
+      ['p5', p5Emb],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    // Set threshold low enough that p2 (cosine ~0.99) is excluded but p3/p4/p5 (cosine ~0) stay
+    const originalEnv = process.env.SOFT_NEGATIVE_SIM_THRESHOLD
+    process.env.SOFT_NEGATIVE_SIM_THRESHOLD = '0.65'
+
+    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
+      negativeSamplingRatio: 4,
+      seed: 42,
+      useClassWeight: true,
+    })
+
+    process.env.SOFT_NEGATIVE_SIM_THRESHOLD = originalEnv
+
+    // p2 must NOT appear as negative (cosine > 0.65)
+    const p2Excluded = !result.inputVectors.some(
+      (v) => v[0] === p2Emb[0] && v[1] === p2Emb[1] && v[2] === p2Emb[2] && v[3] === p2Emb[3]
+    )
+    expect(p2Excluded).toBe(true)
+
+    // At least 1 negative must be present (p3/p4/p5 are valid)
+    const negativeCount = result.labels.filter((l) => l === 0).length
+    expect(negativeCount).toBeGreaterThan(0)
+  })
+
+  it('cosine similarity filter is bypassed when threshold env var is 1.0 (no exclusion)', () => {
+    // With threshold=1.0, only perfectly identical embeddings would be excluded — effectively disabled
+    const products: ProductDTO[] = [
+      { id: 'p1', name: 'Positive', category: 'food', price: 1, sku: 'S1' },
+      { id: 'p2', name: 'SimilarToPositive', category: 'food', price: 2, sku: 'S2' },
+      { id: 'p3', name: 'Dissimilar', category: 'cleaning', price: 3, sku: 'S3' },
+      { id: 'p4', name: 'AlsoDissimilar', category: 'snacks', price: 4, sku: 'S4' },
+      { id: 'p5', name: 'AlsoDissimilar2', category: 'beverages', price: 5, sku: 'S5' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['p1', [1, 0, 0, 0]],
+      ['p2', [0.99, 0.14, 0, 0]],
+      ['p3', [0, 0, 1, 0]],
+      ['p4', [0, 1, 0, 0]],
+      ['p5', [0, 0, 0, 1]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const originalEnv = process.env.SOFT_NEGATIVE_SIM_THRESHOLD
+    process.env.SOFT_NEGATIVE_SIM_THRESHOLD = '1.0'
+
+    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
+      negativeSamplingRatio: 4,
+      seed: 42,
+      useClassWeight: true,
+    })
+
+    process.env.SOFT_NEGATIVE_SIM_THRESHOLD = originalEnv
+
+    // With threshold=1.0, p2 is NOT excluded — more negatives available
+    const negativeCount = result.labels.filter((l) => l === 0).length
+    expect(negativeCount).toBeGreaterThanOrEqual(3)
+  })
+
   it('client with no purchased products (no embedding match) produces no samples', () => {
     const emptyOrderMap = new Map<string, Set<string>>([['c1', new Set()]])
     const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)

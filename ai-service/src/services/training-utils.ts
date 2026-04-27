@@ -25,6 +25,19 @@ function lcgNext(state: number): number {
   return (state * 1664525 + 1013904223) & 0xffffffff
 }
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0
+  let normA = 0
+  let normB = 0
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i]
+    normA += a[i] * a[i]
+    normB += b[i] * b[i]
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB)
+  return denom === 0 ? 0 : dot / denom
+}
+
 export function buildTrainingDataset(
   clients: ClientDTO[],
   clientOrderMap: Map<string, Set<string>>,
@@ -75,8 +88,26 @@ export function buildTrainingDataset(
         .map((p) => p.id)
     )
 
-    const negativePool = productsWithEmbeddings.filter(
+    // Soft positive exclusion (ADR-032): candidates with maxCosineSimilarity to any positive
+    // above threshold are treated as "unknown" — not negative — regardless of supplier.
+    // Covers cross-supplier products in the same semantic space (e.g. food/Nestlé after
+    // food/Unilever purchases). Threshold via env var, default 0.65.
+    const simThreshold = parseFloat(process.env.SOFT_NEGATIVE_SIM_THRESHOLD ?? '0.65')
+    const positiveEmbeddings = positiveProducts.map((p) => productEmbeddingMap.get(p.id)!)
+    const candidatesAfterBrandFilter = productsWithEmbeddings.filter(
       (p) => !purchasedIds.has(p.id) && !softPositiveIds.has(p.id)
+    )
+    const softPositiveIdsBySimilarity = new Set(
+      candidatesAfterBrandFilter
+        .filter((p) => {
+          const pEmb = productEmbeddingMap.get(p.id)!
+          return positiveEmbeddings.some((posEmb) => cosineSimilarity(pEmb, posEmb) > simThreshold)
+        })
+        .map((p) => p.id)
+    )
+
+    const negativePool = candidatesAfterBrandFilter.filter(
+      (p) => !softPositiveIdsBySimilarity.has(p.id)
     )
 
     for (const posProduct of positiveProducts) {

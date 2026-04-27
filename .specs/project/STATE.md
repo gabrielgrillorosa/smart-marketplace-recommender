@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-04-27 — Session: M11 quick fix — ADR-032 registrado (soft negative exclusion por similaridade coseno); implementação pendente_
+_Last updated: 2026-04-27 — Session: M11 quick fix ✅ COMPLETE — ADR-032 implementado; cosineSimilarity + softPositiveIdsBySimilarity em training-utils.ts; 2 novos testes; ESLint ✓; 76/76 Vitest ✓_
 
 ---
 
 ## Current Focus
 
-**Status:** M11 quick fix — ADR-032 (soft negative cosine similarity) — decisão registrada, implementação pendente
+**Status:** M11 quick fix ✅ COMPLETE — ADR-031 + ADR-032 implementados
 
 **Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
 
@@ -327,7 +327,7 @@ _None at this time._
 ## Todos
 
 - [x] **M11 quick fix (ADR-031):** `supplierId?: string` adicionado ao `ProductDTO`; filtro soft negatives em `buildTrainingDataset` (exclusão de categoria+supplierName); 2 novos testes unitários; ESLint ✓; 74/74 Vitest ✓. Commit: `fix(ai-service): exclude soft negatives by category+supplier to prevent gradient interference (ADR-031)`
-- [ ] **M11 quick fix (ADR-032):** Adicionar `cosineSimilarity` pura em `training-utils.ts`; segundo filtro `softPositiveIdsBySimilarity` após ADR-031; threshold via `process.env.SOFT_NEGATIVE_SIM_THRESHOLD` (default 0.65); testes unitários (exclusão por cosine + retrocompatibilidade sem embeddings); gate: `npm run lint && npm run test` — ESLint ✓, Vitest ✓. Commit: `fix(ai-service): add cosine similarity soft negative filter to complement ADR-031 (ADR-032)`
+- [x] **M11 quick fix (ADR-032):** `cosineSimilarity` pura adicionada a `training-utils.ts`; filtro `softPositiveIdsBySimilarity` (threshold via `SOFT_NEGATIVE_SIM_THRESHOLD`, default 0.65) aplicado após ADR-031; 2 novos testes (exclusão por cosine + threshold=1.0 desabilitado); ESLint ✓; 76/76 Vitest ✓. Commit: `fix(ai-service): add cosine similarity soft negative filter to complement ADR-031 (ADR-032)`
 - [x] Specify M1 features (monorepo structure, seed, Neo4j schema) — spec.md created (28 reqs, M1-01..M1-28)
 - [x] Design complex M1 — design.md + ADR-001 (seed strategy) + ADR-002 (Neo4j healthcheck) created
 - [x] Break M1 into tasks — tasks.md created (21 tasks, 6 phases, 28/28 reqs mapped)
