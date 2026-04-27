@@ -391,6 +391,8 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 **Status:** ✅ COMPLETE — 8/8 tasks, 27/27 reqs; training-utils.ts + ModelTrainer (Dense[64]→Dropout→Dense[1], ADR-027/028) + analysisSlice (4-phase union, ADR-029) + RecommendationColumn (4 colorSchemes, ADR-030) + AnalysisPanel (snapshot orchestration + xl:grid-cols-4 + accordion md) + RetrainPanel (phase-gate disable) + useAppStore composição + E2E spec; ESLint ✓; npm run build ✓; 72 AI tests (Vitest)
 
+**Post-M11 quick fix (ADR-031, 2026-04-27):** Corrigido comportamento de queda de score pós-retreino em produtos correlacionados (ex: Knorr Pasta Sauce 64% → 32% após compras demo food/Unilever). Causa raiz: False Negative Contamination — produtos da mesma (categoria + supplier) dos comprados na demo entravam como negativos, recebendo gradiente oposto amplificado pelo `classWeight: {0:1, 1:4}`. Fix: `supplierName?: string` adicionado ao `ProductDTO`; filtro `positiveCategorySupplierPairs` exclui soft negatives do pool antes do sampling. Diagnóstico validado por Comitê de IA (4 personas). Prática equivalente ao exposure-aware sampling de produção (MNAR). 2 novos testes unitários; 74/74 Vitest ✓; ESLint ✓. Commit `e4c9004`.
+
 ### Features
 
 **Backend ML Refactor (ADR-027 + ADR-028)** — PLANNED
