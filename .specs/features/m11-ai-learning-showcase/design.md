@@ -1,6 +1,6 @@
 # Design — M11: AI Learning Showcase Panel
 
-**Status**: Approved
+**Status**: Approved — amended 2026-04-27 (ADR-031 + ADR-032 post-implementation fixes)
 **Date**: 2026-04-26
 **Feature**: M11 — AI Learning Showcase
 **Committee**: Prof. Dr. Engenharia de IA/Recomendações · Prof. Dr. Deep Learning · Arquiteto de Soluções IA · Principal Software Architect · Staff Engineering · QA Staff · Staff Product Engineer · Staff UI Designer
@@ -29,7 +29,7 @@ graph TD
   end
 
   subgraph AI Service
-    MT["ModelTrainer\nnegative sampling N:4\nhard negative mining\nDense[64]→Dropout→Dense[1]\nclassWeight {0:1, 1:4}\nEPOCHS=30 BATCH=16"]
+    MT["ModelTrainer\nnegative sampling N:4\nhard negative mining\nsoft negative exclusion: categoria+supplier (ADR-031)\nsoft negative exclusion: cosine > 0.65 (ADR-032)\nDense[64]→Dropout→Dense[1]\nclassWeight {0:1, 1:4}\nEPOCHS=30 BATCH=16"]
     RS["RecommendationService\nrecommend() / recommendFromVector()"]
   end
 
@@ -61,7 +61,7 @@ graph TD
 |---|---|---|
 | `RecommendationColumn` | `components/analysis/RecommendationColumn.tsx` | Presentational: renderiza lista de recomendações com header colorido, score badges, e estado empty/loading |
 | `analysisSlice` | `store/analysisSlice.ts` | Zustand slice volátil com type discriminada de 4 fases; captura e invalida snapshots |
-| `buildTrainingDataset` | `ai-service/src/services/training-utils.ts` | Função pura: recebe `clientOrderMap`, `productEmbeddingMap`, `products`, `seed` → retorna `{ inputVectors, labels }` com negative sampling + hard negative mining |
+| `buildTrainingDataset` | `ai-service/src/services/training-utils.ts` | Função pura: recebe `clientOrderMap`, `productEmbeddingMap`, `products`, `seed` → retorna `{ inputVectors, labels }` com negative sampling + hard negative mining + soft negative exclusion por (categoria+supplier, ADR-031) e por similaridade coseno (ADR-032) |
 
 ### Modificados
 
@@ -102,9 +102,20 @@ interface AnalysisSlice {
 ### `buildTrainingDataset` — Interface
 
 ```typescript
+interface ProductDTO {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  price: number;
+  sku: string;
+  supplierName?: string;  // ADR-031: usado para exclusão de soft negatives por marca
+}
+
 interface TrainingDatasetOptions {
   negativeSamplingRatio: number;  // default: 4
   seed?: number;                  // default: Date.now()
+  useClassWeight?: boolean;       // default: true; false → upsampling manual
 }
 
 function buildTrainingDataset(
@@ -115,6 +126,14 @@ function buildTrainingDataset(
   options: TrainingDatasetOptions
 ): { inputVectors: number[][]; labels: number[] }
 ```
+
+**Pipeline de construção do negativePool (por cliente, por positivo):**
+
+1. `positiveProducts` — produtos comprados pelo cliente com embedding disponível
+2. **ADR-031** — calcular `softPositiveIdsByBrand`: produtos com mesma (categoria + `supplierName`) de qualquer positivo, mas não comprados → excluídos do pool
+3. **ADR-032** — calcular `softPositiveIdsBySimilarity`: produtos com `maxCosineSimilarity(candidato, qualquer_positivo) > SOFT_NEGATIVE_SIM_THRESHOLD` (env var, default `0.65`) → excluídos do pool
+4. `negativePool` = produtos sem embedding excluídos + não comprados − softPositiveIdsByBrand − softPositiveIdsBySimilarity
+5. Hard negative mining sobre o `negativePool`: ≥2 negativos de categoria diferente do positivo por slot
 
 ---
 
@@ -140,6 +159,8 @@ function buildTrainingDataset(
 | Type discriminada `AnalysisState` 4 fases | Arquiteto IA (High) + QA (High): impossibilita estados impossíveis em compile-time |
 | `RecommendationColumn` presentational | Arquiteto Principal (Medium): SRP; testabilidade unitária |
 | Layout `grid-cols-1 md:grid-cols-2 xl:grid-cols-4` com accordion | Staff PE (High): 4 colunas em tablets (~250px cada) ilegíveis |
+| **Soft negative exclusion por (categoria + supplier) — ADR-031** | Comitê IA (High, 2026-04-27): produtos da mesma (categoria + supplierName) dos positivos recebem gradiente negativo amplificado pelo classWeight, causando queda de score pós-retreino em produtos correlacionados (False Negative Contamination). Exclusão determinística, zero hiperparâmetro. Equivalente ao MNAR/exposure-aware sampling de produção. `supplierName?: string` adicionado ao `ProductDTO`. |
+| **Soft negative exclusion por similaridade coseno — ADR-032** | Comitê IA (High, 2026-04-27): ADR-031 não cobre produtos de outros suppliers na mesma categoria com embeddings próximos (ex: food/Nestlé após compras food/Unilever). Filtro complementar: `maxCosineSim(candidato, positivo) > SOFT_NEGATIVE_SIM_THRESHOLD` (env var, default 0.65). ANCE simplificado — O(n×p), trivial com 52 produtos e embeddings em memória. Os dois filtros são aditivos. |
 
 ---
 
@@ -206,3 +227,5 @@ Todas as animações wrapped em `motion-safe:transition-*` seguindo padrão AD-0
 | Timestamp `capturedAt` | Staff UI Designer (Low) | `<time>` em cada coluna com `capturedAt` do snapshot |
 | EPOCHS=30, BATCH_SIZE=16 | Prof. IA/Rec (Medium) | `ModelTrainer` constantes atualizadas; ADR-028 |
 | Early stopping | Prof. DL (Medium) | Implementado como patience=5 em `buildTrainingDataset` via `onEpochEnd` callback |
+| **Soft negative exclusion por (categoria + supplier) — post-implementation fix** | Comitê IA / 4 personas (High, 2026-04-27) | `ProductDTO` recebe `supplierName?: string`; `buildTrainingDataset` calcula `softPositiveIdsByBrand` e exclui do negativePool antes do sampling; ADR-031 |
+| **Soft negative exclusion por similaridade coseno — post-implementation fix** | Comitê IA / 4 personas (High, 2026-04-27) | `cosineSimilarity` pura adicionada a `training-utils.ts`; segundo filtro `softPositiveIdsBySimilarity` (threshold via `SOFT_NEGATIVE_SIM_THRESHOLD` env var, default 0.65) aplicado após ADR-031; ADR-032 |
