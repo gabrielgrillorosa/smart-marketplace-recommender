@@ -329,6 +329,7 @@ export class ModelTrainer {
       await model.fit(xs, ys, {
         epochs: EPOCHS,
         batchSize: BATCH_SIZE,
+        classWeight: { 0: 1.0, 1: 4.0 },
         callbacks: {
           onEpochEnd: (epoch: number, logs?: tf.Logs) => {
             const loss = logs?.loss ?? 0
