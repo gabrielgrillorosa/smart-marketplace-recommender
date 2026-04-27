@@ -10,6 +10,7 @@ import { VersionedModelStore } from './services/VersionedModelStore.js'
 import { ModelTrainer } from './services/ModelTrainer.js'
 import { TrainingJobRegistry } from './services/TrainingJobRegistry.js'
 import { CronScheduler } from './services/CronScheduler.js'
+import { StartupRecoveryService } from './services/StartupRecoveryService.js'
 import { RecommendationService } from './services/RecommendationService.js'
 import { DemoBuyService } from './services/DemoBuyService.js'
 import { embeddingsRoutes } from './routes/embeddings.js'
@@ -19,6 +20,7 @@ import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
 import { demoBuyRoutes } from './routes/demoBuyRoutes.js'
+import { listenAndScheduleRecovery, registerStartupProbes } from './startup/bootstrap.js'
 
 const fastify = Fastify({ logger: true })
 
@@ -63,6 +65,18 @@ const start = async () => {
     // Step 6: TrainingJobRegistry
     const trainingJobRegistry = new TrainingJobRegistry(modelTrainer, versionedModelStore)
 
+    const startupRecoveryService = new StartupRecoveryService({
+      autoHealModel: ENV.AUTO_HEAL_MODEL,
+      versionedModelStore,
+      embeddingService,
+      neo4jRepository: repo,
+      modelTrainer,
+      trainingJobRegistry,
+      logger: fastify.log,
+      trainingDataProbeAttempts: 6,
+      trainingDataProbeDelayMs: 5_000,
+    })
+
     // Step 7: CronScheduler — registers daily retraining at 02:00
     const cronScheduler = new CronScheduler(trainingJobRegistry)
     cronScheduler.start()
@@ -80,11 +94,10 @@ const start = async () => {
     const searchService = new SearchService(embeddingService, repo)
     const ragService = new RAGService(embeddingService, repo, ENV.OPENROUTER_API_KEY, ENV.LLM_MODEL, ENV.OPENROUTER_BASE_URL)
 
-    fastify.get('/health', async () => ({ status: 'ok', service: 'ai-service' }))
-
-    fastify.get('/ready', async (_request, reply) => {
-      const ready = embeddingService.isReady
-      return reply.code(ready ? 200 : 503).send({ ready })
+    registerStartupProbes(fastify, {
+      embeddingService,
+      versionedModelStore,
+      startupRecoveryService,
     })
 
     // Step 8: Admin plugin (X-Admin-Key scoped — POST /model/train + status)
@@ -127,9 +140,16 @@ const start = async () => {
       demoBuyService,
     })
 
-    // Step 10: Start accepting traffic
-    await fastify.listen({ port: ENV.PORT, host: '0.0.0.0' })
-    fastify.log.info(`AI Service listening on port ${ENV.PORT}`)
+    // Step 10: Start accepting traffic and schedule self-healing only after listen()
+    await listenAndScheduleRecovery(fastify, {
+      autoHealModel: ENV.AUTO_HEAL_MODEL,
+      embeddingService,
+      versionedModelStore,
+      startupRecoveryService,
+      port: ENV.PORT,
+      host: '0.0.0.0',
+      logger: fastify.log,
+    })
   } catch (err) {
     fastify.log.error(err)
     process.exit(1)
