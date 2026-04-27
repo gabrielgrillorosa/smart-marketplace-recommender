@@ -7,6 +7,7 @@ const MAX_JOBS = 20
 
 export class TrainingJobRegistry {
   private readonly jobs = new Map<string, TrainingJob>()
+  private readonly waiters = new Map<string, Set<(job: TrainingJob) => void>>()
 
   constructor(
     private readonly modelTrainer: ModelTrainer,
@@ -41,6 +42,36 @@ export class TrainingJobRegistry {
 
   getJob(jobId: string): TrainingJob | undefined {
     return this.jobs.get(jobId)
+  }
+
+  waitFor(jobId: string): Promise<TrainingJob | undefined> {
+    const existing = this.jobs.get(jobId)
+    if (!existing) {
+      return Promise.resolve(undefined)
+    }
+
+    if (this._isTerminal(existing.status)) {
+      return Promise.resolve(existing)
+    }
+
+    return new Promise<TrainingJob>((resolve) => {
+      const listeners = this.waiters.get(jobId) ?? new Set<(job: TrainingJob) => void>()
+      const resolver = (job: TrainingJob) => {
+        resolve(job)
+      }
+      listeners.add(resolver)
+      this.waiters.set(jobId, listeners)
+
+      // Guard against race between listener registration and a near-simultaneous status update.
+      const latest = this.jobs.get(jobId)
+      if (latest && this._isTerminal(latest.status)) {
+        listeners.delete(resolver)
+        if (listeners.size === 0) {
+          this.waiters.delete(jobId)
+        }
+        resolve(latest)
+      }
+    })
   }
 
   private async _runJob(jobId: string): Promise<void> {
@@ -78,7 +109,11 @@ export class TrainingJobRegistry {
   private _updateJob(jobId: string, updates: Partial<TrainingJob>): void {
     const existing = this.jobs.get(jobId)
     if (existing) {
-      this.jobs.set(jobId, { ...existing, ...updates })
+      const updated = { ...existing, ...updates }
+      this.jobs.set(jobId, updated)
+      if (this._isTerminal(updated.status)) {
+        this._notifyWaiters(jobId, updated)
+      }
     }
   }
 
@@ -93,6 +128,23 @@ export class TrainingJobRegistry {
     const toDelete = sorted.slice(MAX_JOBS)
     for (const [id] of toDelete) {
       this.jobs.delete(id)
+      this.waiters.delete(id)
     }
+  }
+
+  private _notifyWaiters(jobId: string, job: TrainingJob): void {
+    const listeners = this.waiters.get(jobId)
+    if (!listeners || listeners.size === 0) {
+      return
+    }
+
+    this.waiters.delete(jobId)
+    for (const resolve of listeners) {
+      resolve(job)
+    }
+  }
+
+  private _isTerminal(status: JobStatus): boolean {
+    return status === 'done' || status === 'failed'
   }
 }

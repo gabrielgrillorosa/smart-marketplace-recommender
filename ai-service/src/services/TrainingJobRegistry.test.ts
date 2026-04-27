@@ -117,4 +117,44 @@ describe('TrainingJobRegistry', () => {
     expect(job?.error).toContain('Training failed')
     expect(job?.completedAt).toBeTruthy()
   })
+
+  it('waitFor() resolves unknown jobId to undefined', async () => {
+    const result = await registry.waitFor('missing-job')
+    expect(result).toBeUndefined()
+  })
+
+  it('waitFor() resolves queued/running job when it reaches done', async () => {
+    const { jobId } = registry.enqueue()
+    const result = await registry.waitFor(jobId)
+
+    expect(result?.jobId).toBe(jobId)
+    expect(result?.status).toBe('done')
+    expect(result?.completedAt).toBeTruthy()
+  })
+
+  it('waitFor() resolves queued/running job when it reaches failed', async () => {
+    const failingTrainer = makeTrainer({ shouldFail: true })
+    const failingRegistry = new TrainingJobRegistry(
+      failingTrainer as unknown as import('../services/ModelTrainer.js').ModelTrainer,
+      store as unknown as import('../services/VersionedModelStore.js').VersionedModelStore,
+    )
+
+    const { jobId } = failingRegistry.enqueue()
+    const result = await failingRegistry.waitFor(jobId)
+
+    expect(result?.jobId).toBe(jobId)
+    expect(result?.status).toBe('failed')
+    expect(result?.error).toContain('Training failed')
+  })
+
+  it('waitFor() resolves immediately for terminal jobs', async () => {
+    const { jobId } = registry.enqueue()
+
+    const firstTerminal = await registry.waitFor(jobId)
+    expect(firstTerminal?.status).toBe('done')
+
+    const secondTerminal = await registry.waitFor(jobId)
+    expect(secondTerminal?.status).toBe('done')
+    expect(secondTerminal?.jobId).toBe(jobId)
+  })
 })
