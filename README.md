@@ -45,6 +45,27 @@ open http://localhost:3000
 
 O sistema está pronto quando `docker compose ps` mostrar todos os serviços como `healthy`. / The system is ready when `docker compose ps` shows all services as `healthy`.
 
+### Gerenciando o ambiente / Managing the environment
+
+```bash
+# Parar os serviços (preserva todos os dados) / Stop services (all data preserved)
+docker compose stop
+
+# Parar e remover containers (preserva dados) / Stop and remove containers (data preserved)
+docker compose down
+
+# Reiniciar após parada / Restart after stop
+docker compose up -d
+```
+
+> ⚠️ **Dados persistentes** — O modelo neural treinado, o banco PostgreSQL e o grafo Neo4j são armazenados em **volumes Docker nomeados** (`ai-model-data`, `postgres_data`, `neo4j_data`). Eles **sobrevivem** ao `docker compose down`.
+>
+> Use `docker compose down -v` **apenas** se quiser resetar completamente o ambiente — esse comando apaga o modelo treinado, todos os dados do banco e o grafo. Será necessário re-executar o seed e re-treinar o modelo.
+>
+> **Persistent data** — The trained neural model, PostgreSQL database, and Neo4j graph are stored in **named Docker volumes** (`ai-model-data`, `postgres_data`, `neo4j_data`). They **survive** `docker compose down`.
+>
+> Use `docker compose down -v` **only** if you want a full environment reset — this deletes the trained model, all database data, and the graph. You will need to re-run the seed and re-train the model.
+
 ---
 
 ## Decisões Técnicas / Tech Decisions
