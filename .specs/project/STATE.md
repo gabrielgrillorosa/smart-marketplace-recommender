@@ -24,7 +24,7 @@ _Last updated: 2026-04-27 — Session: M11 quick fix ✅ COMPLETE — ADR-032 im
 
 **Impact:** `training-utils.ts` (função `cosineSimilarity` + segundo filtro no loop) + `training-utils.test.ts` (testes de exclusão por similaridade).
 
-**Status:** Accepted ✓ (ADR-032) — implementação pendente
+**Status:** Accepted ✓ (ADR-032) — implementado; commit `38e1fd8`
 
 ---
 
