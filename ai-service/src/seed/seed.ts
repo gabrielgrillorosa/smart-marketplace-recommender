@@ -4,7 +4,10 @@
  * Connects directly to PostgreSQL and Neo4j (bypasses domain layer by design — ADR-001).
  * Seeds both databases with synthetic multi-tenant marketplace data.
  * Idempotent: ON CONFLICT DO NOTHING (PG) + MERGE (Neo4j).
- * Exits 0 on success, 1 on any error or count mismatch.
+ *
+ * Two entry points:
+ *   - `runSeed({ pool, driver, logger })` — programmatic, used by AutoSeedService at boot.
+ *   - `main()` — CLI, run via `npm run seed`. Exits 0 on success, 1 on any error or count mismatch.
  */
 
 import { Pool, PoolClient } from 'pg';
@@ -16,22 +19,39 @@ import { products } from './data/products';
 import { clients } from './data/clients';
 import { generateOrders } from './data/orders';
 
-const startTime = Date.now();
-
-function log(msg: string): void {
-  console.log(`[seed] ${msg}`);
+export interface SeedLogger {
+  info(msg: string): void;
+  warn?(msg: string): void;
+  error?(msg: string): void;
 }
 
-function elapsed(): string {
-  return `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
+interface InternalLogger {
+  log(msg: string): void;
+  elapsed(): string;
+}
+
+function createInternalLogger(externalLogger?: SeedLogger): InternalLogger {
+  const startTime = Date.now();
+  return {
+    log(msg: string): void {
+      const formatted = `[seed] ${msg}`;
+      if (externalLogger) {
+        externalLogger.info(formatted);
+      } else {
+        console.log(formatted);
+      }
+    },
+    elapsed(): string {
+      return `${((Date.now() - startTime) / 1000).toFixed(2)}s`;
+    },
+  };
 }
 
 // ── PostgreSQL helpers ─────────────────────────────────────────────────────────
 
-async function seedPostgres(client: PoolClient): Promise<void> {
-  log(`Starting PostgreSQL seeding...`);
+async function seedPostgres(client: PoolClient, logger: InternalLogger): Promise<void> {
+  logger.log(`Starting PostgreSQL seeding...`);
 
-  // countries
   let countriesInserted = 0;
   for (const c of countries) {
     const res = await client.query(
@@ -42,9 +62,8 @@ async function seedPostgres(client: PoolClient): Promise<void> {
     );
     countriesInserted += res.rowCount ?? 0;
   }
-  log(`Countries: ${countriesInserted} inserted, ${countries.length - countriesInserted} skipped`);
+  logger.log(`Countries: ${countriesInserted} inserted, ${countries.length - countriesInserted} skipped`);
 
-  // suppliers
   let suppliersInserted = 0;
   for (const s of suppliers) {
     const res = await client.query(
@@ -55,9 +74,8 @@ async function seedPostgres(client: PoolClient): Promise<void> {
     );
     suppliersInserted += res.rowCount ?? 0;
   }
-  log(`Suppliers: ${suppliersInserted} inserted, ${suppliers.length - suppliersInserted} skipped`);
+  logger.log(`Suppliers: ${suppliersInserted} inserted, ${suppliers.length - suppliersInserted} skipped`);
 
-  // products
   let productsInserted = 0;
   for (const p of products) {
     const res = await client.query(
@@ -69,9 +87,8 @@ async function seedPostgres(client: PoolClient): Promise<void> {
     );
     productsInserted += res.rowCount ?? 0;
   }
-  log(`Products: ${productsInserted} inserted, ${products.length - productsInserted} skipped`);
+  logger.log(`Products: ${productsInserted} inserted, ${products.length - productsInserted} skipped`);
 
-  // product_countries (junction)
   let pcInserted = 0;
   for (const p of products) {
     for (const countryCode of p.available_in) {
@@ -84,9 +101,8 @@ async function seedPostgres(client: PoolClient): Promise<void> {
       pcInserted += res.rowCount ?? 0;
     }
   }
-  log(`Product-Countries: ${pcInserted} inserted`);
+  logger.log(`Product-Countries: ${pcInserted} inserted`);
 
-  // clients
   let clientsInserted = 0;
   for (const c of clients) {
     const res = await client.query(
@@ -98,9 +114,8 @@ async function seedPostgres(client: PoolClient): Promise<void> {
     );
     clientsInserted += res.rowCount ?? 0;
   }
-  log(`Clients: ${clientsInserted} inserted, ${clients.length - clientsInserted} skipped`);
+  logger.log(`Clients: ${clientsInserted} inserted, ${clients.length - clientsInserted} skipped`);
 
-  // orders + order_items
   const orders = generateOrders(clients, products);
   let ordersInserted = 0;
   let itemsInserted = 0;
@@ -126,16 +141,16 @@ async function seedPostgres(client: PoolClient): Promise<void> {
       }
     }
   }
-  log(`Orders: ${ordersInserted} inserted, ${orders.length - ordersInserted} skipped`);
-  log(`Order Items: ${itemsInserted} inserted`);
+  logger.log(`Orders: ${ordersInserted} inserted, ${orders.length - ordersInserted} skipped`);
+  logger.log(`Order Items: ${itemsInserted} inserted`);
 
-  log(`PostgreSQL seeding complete (${elapsed()})`);
+  logger.log(`PostgreSQL seeding complete (${logger.elapsed()})`);
 }
 
 // ── Neo4j helpers ─────────────────────────────────────────────────────────────
 
-async function applyNeo4jConstraints(session: Session): Promise<void> {
-  log(`Applying Neo4j uniqueness constraints...`);
+async function applyNeo4jConstraints(session: Session, logger: InternalLogger): Promise<void> {
+  logger.log(`Applying Neo4j uniqueness constraints...`);
   const constraints = [
     `CREATE CONSTRAINT product_id IF NOT EXISTS FOR (p:Product) REQUIRE p.id IS UNIQUE`,
     `CREATE CONSTRAINT client_id IF NOT EXISTS FOR (c:Client) REQUIRE c.id IS UNIQUE`,
@@ -146,41 +161,37 @@ async function applyNeo4jConstraints(session: Session): Promise<void> {
   for (const stmt of constraints) {
     await session.run(stmt);
   }
-  log(`Constraints: 5 uniqueness constraints applied`);
+  logger.log(`Constraints: 5 uniqueness constraints applied`);
 }
 
-async function seedNeo4j(session: Session): Promise<void> {
-  log(`Starting Neo4j seeding...`);
-  await applyNeo4jConstraints(session);
+async function seedNeo4j(session: Session, logger: InternalLogger): Promise<void> {
+  logger.log(`Starting Neo4j seeding...`);
+  await applyNeo4jConstraints(session, logger);
 
-  // Countries
   await session.run(
     `UNWIND $countries AS c
      MERGE (co:Country {code: c.code})
      SET co.name = c.name`,
     { countries }
   );
-  log(`Country nodes: MERGE complete`);
+  logger.log(`Country nodes: MERGE complete`);
 
-  // Suppliers
   await session.run(
     `UNWIND $suppliers AS s
      MERGE (sup:Supplier {name: s.name})
      SET sup.id = s.id, sup.country = s.country_code`,
     { suppliers }
   );
-  log(`Supplier nodes: MERGE complete`);
+  logger.log(`Supplier nodes: MERGE complete`);
 
-  // Categories (derived from products)
   const categoryNames = [...new Set(products.map((p) => p.category))];
   await session.run(
     `UNWIND $categories AS name
      MERGE (cat:Category {name: name})`,
     { categories: categoryNames }
   );
-  log(`Category nodes: MERGE complete`);
+  logger.log(`Category nodes: MERGE complete`);
 
-  // Products + relationships BELONGS_TO, SUPPLIED_BY, AVAILABLE_IN
   await session.run(
     `UNWIND $products AS p
      MERGE (prod:Product {id: p.id})
@@ -210,7 +221,6 @@ async function seedNeo4j(session: Session): Promise<void> {
     }
   );
 
-  // AVAILABLE_IN relationships (separate pass to avoid cartesian complexity)
   for (const p of products) {
     for (const countryCode of p.available_in) {
       await session.run(
@@ -220,9 +230,8 @@ async function seedNeo4j(session: Session): Promise<void> {
       );
     }
   }
-  log(`Product nodes + BELONGS_TO + SUPPLIED_BY + AVAILABLE_IN: MERGE complete`);
+  logger.log(`Product nodes + BELONGS_TO + SUPPLIED_BY + AVAILABLE_IN: MERGE complete`);
 
-  // Clients
   await session.run(
     `UNWIND $clients AS c
      MERGE (cl:Client {id: c.id})
@@ -231,9 +240,8 @@ async function seedNeo4j(session: Session): Promise<void> {
          cl.country = c.country_code`,
     { clients }
   );
-  log(`Client nodes: MERGE complete`);
+  logger.log(`Client nodes: MERGE complete`);
 
-  // BOUGHT relationships (from orders)
   const orders = generateOrders(clients, products);
   const boughtRels: Array<{
     clientId: string;
@@ -261,15 +269,30 @@ async function seedNeo4j(session: Session): Promise<void> {
      SET b.quantity = r.quantity, b.order_date = r.order_date`,
     { rels: boughtRels }
   );
-  log(`BOUGHT relationships: MERGE complete (${boughtRels.length} relationships)`);
+  logger.log(`BOUGHT relationships: MERGE complete (${boughtRels.length} relationships)`);
 
-  log(`Neo4j seeding complete (${elapsed()})`);
+  logger.log(`Neo4j seeding complete (${logger.elapsed()})`);
 }
 
 // ── Cross-count verification ───────────────────────────────────────────────────
 
-async function verifyCounts(pgClient: PoolClient, session: Session): Promise<void> {
-  log(`Running cross-count verification...`);
+/**
+ * Throws SeedVerificationError if PG and Neo4j counts diverge.
+ * Used by both runSeed (programmatic) and main (CLI).
+ */
+export class SeedVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SeedVerificationError';
+  }
+}
+
+async function verifyCounts(
+  pgClient: PoolClient,
+  session: Session,
+  logger: InternalLogger
+): Promise<void> {
+  logger.log(`Running cross-count verification...`);
 
   const pgProductsRes = await pgClient.query(`SELECT COUNT(*)::int AS count FROM products`);
   const pgProductCount: number = pgProductsRes.rows[0].count;
@@ -283,28 +306,70 @@ async function verifyCounts(pgClient: PoolClient, session: Session): Promise<voi
   const neo4jBoughtRes = await session.run(`MATCH ()-[r:BOUGHT]->() RETURN count(r) AS count`);
   const neo4jBoughtCount = neo4jBoughtRes.records[0].get('count').toNumber();
 
-  log(`Products — PostgreSQL: ${pgProductCount}, Neo4j: ${neo4jProductCount}`);
-  log(`Order items — PostgreSQL: ${pgOrderItemCount}, Neo4j BOUGHT: ${neo4jBoughtCount}`);
+  logger.log(`Products — PostgreSQL: ${pgProductCount}, Neo4j: ${neo4jProductCount}`);
+  logger.log(`Order items — PostgreSQL: ${pgOrderItemCount}, Neo4j BOUGHT: ${neo4jBoughtCount}`);
 
-  let hasError = false;
+  const errors: string[] = [];
   if (pgProductCount !== neo4jProductCount) {
-    log(`ERROR: Product count mismatch! PG=${pgProductCount} vs Neo4j=${neo4jProductCount}`);
-    hasError = true;
+    errors.push(`Product count mismatch: PG=${pgProductCount} vs Neo4j=${neo4jProductCount}`);
   }
   if (pgOrderItemCount !== neo4jBoughtCount) {
-    log(`ERROR: Order item/BOUGHT count mismatch! PG=${pgOrderItemCount} vs Neo4j=${neo4jBoughtCount}`);
-    hasError = true;
+    errors.push(`Order item/BOUGHT count mismatch: PG=${pgOrderItemCount} vs Neo4j=${neo4jBoughtCount}`);
   }
 
-  if (hasError) {
-    log(`Cross-count verification FAILED — exiting with code 1`);
-    process.exit(1);
+  if (errors.length > 0) {
+    const msg = `Cross-count verification FAILED — ${errors.join('; ')}`;
+    logger.log(`ERROR: ${msg}`);
+    throw new SeedVerificationError(msg);
   }
 
-  log(`Cross-count verification PASSED`);
+  logger.log(`Cross-count verification PASSED`);
 }
 
-// ── Main ───────────────────────────────────────────────────────────────────────
+
+export interface RunSeedOptions {
+  pool: Pool;
+  driver: Driver;
+  logger?: SeedLogger;
+}
+
+
+export async function isAlreadySeeded(pool: Pool, driver: Driver): Promise<boolean> {
+  const pgRes = await pool.query(`SELECT COUNT(*)::int AS c FROM products`);
+  const pgCount: number = pgRes.rows[0].c;
+  if (pgCount === 0) return false;
+
+  const session = driver.session();
+  try {
+    const neoRes = await session.run(`MATCH (p:Product) RETURN count(p) AS c`);
+    const neoCount = neoRes.records[0].get('c').toNumber();
+    return neoCount > 0;
+  } finally {
+    await session.close();
+  }
+}
+
+
+export async function runSeed(opts: RunSeedOptions): Promise<void> {
+  const logger = createInternalLogger(opts.logger);
+  const pgClient = await opts.pool.connect();
+  const session = opts.driver.session();
+  try {
+    await seedPostgres(pgClient, logger);
+    await seedNeo4j(session, logger);
+    await verifyCounts(pgClient, session, logger);
+    logger.log(`─────────────────────────────────────────`);
+    logger.log(`Seed complete in ${logger.elapsed()}`);
+    logger.log(`  PostgreSQL: countries=${countries.length}, suppliers=${suppliers.length}, products=${products.length}, clients=${clients.length}`);
+    logger.log(`  Neo4j: all 5 node types + 4 relationship types merged`);
+    logger.log(`─────────────────────────────────────────`);
+  } finally {
+    pgClient.release();
+    await session.close();
+  }
+}
+
+// ── CLI entry point ────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost';
@@ -317,10 +382,10 @@ async function main(): Promise<void> {
   const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
   const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'password123';
 
-  log(`Starting — target: postgres:${POSTGRES_HOST}:${POSTGRES_PORT}, neo4j:${NEO4J_URI}`);
-  log(`Timestamp: ${new Date().toISOString()}`);
+  const cliLogger = createInternalLogger();
+  cliLogger.log(`Starting — target: postgres:${POSTGRES_HOST}:${POSTGRES_PORT}, neo4j:${NEO4J_URI}`);
+  cliLogger.log(`Timestamp: ${new Date().toISOString()}`);
 
-  // PostgreSQL connection
   const pool = new Pool({
     host: POSTGRES_HOST,
     port: parseInt(POSTGRES_PORT, 10),
@@ -329,50 +394,37 @@ async function main(): Promise<void> {
     password: POSTGRES_PASSWORD,
   });
 
-  let pgClient: PoolClient;
+  let driver: Driver | undefined;
   try {
-    pgClient = await pool.connect();
-    log(`Connected to PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}`);
-  } catch (err) {
-    log(`ERROR: Cannot connect to PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT} — ${(err as Error).message}`);
-    process.exit(1);
-  }
+    // Eager connectivity probe so CLI fails fast with a clear message.
+    const probeClient = await pool.connect();
+    cliLogger.log(`Connected to PostgreSQL at ${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}`);
+    probeClient.release();
 
-  // Neo4j connection
-  let driver: Driver;
-  let session: Session;
-  try {
     driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
-    session = driver.session();
-    await session.run('RETURN 1');
-    log(`Connected to Neo4j at ${NEO4J_URI}`);
+    const probeSession = driver.session();
+    try {
+      await probeSession.run('RETURN 1');
+      cliLogger.log(`Connected to Neo4j at ${NEO4J_URI}`);
+    } finally {
+      await probeSession.close();
+    }
+
+    await runSeed({ pool, driver });
   } catch (err) {
-    log(`ERROR: Cannot connect to Neo4j at ${NEO4J_URI} — ${(err as Error).message}`);
-    pgClient!.release();
-    await pool.end();
+    cliLogger.log(`ERROR: ${(err as Error).message}`);
+    await pool.end().catch(() => {});
+    if (driver) await driver.close().catch(() => {});
     process.exit(1);
   }
 
-  try {
-    await seedPostgres(pgClient!);
-    await seedNeo4j(session!);
-    await verifyCounts(pgClient!, session!);
-
-    const totalElapsed = elapsed();
-    log(`─────────────────────────────────────────`);
-    log(`Seed complete in ${totalElapsed}`);
-    log(`  PostgreSQL: countries=${countries.length}, suppliers=${suppliers.length}, products=${products.length}, clients=${clients.length}`);
-    log(`  Neo4j: all 5 node types + 4 relationship types merged`);
-    log(`─────────────────────────────────────────`);
-  } catch (err) {
-    log(`ERROR: Unexpected failure — ${(err as Error).message}`);
-    process.exit(1);
-  } finally {
-    pgClient!.release();
-    await pool.end();
-    await session!.close();
-    await driver!.close();
-  }
+  await pool.end();
+  await driver.close();
+  process.exit(0);
 }
 
-main();
+// Only auto-run when invoked directly (e.g., via `npm run seed` / `ts-node src/seed/seed.ts`).
+// Importing this module from elsewhere (AutoSeedService) does NOT trigger main().
+if (require.main === module) {
+  main();
+}

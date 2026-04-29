@@ -1,9 +1,11 @@
 # Roadmap
 
-**Current Milestone:** M11 — AI Learning Showcase ✅ COMPLETE
-**Status:** COMPLETE — 8/8 tasks, 4 phases, 27/27 reqs; training-utils.ts (buildTrainingDataset + hard negative mining + seed LCG) + ModelTrainer (Dense[64]→Dropout→Dense[1], EPOCHS=30, BATCH_SIZE=16, early stopping) + analysisSlice (4-phase discriminated union) + RecommendationColumn (empty/loading/populated, 4 colorSchemes) + AnalysisPanel (snapshot orchestration + xl:grid-cols-4 + accordion md + mobile tabs) + RetrainPanel (disabled when phase=empty, lifted useRetrainJob) + useAppStore (analysisSlice composed + reset chain) + E2E spec; ESLint ✓; npm run build ✓; 72 AI tests (Vitest)
+**Current Milestone:** M13 — Cart, Checkout & Async Retrain Capture
+**Status:** PLANNED — roadmap reorientado apos AD-043/044/045 para o fluxo `Carrinho -> Pedido -> Treino`, com `ModelStatusPanel` como ancora visual e `Order` como unico ground truth de treino.
 
-**Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
+**Previous:** M12 — Self-Healing Model Startup ✅ COMPLETE (+ post-M12 hardening: AutoSeed + cache bypass — ADR-052)
+
+**Tech Debt:** ADR-053 — Migrate seed from `ai-service` to `api-service` (candidate for M16 or standalone spike, ~4 days)
 
 ---
 
@@ -337,13 +339,13 @@
 
 ---
 
-## M-CF — Client Profile Enrichment Fix — PLANNED
+## Client Profile Enrichment Fix — PLANNED BUGFIX
 
 **Goal:** Corrigir o `ClientProfileCard` na aba "Análise" que exibe `0 pedidos` e `Sem pedidos registrados` para todos os clientes, apesar de os dados existirem no Postgres. O bug está no `ClientSelectorDropdown` que hardcoda `totalOrders: 0` e `recentProducts: []` ao construir o objeto `Client` a partir do endpoint de lista `/api/v1/clients`, que não retorna dados de pedidos.
 
 **Target:** Ao selecionar um cliente, o `ClientProfileCard` exibe o total de pedidos correto, o valor total gasto, a data do último pedido e os últimos 5 produtos comprados — todos buscados dos endpoints `/api/v1/clients/{id}` e `/api/v1/clients/{id}/orders` já existentes no API Service.
 
-**Status:** PLANNED — aguarda M9-A ✅
+**Status:** PLANNED — bugfix em backlog, agora rastreado dentro de `M15`
 
 ### Root Cause
 
@@ -429,6 +431,8 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 **Status:** ✅ COMPLETE — execute finalizado (T1..T6, 2026-04-27). `StartupRecoveryService` ativo em background, `TrainingJobRegistry.waitFor()` implementado, `AUTO_HEAL_MODEL` documentado, bootstrap/startup testável com testes de integração de startup, compose alinhado com `/ready` + `start_period: 180s`, validação build gate + cold/warm boot concluída.
 
+**Post-M12 Hardening (2026-04-28):** `AutoSeedService` adicionado ao boot do `ai-service` (ADR-052) — sistema agora **zero-touch em cold start total** (`docker compose down -v && docker compose up`). Bug de cold-start cache poisoning no `api-service` corrigido via `Cache-Control: no-cache` no `ModelTrainer` + `condition = "!#noCache"` no `@Cacheable`. Novos ADRs: ADR-052 (entregue) e ADR-053 (débito técnico). Ver [docs/diagrams/cold-start-boot-flow.md](../../docs/diagrams/cold-start-boot-flow.md).
+
 ### Features
 
 **`autoHealModel()` — Background Self-Healing** — COMPLETE
@@ -442,6 +446,96 @@ O endpoint de lista `/api/v1/clients?size=100` retorna apenas `{ id, name, segme
 
 - Healthcheck do `ai-service` usa `/ready` com `start_period: 180s`; `interval`, `retries` e `timeout` preservados
 - `api-service` depende de `ai-service: service_started` (não `service_healthy`) para quebrar ciclo de boot sem perder resiliência
+
+---
+
+## M13 — Cart, Checkout & Async Retrain Capture — PLANNED
+
+**Goal:** Substituir o fluxo legado `Demo Buy` por `Carrinho -> Checkout -> Pedido -> Treino`, tornando `Order` o unico ground truth de treino e capturando o retreinamento assincrono via `ModelStatusPanel`.
+
+**Target:** Avaliador adiciona produtos ao carrinho, visualiza o estado `Com Carrinho`, efetiva a compra, e acompanha a coluna `Pos-Efetivar` ser preenchida quando o `currentVersion` mudar no `/model/status`.
+
+### Features
+
+**Cart & Checkout API** — PLANNED
+
+- `api-service` ganha `Cart`/`CartItem` persistidos em PostgreSQL com rotas para adicionar item, remover item, esvaziar carrinho e efetivar checkout
+- `POST /carts/{clientId}/checkout` cria `Order` real e retorna `{ orderId, expectedTrainingTriggered }`
+- Checkout confirmado substitui `BOUGHT {is_demo: true}` como gatilho principal de treino
+
+**Cart-Aware Recommendation Flow** — PLANNED
+
+- `ai-service` expõe `recommendFromCart(clientId, productIds[])` usando embeddings já precomputados no Neo4j
+- Perfil `Com Carrinho` combina pedidos reais prévios com os itens do carrinho via `meanPooling` em memória
+- Fluxo `is_demo` sai do caminho principal e fica apenas como modo legado/de depuração
+
+**Async Retrain Capture & ModelStatusPanel** — PLANNED
+
+- `RetrainPanel` evolui para `ModelStatusPanel` com estados `idle | training | promoted | rejected | failed`
+- `useRetrainJob` evolui para `useModelStatus`, trocando a fonte de verdade de `jobId` para `currentVersion`
+- Frontend inicia polling em `GET /model/status` após checkout e captura `Pos-Efetivar` quando a versão do modelo mudar
+
+**Model Governance & Migration** — PLANNED
+
+- `GET /model/status` passa a expor `currentVersion`, `lastTrainingResult`, `lastTrainingTriggeredBy` e `lastOrderId`
+- Gate de promoção com banda de tolerância e decisão explícita `promoted/rejected/failed`
+- Limpeza/ignorância de edges legadas `BOUGHT {is_demo: true}` antes do go-live do novo fluxo
+
+---
+
+## M14 — Catalog Score Visibility & Cart-Aware Showcase — PLANNED
+
+**Goal:** Tornar o efeito do carrinho visível em todo o catálogo e na jornada comparativa da aba "Análise", substituindo o vocabulário e a semântica de `Com Demo` por `Com Carrinho`.
+
+**Target:** Avaliador vê score em todos os itens relevantes do catálogo, observa snapshots `Com Carrinho` reativos a cada mudança, e interpreta deltas entre `Com IA -> Com Carrinho -> Pos-Efetivar` sem ambiguidade.
+
+### Features
+
+**Catalog Score Visibility** — PLANNED
+
+- Catálogo ordenado por IA exibe score para todos os itens visíveis, não apenas o top-10
+- Limite/configuração para modo diagnóstico ou catálogo completo quando necessário
+- Marca e categoria aparecem de forma consistente em cards e detalhes
+
+**Reactive Analysis Timeline** — PLANNED
+
+- `analysisSlice` troca a fase `demo` por `cart` e passa a reagir a cada add/remove do carrinho
+- Coluna `Com Carrinho` atualiza de forma incremental, sem congelar no primeiro evento
+- UI de análise mostra posição anterior, posição nova e delta de score entre as fases
+
+**Frontend Vocabulary Migration** — PLANNED
+
+- `Demo Comprar` -> `Adicionar ao Carrinho`
+- `Limpar Demo` -> `Esvaziar Carrinho`
+- `demoSlice` -> `cartSlice`, com atualização de componentes, testes E2E e textos de apoio
+
+---
+
+## M15 — Cart Integrity & Comparative UX — PLANNED
+
+**Goal:** Fechar os gaps de integridade e UX restantes no fluxo com carrinho, garantindo regras de negócio corretas, feedback comparativo claro e contexto fiel do cliente na aba "Análise".
+
+**Target:** Produtos incompatíveis com o contexto do cliente são bloqueados no carrinho, o `ClientProfileCard` mostra dados reais de pedidos, e os estados `promoted/rejected/failed` são compreensíveis para o avaliador.
+
+### Features
+
+**Cart Integrity Rules** — PLANNED
+
+- `POST /carts/{clientId}/items` valida `available_in` contra o país do cliente
+- Ações inválidas retornam mensagens de erro consistentes no backend e no frontend
+- Frontend desabilita ou sinaliza tentativas inválidas antes do checkout
+
+**Comparative UX Polish** — PLANNED
+
+- Banners e copy final para estados `promoted`, `rejected` e `failed` no `ModelStatusPanel`
+- Melhor explicação visual para o caso "sem mudança visível" quando o modelo candidato é rejeitado
+- Fechamento do restante do AD-042 adaptado ao vocabulário `Com Carrinho`
+
+**Client Profile Enrichment Fix** — PLANNED
+
+- Ao selecionar cliente, chamar `GET /api/v1/clients/{id}` e `GET /api/v1/clients/{id}/orders`
+- Preencher `ClientProfileCard` com total de pedidos, valor gasto, data do último pedido e produtos recentes
+- Manter fallback gracioso quando o enriquecimento falhar
 
 ---
 

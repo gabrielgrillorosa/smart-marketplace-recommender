@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import neo4j from 'neo4j-driver'
+import { Pool } from 'pg'
 import { ENV } from './config/env.js'
 import { Neo4jRepository } from './repositories/Neo4jRepository.js'
 import { EmbeddingService } from './services/EmbeddingService.js'
@@ -13,6 +14,7 @@ import { CronScheduler } from './services/CronScheduler.js'
 import { StartupRecoveryService } from './services/StartupRecoveryService.js'
 import { RecommendationService } from './services/RecommendationService.js'
 import { DemoBuyService } from './services/DemoBuyService.js'
+import { AutoSeedService } from './services/AutoSeedService.js'
 import { embeddingsRoutes } from './routes/embeddings.js'
 import { searchRoutes } from './routes/search.js'
 import { ragRoutes } from './routes/rag.js'
@@ -20,6 +22,7 @@ import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
 import { demoBuyRoutes } from './routes/demoBuyRoutes.js'
+import { ordersRoutes } from './routes/orders.js'
 import { listenAndScheduleRecovery, registerStartupProbes } from './startup/bootstrap.js'
 
 const fastify = Fastify({ logger: true })
@@ -135,10 +138,34 @@ const start = async () => {
       recommendationService,
     })
 
+    await fastify.register(ordersRoutes, {
+      prefix: '/api/v1',
+      repo,
+      registry: trainingJobRegistry,
+    })
+
     await fastify.register(demoBuyRoutes, {
       prefix: '/api/v1',
       demoBuyService,
     })
+
+    // Step 9.5: Auto-seed PG + Neo4j on cold start (idempotent — skips when data already present).
+    // Must complete BEFORE the StartupRecoveryService scheduled inside listenAndScheduleRecovery,
+    // because that service walks Neo4j for products to embed/train and would no-op on empty DBs.
+    // Uses dedicated short-lived connections so the runtime Neo4j driver and Pool are untouched.
+    const autoSeedService = new AutoSeedService({
+      enabled: ENV.AUTO_SEED_ON_BOOT,
+      poolFactory: () => new Pool({
+        host: ENV.POSTGRES_HOST,
+        port: ENV.POSTGRES_PORT,
+        database: ENV.POSTGRES_DB,
+        user: ENV.POSTGRES_USER,
+        password: ENV.POSTGRES_PASSWORD,
+      }),
+      driverFactory: () => neo4j.driver(ENV.NEO4J_URI, neo4j.auth.basic(ENV.NEO4J_USER, ENV.NEO4J_PASSWORD)),
+      logger: fastify.log,
+    })
+    await autoSeedService.runIfNeeded()
 
     // Step 10: Start accepting traffic and schedule self-healing only after listen()
     await listenAndScheduleRecovery(fastify, {

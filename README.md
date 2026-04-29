@@ -115,6 +115,8 @@ graph TB
 
 **5 Docker services:** `postgres`, `neo4j`, `api-service`, `ai-service`, `frontend` — all with health checks. `ai-service` health is readiness-based (`/ready`), and `api-service` waits for `ai-service` startup (`service_started`) to avoid compose startup cycles while AI self-healing runs.
 
+> **Cold-start self-sufficient:** `docker compose up` on a completely empty environment (including `docker compose down -v`) automatically seeds both databases, generates embeddings, trains the model, and reaches `/ready = 200` — no manual intervention required. See [boot flow diagram](docs/diagrams/cold-start-boot-flow.md).
+
 ---
 
 ## Quickstart
@@ -127,7 +129,16 @@ docker compose up -d
 ```
 
 The system is ready when `docker compose ps` shows all services as `healthy`.
-No manual recovery command is required anymore: on clean startup, the AI service self-heals model state in background and flips `/ready` to `200` only when recommendations are truly usable.
+
+**The system is fully self-sufficient on any clean startup:**
+- On first boot (empty volumes), `ai-service` automatically seeds PostgreSQL and Neo4j, then generates embeddings and trains the model — no manual seed command required.
+- On subsequent boots (volumes present), seeding is skipped and the existing model is reloaded in seconds.
+
+```bash
+# Track cold-start progress
+docker compose logs -f ai-service
+# Look for: [AutoSeed] complete → generateEmbeddings → training complete → /ready = 200
+```
 
 ```bash
 # Open the demo UI
@@ -145,11 +156,17 @@ docker compose up -d         # Restart after stop
 docker compose down -v       # Full reset — deletes model, data, and graph
 ```
 
-### Startup Self-Healing Flow (M12)
+### Startup Self-Healing Flow (M12 + ADR-052)
+
+The complete boot sequence handles both cold-start (empty databases) and warm-start (existing data):
 
 ```mermaid
 flowchart TD
-    BOOT([🚀 ai-service boot]) --> LOAD["📦 loadCurrent()"]
+    BOOT([🚀 ai-service boot]) --> LOAD_EMB["📦 Load embedding model"]
+    LOAD_EMB --> SEED_CHECK{"AUTO_SEED_ON_BOOT=true\nAND databases empty?"}
+    SEED_CHECK -->|"Yes — cold start"| AUTOSEED["🌱 AutoSeedService.runIfNeeded()\nPostgreSQL + Neo4j seeded\n~5s for 52 products"]
+    SEED_CHECK -->|"No — data present"| LOAD["📂 loadCurrent()"]
+    AUTOSEED --> LOAD
     LOAD --> HAS_MODEL{"Model loaded?"}
     HAS_MODEL -->|Yes| READY_OK["✅ /ready = 200"]
     HAS_MODEL -->|No| LISTEN["🌐 fastify.listen()"]
@@ -157,7 +174,7 @@ flowchart TD
     FLAG -->|No| UNREADY["⏸️ keep /ready = 503\n(no recovery in tests)"]
     FLAG -->|Yes| MISS["🔎 check missing embeddings"]
     MISS -->|Missing| GEN["🧠 generateEmbeddings()"]
-    MISS -->|None missing| PROBE["📊 probe training data"]
+    MISS -->|None missing| PROBE["📊 probe training data\n(Cache-Control: no-cache →\nbypasses api-service cache)"]
     GEN --> PROBE
     PROBE --> DATA{"Trainable data available?"}
     DATA -->|No| BLOCKED["⚠️ blocked/no-training-data\n/health=200 /ready=503"]
@@ -168,17 +185,21 @@ flowchart TD
     MODEL_OK -->|Yes| READY_OK
 
     classDef process fill:#87CEEB,stroke:#333,stroke-width:2px,color:#002244
+    classDef seed fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#003300
     classDef decision fill:#FFE66D,stroke:#333,stroke-width:2px,color:#1F1F1F
     classDef success fill:#90EE90,stroke:#333,stroke-width:2px,color:#003300
     classDef warning fill:#FFD1A9,stroke:#333,stroke-width:2px,color:#5A2D00
     classDef failure fill:#FFB6C1,stroke:#333,stroke-width:2px,color:#5A0015
 
-    class BOOT,LOAD,LISTEN,MISS,GEN,PROBE,JOB,WAIT process
-    class HAS_MODEL,FLAG,DATA,MODEL_OK decision
+    class BOOT,LOAD_EMB,LOAD,LISTEN,MISS,GEN,PROBE,JOB,WAIT process
+    class AUTOSEED seed
+    class SEED_CHECK,HAS_MODEL,FLAG,DATA,MODEL_OK decision
     class READY_OK success
     class UNREADY,BLOCKED warning
     class FAIL failure
 ```
+
+> Full sequence with timing details: [docs/diagrams/cold-start-boot-flow.md](docs/diagrams/cold-start-boot-flow.md)
 
 ---
 
@@ -282,7 +303,7 @@ flowchart TD
 
 ### Why Soft Negative Exclusion Matters
 
-**The problem (False Negative Contamination):** Suppose a client buys 3 products from `food/Unilever`. The model sees `Knorr Pasta Sauce` (also `food/Unilever`, not yet purchased) as a "negative example." With `classWeight: {0:1, 1:4}`, the amplified gradient teaches the network to actively predict against `food/Unilever` products. After retraining, `Knorr Pasta Sauce` score drops from 64% → 32% — the opposite of the desired learning signal.
+**The problem (False Negative Contamination):** Suppose a client buys 3 products from `food/Unilever`. The model sees `Knorr Pasta Sauce` (also `food/Unilever`, not yet purchased) as a "negative example." With `classWeight: {0:1, 1:4}`, the amplified gradient teaches the network to actively predict against `food/Unilever` products. After retraining, `Knorr Pasta Sauce` score drops from 64% → 42% — the opposite of the desired learning signal.
 
 This is formally known as **False Negative Contamination**, documented in ANCE (Approximate Nearest Neighbor Negative Contrastive Estimation) and Debiased Contrastive Learning (NeurIPS 2020). The same exclusion practice is used in YouTube (2016, impression-based negatives), Pinterest (in-batch negatives), and Amazon (BERT4Rec).
 
@@ -495,6 +516,27 @@ Programmatic `CaffeineCacheManager` configuration with two named caches and diff
 | `fallbackRecommendations` | 1 min | country | Independent — circuit breaker fallback |
 
 `recordStats()` enabled — cache hit/miss rates exposed automatically via Micrometer at `/actuator/metrics`.
+
+### Training Read Cache Bypass (ADR-052)
+
+`ModelTrainer` always sends `Cache-Control: no-cache` when fetching training data from `api-service`.
+This prevents cold-start cache poisoning: if `api-service` became healthy before the seed completed,
+it could cache an empty product list for 5 minutes — starving the training pipeline.
+
+The `api-service` side wires the header into the `@Cacheable` condition:
+
+```java
+// ProductController — reads Cache-Control header
+boolean noCache = isCacheBypass(cacheControl);   // true for "no-cache" or "no-store"
+productService.listProducts(..., noCache);
+
+// ProductApplicationService — @Cacheable is skipped when noCache=true
+@Cacheable(value = "catalogList", condition = "!#noCache")
+public PagedResponse<ProductSummaryDTO> listProducts(..., boolean noCache) { ... }
+```
+
+The public catalog path (`noCache=false`) retains full caching. Internal training reads always hit
+PostgreSQL directly and are never stored in Caffeine.
 
 ### Next.js Proxy Routes — CORS Bridge
 
@@ -958,6 +1000,8 @@ All architectural decisions are documented in `.specs/features/` with context, a
 | ADR-030 | AI Showcase | RecommendationColumn presentational — SRP, 4 colorSchemes |
 | ADR-031 | AI Showcase | Soft negative exclusion by (category + supplier) — False Negative Contamination fix |
 | ADR-032 | AI Showcase | Soft negative exclusion by cosine similarity — ANCE-simplified complement to ADR-031 |
+| ADR-052 | Self-Healing | AutoSeedService on boot + Cache-Control bypass for training reads — zero-touch cold start |
+| ADR-053 | Tech Debt | Migration roadmap: move seed responsibility from `ai-service` to `api-service` |
 
 ---
 

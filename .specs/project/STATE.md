@@ -1,18 +1,206 @@
 # Project State
 
-_Last updated: 2026-04-27 — Session: M12 execute concluido (Self-Healing Model Startup); self-healing ativo no boot + readiness contract atualizado_
+_Last updated: 2026-04-28 — Session: (1) M15 `tasks.md` criado em draft (10 tarefas cobrindo `api-service` country guard + 3 helpers/wirings frontend + E2E acceptance); (2) AutoSeed + cache bypass entregues fora do roadmap — ai-service agora zero-touch cold start, ADR-052 + ADR-053 adicionados ao M12, README e ROADMAP atualizados._
 
 ---
 
 ## Current Focus
 
-**Status:** M12 Self-Healing Model Startup — execute concluido ✅
+**Status:** `tasks.md` do `M15 — Cart Integrity & Comparative UX` em draft — 10 tarefas em 4 fases: (1) backend country guard `T1 -> T2 -> T3` com `./mvnw verify`; (2) helpers puros frontend `T4 [P]`, `T5 [P]`, `T6 [P]`; (3) wiring sequencial `T7`, `T8`, `T9`; (4) `T10` acceptance Playwright + `npm run lint && npm run build && npm run test:e2e`. Proximo passo: revisar/aprovar `tasks.md` e iniciar `execute task` do `T1` (`ProductAvailabilityPolicy` + `CartItemUnavailableException`).
 
-**Previous:** M10 — Demo-Retrain Integration ✅ COMPLETE (ADR-026)
+**Previous:** Comite aprovou redesenho arquitetural do MVP em torno de `Cart` no `api-service` + `Order` como unico ground truth (AD-043)
 
 ---
 
 ## Decisions
+
+### AD-053: AutoSeed — Débito técnico: migrar seed para `api-service` (2026-04-28)
+
+**Decision:** Documentado como débito técnico rastreado. O `seed.ts` e o `AutoSeedService` residem no `ai-service` e escrevem diretamente no PostgreSQL, contornando o `api-service`. Isso é intencional até M15 mas será migrado em sessão futura (candidato M16 ou spike independente). A migração envolve 4 fases: (1) endpoint `POST /api/v1/admin/seed` no `api-service`; (2) Neo4j seeding via `sync-product` existente (ADR-015); (3) remoção do `seed.ts` e `AutoSeedService` do `ai-service`; (4) integração e E2E tests. Estimativa: ~4 dias de trabalho.
+
+**Reason:** Em datasets sintéticos pequenos o acoplamento é aceitável. Em produção, o `api-service` deve ser o único escritor das tabelas de domínio (produtos, clientes, pedidos).
+
+**Impact:** `ai-service` perde dependência de `pg` direta. `api-service` ganha `SeedApplicationService`. Boot continua zero-touch — só muda o serviço responsável pela semeadura.
+
+**Status:** Proposed — não planejado ainda. Ver [ADR-053](../features/m12-self-healing-model-startup/adr-053-tech-debt-migrate-seed-to-api-service.md).
+
+---
+
+### AD-052: AutoSeed on Boot + Cache-Control bypass — entregues fora do roadmap (2026-04-28)
+
+**Decision:** `AutoSeedService` adicionado ao boot do `ai-service` (antes de `listenAndScheduleRecovery`). Na cold start detectada (`isAlreadySeeded()` retorna `false`), executa `runSeed()` com pool/driver próprios de curta duração. `AUTO_SEED_ON_BOOT=true` por padrão. Simultâneamente, bug de cache poisoning no `api-service` foi corrigido: `ModelTrainer` envia `Cache-Control: no-cache` em todos os fetches de training data; `ProductController` mapeia o header para `noCache: boolean`; `@Cacheable(condition = "!#noCache")` garante que leituras internas nunca são servidas pelo Caffeine.
+
+**Reason:** Antes dessa entrega, `docker compose up` em volumes vazios nunca atingia `/ready = 200` sem intervenção manual. O seed precisava ser executado manualmente antes do boot. O bug de cache poisoning fazia o `ModelTrainer` receber uma lista vazia de produtos cacheada de uma requisição anterior à semeadura, bloqueando permanentemente o treino.
+
+**Impact:** Sistema completamente self-sufficient: `docker compose up` (qualquer estado dos volumes) → `/ready = 200` automaticamente. Warm restart: AutoSeed skipped (~0ms overhead). Cold start: ~5s extras para seed + ~3-7 min total (dominado pelo download do modelo HuggingFace na primeira vez).
+
+**Status:** Accepted ✓ — entregue. Ver [ADR-052](../features/m12-self-healing-model-startup/adr-052-auto-seed-on-boot-and-cache-bypass.md) e [docs/diagrams/cold-start-boot-flow.md](../../docs/diagrams/cold-start-boot-flow.md).
+
+---
+
+### AD-045: Comite — Mecanismo de captura da coluna `Pos-Efetivar` em fluxo assincrono via polling em `/model/status` por mudanca de `version` (2026-04-28)
+
+**Decision:** O frontend captura a coluna `Pos-Efetivar` em fluxo assincrono usando **polling em `GET /model/status`** monitorando a mudanca de `version` (Opcao 2 do parecer Staff). Mecanica: (1) `POST /carts/{clientId}/checkout` retorna `{ orderId, expectedTrainingTriggered: true }` e o frontend coloca o `ModelStatusPanel` em estado `training` imediatamente (alinhado com AD-044); (2) o frontend inicia polling em `/model/status` (que ja existe e retorna `version` + `precisionAt5` + estado do modelo); (3) quando `version` muda de `vN` para `vN+1`, dispara `fetchRecs(clientId)` -> `captureRetrained(clientId, recs)` e atualiza o `ModelStatusPanel` para `promoted`; (4) se a `version` nao muda mas o `lastTrainingResult` vira `rejected` (campo a ser exposto como parte de AD-040), a coluna `Pos-Efetivar` herda as recomendacoes do `current` com **banner ambar** explicando que o candidato foi rejeitado pela banda de tolerancia (Opcao 3a — alinhado com AD-039); (5) o `analysisSlice` ganha um campo `awaitingRetrainSince: number | null` que **sobrevive a reload** (incluido no `partialize` do `persist`), garantindo que mesmo apos `F5` o frontend continue esperando `version` mudar; (6) timeout de seguranca de 90s — apos esse tempo sem mudanca de `version` nem `rejected`/`failed`, o `ModelStatusPanel` mostra estado `unknown` com botao para forcar refetch manual.
+
+**Reason:** Polling em `/model/status` foi escolhido sobre as alternativas porque: (a) **Opcao 1 (polling em `jobId` retornado pelo checkout)** acopla a UI a fila de jobs e nao sobrevive a reload sem persistir `jobId`; alem disso, exigiria expor `jobId` no contrato HTTP de checkout, o que polui a API com detalhe de implementacao do `ai-service`. (b) **Opcao 3 (SSE/WebSocket)** seria over-engineering para o MVP — exige nova infra de transporte e nao agrega valor proporcional ao custo; fica como `Deferred Idea` para pos-MVP. (c) **Opcao 2** se beneficia de estado ja modelado no AD-040 (`current/candidate/rejected`) — o frontend nao precisa entender filas de jobs, so precisa observar **transicoes do modelo current**; sobrevive a reload sem custo extra; e desacopla naturalmente de outros disparadores de retrain (ex: botao "modo demo" do AD-044), porque a UI sempre representa o estado **atual** do modelo, nao o estado de um job especifico. O Staff de Engenharia validou que essa abordagem reduz a quantidade de novos contratos HTTP e reaproveita `useRetrainJob` parcialmente (a parte de polling), exigindo apenas adaptar a fonte de verdade (de `jobId` para `version`).
+
+**Trade-off:** (1) Race condition residual: se dois retreinos rodarem proximos no tempo (ex: usuario faz checkout e instrutor clica botao "modo demo" do AD-044 logo depois), a UI captura a `version` que aparecer primeiro e atribui ao checkout do cliente atual — mitigado pelo `ModelStatusPanel` mostrar a origem do treino (`Aprendendo com pedido #abc123` vs `Retreino manual disparado pelo modo demo`). (2) O contrato `/model/status` precisa expor `lastTrainingResult: 'promoted' | 'rejected' | 'failed'` + `lastTrainingTriggeredBy: 'checkout' | 'manual'` + `lastOrderId?: string` para a UI distinguir os casos — pequena extensao de payload alinhada com AD-040. (3) Polling padrao 2s tem custo de rede minusculo nesse MVP; em producao seria upgrade para SSE (deferred). (4) Caso `rejected` (Opcao 3a) reusa as recs do `current` na coluna `Pos-Efetivar`; isso pode parecer "sem efeito" pedagogicamente — banner ambar + texto explicativo no `ModelStatusPanel` precisam compensar essa "ausencia visivel de mudanca" para manter o valor didatico do showcase.
+
+**Impact:** **`ai-service`**: estender `GET /model/status` com `lastTrainingResult`, `lastTrainingTriggeredBy`, `lastOrderId`, `currentVersion` (todos campos opcionais ate `M13`); persistir esses campos junto do `VersionedModelStore` (alinhado com AD-040). **`api-service`**: `POST /carts/{clientId}/checkout` retorna `{ orderId, expectedTrainingTriggered: boolean }`; no `expectedTrainingTriggered=false` (caso o gate de throttling/debounce decida nao treinar — ver pergunta pendente sobre frequencia), o frontend nao entra em estado `training`. **Frontend (`analysisSlice`)**: adicionar `awaitingRetrainSince: number | null`, `lastObservedVersion: string | null`, `awaitingForOrderId: string | null`; incluir esses tres campos no `partialize` do `persist`; novo selector `isAwaitingRetrain` derivado. **Frontend (`useRetrainJob` -> renomear para `useModelStatus`)**: trocar fonte de verdade de `jobId` para `version`; manter `epoch`/`samples`/`loss` (derivados do `lastTrainingProgress` exposto em `/model/status`). **`ModelStatusPanel`** (ver AD-044): consumir `useModelStatus`. **Persistencia de UI**: garantir que o `ModelStatusPanel` retoma o estado correto apos reload (ex: se o usuario fechou o navegador com retrain em andamento, ao reabrir deve continuar mostrando `training` ate `version` mudar ou ate o timeout de 90s).
+
+**Coverage after AD-043:** `M13` — implementa polling por `version`, extensao do `/model/status` e captura assincrona da coluna `Pos-Efetivar`.
+
+**Status:** Approved by Committee ✓ (Staff de Engenharia + Arquiteto de Solucoes IA + Arquiteto de Interface/UX, 2026-04-28). Depende de AD-044 (componente `ModelStatusPanel`) e AD-040 (campos `lastTrainingResult`/`current/candidate/rejected` no `/model/status`). Detalhes finos (`expectedTrainingTriggered` em caso de throttling) pendem da decisao sobre frequencia de retrain — ver Todos.
+
+---
+
+### AD-044: Comite — `RetrainPanel` evolui para `ModelStatusPanel` como ancora visual do ciclo de aprendizado pos-checkout (2026-04-28)
+
+**Decision:** A caixa de retrain hoje conhecida como `RetrainPanel` **permanece na UI** apos AD-043 e e repaginada como `ModelStatusPanel` (renomeacao explicita para refletir nova responsabilidade). Mudancas-chave: (1) o **trigger primario de retrain e o `Efetivar Compra`** (AD-043), nao mais o botao manual; (2) o `ModelStatusPanel` continua existindo como **ancora visual do trabalho assincrono** — sem ele, a coluna `Pos-Efetivar` apareceria "do nada" 9s apos checkout e quebraria a narrativa pedagogica; (3) o botao "Retreinar Modelo" manual sai do fluxo principal mas **e preservado como ferramenta de instrutor/diagnostico** dentro de uma secao colapsada `Avancado` ou com badge `modo demo` (Opcao B do parecer anterior); (4) o painel ganha 5 estados visuais explicitos: **`idle`** (modelo atual + texto "Aguardando proximo pedido para aprender"), **`training`** (barra de progresso + epoch atual + "Aprendendo com pedido #abc123"), **`promoted`** (card emerald + delta `precisionAt5` + botao "Ver recomendacoes atualizadas" que rola ate a coluna `Pos-Efetivar`), **`rejected`** (card ambar com mensagem alinhada a AD-039: "Modelo candidato vN+1 rejeitado pela banda de tolerancia, modelo vN mantido"), **`failed`** (card vermelho + mensagem de erro + botao "Tentar novamente" que so funciona se a secao `Avancado` estiver habilitada).
+
+**Reason:** O Arquiteto de Interface/UX (especialista em React/Next.js) aprovou a manutencao da caixa por tres razoes pedagogicas convergentes: (a) **Visibilidade do trabalho assincrono** (Nielsen #1 — *visibility of system status*): retrain leva ~9s no dataset atual, e sem feedback visual o usuario nao percebe que algo esta acontecendo nos bastidores; em sala de aula, o instrutor perde a janela narrativa de explicar "agora o modelo esta aprendendo com o pedido". (b) **Ancoragem do timeline `Sem IA -> Com IA -> Com Carrinho -> Pos-Efetivar`**: a coluna `Pos-Efetivar` precisa de uma fonte visual que diga "esta coluna existe e esta sendo preenchida"; sem o painel ativo, a coluna fica ambigua entre "esqueci de fazer algo", "ha um bug" e "esta esperando algo". (c) **Recuperacao de erros e estados de excecao**: com AD-039 (banda de tolerancia) e AD-040 (4-estados), o retrain pode terminar em `promoted/rejected/failed` — sem o painel, esses estados ficam invisiveis e o caso `rejected` (que reusa as recs do `current` na coluna `Pos-Efetivar`) parece um bug em vez de uma decisao explicita do gate. O Staff de Engenharia validou que e barato manter o componente: `useRetrainJob`, `TrainingProgressBar` (ADR-024 `scaleX`) e `ModelMetricsComparison` ja existem desde M9-B; a mudanca e de **trigger e linguagem**, nao de componentes novos.
+
+**Trade-off:** (1) Convivencia de dois triggers (checkout primario + botao manual em modo demo) exige clareza visual sobre quem disparou o retrain — mitigado mostrando `Aprendendo com pedido #abc123` vs `Retreino manual` no estado `training`. (2) O caso `rejected` reusa visualmente as recs do `current` na coluna `Pos-Efetivar` (ver AD-045 Opcao 3a) — pedagogicamente "sem efeito visivel"; o painel precisa compensar com banner ambar bem desenhado para o usuario nao interpretar como bug. (3) Renomeacao `RetrainPanel -> ModelStatusPanel` afeta imports, testes E2E (`m9b-deep-retrain.spec.ts`) e referencias em design.md M9-B — exige migration consciente. (4) O botao "modo demo" no `Avancado` cria um caminho de codigo paralelo ao checkout (ainda chama `POST /model/train` direto); precisa ser claramente sinalizado como "fora do fluxo de producao" para nao virar atalho preferencial em demos rapidas.
+
+**Impact:** **Frontend (`RetrainPanel.tsx`)**: renomear para `ModelStatusPanel.tsx`; remover botao "Retreinar Modelo" do escopo principal e mover para `<Collapsible>` "Avancado / Modo demo"; adicionar 5 estados visuais (`idle/training/promoted/rejected/failed`) com cores e copy distintos; consumir `useModelStatus` (renomeado de `useRetrainJob`, ver AD-045). **Frontend (`AnalysisPanel.tsx`)**: remover passagem de `retrainJob` como prop dependente de clique; o `ModelStatusPanel` passa a auto-disparar o estado `training` ao detectar `expectedTrainingTriggered=true` na resposta de checkout. **Frontend (textos)**: revisar todos os textos que diziam "Clique em Retreinar para..." -> trocar por "Apos efetivar uma compra, o modelo aprende com o pedido". **Testes E2E (`m9b-deep-retrain.spec.ts`)**: reescrever para fluxo `Adicionar ao Carrinho -> Efetivar Compra -> aguardar `ModelStatusPanel` ir para `promoted` -> validar coluna `Pos-Efetivar`. **Documentacao**: ADR-023 (M9-B "always-mounted AnalysisPanel"), ADR-024 (`scaleX`) e ADR-025 (`jobIdRef stale closure`) continuam validos mas com componente renomeado; atualizar referencias.
+
+**Coverage after AD-043:** `M13` — renomeia `RetrainPanel` para `ModelStatusPanel`, muda o trigger primario para checkout e preserva o botao manual apenas em modo avancado/demo.
+
+**Status:** Approved by Committee ✓ (Arquiteto de Interface/UX + Staff de Engenharia + Arquiteto de Solucoes IA, 2026-04-28). Confirma Opcao B do parecer anterior sobre o botao manual. Habilita AD-045.
+
+---
+
+### AD-043: Comite — Arquitetura final do MVP: `Carrinho -> Pedido confirmado -> Treino`, com carrinho no `api-service`/PostgreSQL e embeddings pre-computados no Neo4j (2026-04-28)
+
+**Decision:** O MVP adota o fluxo `Adicionar ao Carrinho -> Efetivar Compra -> Pedido confirmado -> Treino` como arquitetura final, em substituicao ao fluxo atual `Demo Comprar -> BOUGHT {is_demo: true} -> Treino direto`. Mudancas-chave: (1) **carrinho** vive no `api-service` com persistencia em PostgreSQL (`Cart`/`CartItem`), nao mais no Neo4j; (2) `Adicionar ao Carrinho` nao cria edge no Neo4j; (3) recomendacao "Com Carrinho" e calculada **em memoria** pelo `ai-service` via novo endpoint `recommendFromCart(clientId, productIds[])`, que le os embeddings ja existentes no Neo4j, faz `meanPooling` (juntando com embeddings de pedidos reais previos do cliente, se houver) e chama `recommendFromVector`; (4) `Efetivar Compra` (`POST /carts/{clientId}/checkout`) cria `Order` real no `api-service`, sincroniza com Neo4j como `BOUGHT` real (sem `is_demo`) e dispara retrain assincrono; (5) `Esvaziar Carrinho` apenas zera o `Cart` no PostgreSQL — nao toca no Neo4j; (6) `is_demo` no Neo4j fica **deprecado** no fluxo principal e mantido apenas como feature flag de depuracao; (7) `ModelTrainer` deixa de mesclar `demoPairs` e treina somente com `orders`; (8) `computePrecisionAtK` volta a operar somente sobre pedidos confirmados, eliminando o train/eval mismatch sem precisar de `precisionAt5_full`.
+
+**Reason:** O fluxo atual confunde `intencao` (carrinho/sessao) com `evento de treino` (pedido confirmado). Sistemas de recomendacao reais separam os dois; misturar esses sinais cria os problemas que o experimento `Distribuidora Central Sao Paulo` evidenciou (gap entre metrica e narrativa, `Com Demo` congelado, demos persistidas indefinidamente em Neo4j, opacidade na promocao do modelo). Embeddings de todos os produtos do catalogo ja existem no Neo4j pre-computados pelo `EmbeddingService` no seed/sync; portanto **nao e preciso gerar embedding novo no momento do `Adicionar ao Carrinho`** — basta consultar e fazer `meanPooling` em memoria. O Comite (5 personas: Professor Doutor em Engenharia de IA Aplicada, Professor Doutor em Deep Learning, Arquiteto de Solucoes IA, Staff de Engenharia, Arquiteto de Interface/UX React/Next.js) convergiu unanimemente nessa direcao por aproximar o MVP do mundo real e simplificar a narrativa pedagogica do projeto: `Sem IA -> Com IA -> Com Carrinho -> Pos-Efetivar (retreinado)`.
+
+**Trade-off:** (1) Cada `Efetivar Compra` pode disparar retrain — em datasets pequenos isso causa custo e variancia; mitigacao via throttling/debounce ou gating por minimo de pedidos novos desde o ultimo treino. (2) Migracao: edges `BOUGHT {is_demo: true}` antigas no Neo4j precisam ser limpas ou ignoradas durante a transicao. (3) Frontend muda nome em varios pontos (`Demo Comprar` -> `Adicionar ao Carrinho`, `Limpar Demo` -> `Esvaziar Carrinho`, `Com Demo` -> `Com Carrinho`); demanda revisao consistente no catalogo, analysisSlice, demoSlice (a renomear), componentes e textos.
+
+**Impact:** **`api-service`**: novos recursos `Cart`/`CartItem`, rotas `POST /carts/{clientId}/items`, `DELETE /carts/{clientId}/items/{productId}`, `DELETE /carts/{clientId}`, `POST /carts/{clientId}/checkout` (cria `Order` + dispara sync + retrain). **`ai-service`**: novo endpoint `recommendFromCart` que recebe `clientId` + `productIds[]`, le embeddings no Neo4j e chama `recommendFromVector`; remocao das rotas/logica de `is_demo` no caminho principal (ou mover para feature flag); `ModelTrainer.train` para de chamar `getAllDemoBoughtPairs` e nao mescla `demoPairs` em `clientOrderMap`; `computePrecisionAtK` volta a usar somente `orders`. **Frontend**: mini-cart fixo no topo com contagem + `Efetivar Compra`; `CatalogPanel`/`ProductCard` adotam `Adicionar ao Carrinho` + badge `no carrinho`; `analysisSlice` renomeia `phase: demo -> phase: cart`; `Com Demo` -> `Com Carrinho` reagindo a cada add/remove; `Pos-Retreino` so aparece apos `Efetivar Compra` + `done`. **Migracao de dados**: script para limpar/expirar edges `BOUGHT {is_demo: true}` legadas no Neo4j antes do go-live da nova arquitetura.
+
+**Coverage after AD-043:** Base arquitetural de `M13`/`M14`/`M15` — `M13` implementa carrinho + checkout + retrain; `M14` cobre observabilidade/showcase; `M15` fecha integridade e UX comparativa restantes.
+
+**Status:** Approved by Committee ✓ (5 personas, 2026-04-28). Supersedes AD-037, AD-038 e AD-041; partially supersedes AD-042 (ver notas abaixo). AD-039 (banda de tolerancia) e AD-040 (governanca 4-estados) seguem validos e independentes.
+
+---
+
+### AD-042: Comite — UX/observabilidade do showcase: scores em todo o catalogo + marca/categoria/deltas + snapshot `Com Demo` reativo (2026-04-28)
+
+**Status:** Partially Superseded by AD-043 ⚠ — A parte de `score em todo o catalogo` e `marca/categoria nos cards` permanece valida e independente. As partes de `snapshot Com Demo reativo` e `deltas entre Com IA -> Com Demo -> Pos-Retreino` continuam validas mas com o vocabulario novo: `Com Carrinho` no lugar de `Com Demo`, e gatilho de `Pos-Retreino` passa a ser `Efetivar Compra + done` em vez de `Retreinar Modelo` manual.
+
+**Decision:** O showcase passa a ter requisitos explicitos de UX/observabilidade aprovados pelo Arquiteto de Interface/UX (especialista em React/Next.js) e pelo Staff de Engenharia: (1) catalogo deve permitir ver score de **todos os itens visiveis** no modo "Ordenar por IA" (ou modo diagnostico equivalente); (2) cards de produto exibem `marca` e `categoria` de forma consistente em catalogo e detalhes; (3) tela de analise/detalhes mostra `posicao anterior`, `posicao nova` e `delta de score` entre `Com IA` -> `Com Demo` -> `Pos-Retreino`; (4) coluna `Com Demo` deve atualizar a cada nova compra demo, nao apenas no primeiro evento.
+
+**Reason:** O experimento atual nao consegue ser interpretado com clareza porque o catalogo ordenado por IA so mostra score do top-10 (`limit: 10` em `useRecommendationFetcher.ts` e em `AnalysisPanel.fetchRecs`). Itens que "somem" do ranking sao indistinguiveis de itens que apenas sairam do top-10. Alem disso, a coluna `Com Demo` em `AnalysisPanel.tsx` so dispara quando `analysisPhaseRef.current === 'initial'`, congelando no primeiro evento e distorcendo a leitura de sessoes com multiplas compras demo acumuladas. O objetivo declarado do projeto e demonstrar o ciclo de melhoria com retreino — sem essa observabilidade, o showcase falha na hora mais critica (pos-retreino).
+
+**Trade-off:** Solicitar score para todos os itens aumenta custo por request. Mitigacao: cap configuravel (ex.: `limit: 100` ou tamanho do catalogo) e/ou modo diagnostico ativavel apenas no showcase. Ajustar a logica do `analysisSlice` para reagir a cada `demoCount` exige cuidado para nao quebrar a maquina de estados `empty -> initial -> demo -> retrained` (ADR-029).
+
+**Impact:** `useRecommendationFetcher.ts` (limit configuravel), `CatalogPanel.tsx`/`ProductCard.tsx` (exibicao consistente de score, marca, categoria), `AnalysisPanel.tsx`/`analysisSlice.ts` (snapshot `demo` reativo a cada compra; deltas entre fases), `RecommendationColumn.tsx` (delta visual). Avaliar nova rota/parametro `?fullCatalog=true` no `RecommendationService` para `recommend` e `recommendFromVector`.
+
+**Coverage after AD-043:** `M14` cobre `score visibility`, `marca/categoria` e snapshot reativo agora como `Com Carrinho`; `M15` cobre o restante do polish comparativo. O fluxo legado `Com Demo -> Retreinar manual` foi cancelado.
+
+**Status:** Approved by Committee ✓ (Arquiteto de Interface/UX + Staff de Engenharia + Arquiteto de Solucoes IA, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-041: Comite — Validacao do contexto do cliente no `Demo Comprar` para preservar integridade do experimento (2026-04-28)
+
+**Status:** Superseded by AD-043 ❌ — A validacao por pais migra naturalmente para `POST /carts/{clientId}/items` no `api-service`, que ja tem acesso ao `country` do cliente e ao `available_in` do produto. O caminho `is_demo` no Neo4j sai do fluxo principal, entao a validacao no `Neo4jRepository.createDemoBoughtAndGetEmbeddings` deixa de existir. O requisito funcional permanece (impedir adicionar produto fora do pais do cliente), mas a localizacao da regra muda.
+
+**Decision:** O fluxo `POST /api/v1/demo-buy` deve validar a adequacao do produto ao contexto do cliente antes de criar a edge `BOUGHT {is_demo: true}` no Neo4j. No minimo: validacao por **pais do cliente** vs `available_in` do produto. Comportamento padrao: rejeitar com `422` quando o produto nao atende o pais; alternativa configuravel (`DEMO_BUY_STRICT_COUNTRY=false`) permite manter o comportamento atual para fins didaticos quando explicitado.
+
+**Reason:** Hoje `createDemoBoughtAndGetEmbeddings` em `Neo4jRepository.ts` faz apenas `MATCH (c:Client {id})` + `MATCH (p:Product {id})` + `MERGE` da edge, sem checar `available_in`. Resultado observado: foi possivel comprar `Corona Extra` no cliente brasileiro mesmo o produto nao listando `BR`, contaminando `clientProfileVector` com sinal artificial. Como o objetivo e demonstrar aprendizado real do modelo a partir das compras, manter integridade minima do contexto e pre-requisito.
+
+**Trade-off:** Adiciona uma validacao por request. Para o objetivo didatico, `DEMO_BUY_STRICT_COUNTRY=false` continua disponivel para mostrar o efeito de "ruido" no perfil do cliente.
+
+**Impact:** `Neo4jRepository.createDemoBoughtAndGetEmbeddings` (ou nova checagem em `DemoBuyService`) + `demoBuyRoutes.ts` (codigo `422`/mensagem) + frontend (`CatalogPanel.tsx` desabilita `Demo Comprar` quando `product.countries` nao inclui `selectedClient.country`) + `.env.example` com `DEMO_BUY_STRICT_COUNTRY` (default `true`).
+
+**Coverage after AD-043:** Fluxo original de `demo-buy` cancelado; o requisito funcional migra para `M15` em `POST /carts/{clientId}/items`.
+
+**Status:** Approved by Committee ✓ (Staff de Engenharia + Arquiteto de Solucoes IA, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-040: Comite — Governanca de modelo: separacao explicita entre `current/candidate/rejected` + transparencia operacional (2026-04-28)
+
+**Decision:** O ciclo de vida do modelo passa a ter quatro estados explicitos e visiveis: `training` (job em execucao), `candidate` (modelo recem-treinado em avaliacao), `current` (modelo ativo servindo recomendacoes), `rejected` (modelo descartado pelo gate, com motivo). A UI de `ModelStatusPanel`/`AnalysisPanel` deve exibir, apos qualquer treino: qual modelo esta `current` agora, quando foi promovido, qual era o `candidate`, e — se rejeitado — o motivo (ex.: `precisionAt5` abaixo da banda de tolerancia, regressao de loss em datasets pequenos, etc).
+
+**Reason:** Pelo experimento de hoje (cesta `beverages/Ambev` em `Distribuidora Central Sao Paulo`), o usuario nao consegue saber se: (a) o modelo novo foi promovido e esta ativo, (b) o modelo novo foi rejeitado e o antigo continua ativo, ou (c) houve regressao mas o modelo novo ainda assim virou `current`. O codigo atual em `ModelTrainer.train()` chama `this.modelStore.setModel(model, ...)` ANTES da decisao de promocao em `VersionedModelStore.saveVersioned()`, e este utiliza `_getCurrentPrecisionAt5()` lendo o status ja sobrescrito — risco real de aceitar regressao silenciosa. Sem observabilidade clara, a narrativa do projeto (demonstrar melhoria com retreino) se quebra exatamente no momento de decisao.
+
+**Trade-off:** Refatorar a ordem de `setModel`/`saveVersioned` exige cuidado para nao quebrar `VersionedModelStore.test.ts` e o fluxo do `TrainingJobRegistry`. UI extra adiciona superficie a manter.
+
+**Impact:** `VersionedModelStore.ts` (snapshot do `currentPrecisionAt5` ANTES de qualquer `setModel`; `setModel` so apos aceitacao), `ModelTrainer.train()` (deixar a promocao para o `TrainingJobRegistry`/`saveVersioned`), `TrainingJobRegistry._runJob` (refletir os 4 estados em `TrainingJob`), API de status (`/model/status` retorna `currentModel`, `lastCandidate`, `lastRejection`), frontend (`ModelMetricsComparison`, `ModelStatusPanel`).
+
+**Coverage after AD-043:** `M13` — governanca `current/candidate/rejected`, payload de status expandido e visualizacao operacional na UI.
+
+**Status:** Approved by Committee ✓ (Staff de Engenharia + Arquiteto de Solucoes IA + Professor Doutor em Deep Learning, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-039: Comite — Promotion gate com banda de tolerancia + razao explicita (2026-04-28)
+
+**Decision:** A promocao automatica do modelo deixa de usar comparacao estritamente `>=` em `precisionAt5` e passa a aplicar uma **banda de tolerancia** configuravel via env (`MODEL_PROMOTION_TOLERANCE`, default `0.02` nesse projeto didatico). Regra final pos-AD-043: aceitar `candidate` se `candidatePrecisionAt5 >= currentPrecisionAt5 - tolerance`, usando como metrica canonica o `precisionAt5` calculado somente sobre pedidos confirmados. Se uma bridge temporaria expuser `precisionAt5_full`/`precisionAt5_real` durante a migracao, o gate continua preso a metrica canonica do fluxo final.
+
+**Reason:** Em datasets pequenos como o deste projeto, `precisionAt5` oscila bastante entre treinos com seed igual e variacao minima de dados. Comparacao estritamente `>=` cria dois problemas: (1) gate excessivamente rigido pode rejeitar modelos genuinamente melhores que tiveram regressao estatistica de ruido; (2) gate atual em `VersionedModelStore.saveVersioned()` aceita `==` e nao informa motivo, o que combinado com AD-040 cria opacidade. O Professor Doutor em Deep Learning aprovou a banda como mitigacao cientificamente correta para datasets pequenos.
+
+**Trade-off:** Em producao com dataset grande, `tolerance` pode ser `0` (sem banda) e a banda volta a ser rigida. Por isso a configuracao via env.
+
+**Impact:** `VersionedModelStore.saveVersioned()` (logica de aceitacao + razao registrada no historico), `getHistory()` (incluir `reason`), `model.ts` (`/model/status` expor `lastDecision: { accepted, reason, currentPrecisionAt5, candidatePrecisionAt5, tolerance }`), `ModelStatusPanel.tsx`/`ModelMetricsComparison.tsx` (rotulo `Aceito / Aceito com tolerancia / Rejeitado` + motivo).
+
+**Coverage after AD-043:** `M13` — gate com tolerancia continua valido, mas a base de comparacao deixa de ser `precisionAt5_full` e volta para o `precisionAt5` canonico do fluxo com pedidos confirmados.
+
+**Status:** Approved by Committee ✓ (Professor Doutor em Deep Learning + Arquiteto de Solucoes IA, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-038: Comite — `precisionAt5_full` e `precisionAt5_real` como duas metricas paralelas + flag de avaliacao (2026-04-28)
+
+**Status:** Cancelled for final architecture by AD-043 ❌ — Com AD-043, demos deixam de ser ground truth e o `ModelTrainer` passa a treinar somente com pedidos confirmados. `precisionAt5_full` deixa de ser necessario no fluxo final. A flag `EVAL_INCLUDE_DEMOS` permanece apenas como nota historica de migracao e nao deve ser implementada em `M13`/`M14`/`M15`.
+
+**Decision:** Alem da inclusao de `demoPairs` no holdout (AD-037), o sistema passa a expor duas metricas separadas: `precisionAt5_full` (real ∪ demo) e `precisionAt5_real` (apenas pedidos reais). A metrica exibida na UI/`/model/status` enquanto demos forem ground truth oficial e `precisionAt5_full`. A alternancia e controlada por flag `EVAL_INCLUDE_DEMOS` (default `true` neste projeto). Quando o sistema for migrado para producao real, `EVAL_INCLUDE_DEMOS=false` e a metrica canonica volta a ser `precisionAt5_real`.
+
+**Reason:** Manter as duas metricas elimina ambiguidade durante a transicao "demos como ground truth" -> "pedidos reais como ground truth". Permite comparar regimes sem perder historico. O Arquiteto de Solucoes IA recomendou a flag explicita, no estilo `is_demo: true`, para que a decisao seja rastreavel e nao inferida.
+
+**Trade-off:** Calcular ambas as metricas custa duas passadas pelo `computePrecisionAtK` (com filtro adequado em cada). Aceitavel para o tamanho atual de dataset.
+
+**Impact:** `ModelTrainer.computePrecisionAtK` parametrizado por `includeDemos: boolean` ou metodo separado; `TrainingResult` ganha `precisionAt5_full`/`precisionAt5_real`; `ModelStore`/`VersionedModelStore` propagam ambos; rota `/model/status` retorna ambos; UI exibe `precisionAt5_full` por default e expoe o outro como detalhamento.
+
+**Coverage after AD-043:** Nenhuma cobertura planejada em `M13`/`M14`/`M15`. Reabrir apenas se a migracao real exigir uma bridge temporaria, o que hoje nao e o plano.
+
+**Status:** Approved by Committee ✓ (Professor Doutor em Engenharia de IA Aplicada + Arquiteto de Solucoes IA, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-037: Comite — `precisionAt5` deve incluir compras demo enquanto demos forem ground truth oficial (2026-04-28)
+
+**Status:** Superseded by AD-043 ❌ — Com a adocao do fluxo `Carrinho -> Pedido confirmado -> Treino`, demos deixam de ser ground truth. `precisionAt5` volta a ser calculado **somente sobre pedidos confirmados**, eliminando o train/eval mismatch sem precisar incluir `demoPairs` no holdout. Esta decisao fica registrada como historica para explicar a transicao.
+
+**Decision:** Enquanto o projeto operar com compras demo (`BOUGHT {is_demo: true}`) como unico ground truth de avaliacao do modelo, o `computePrecisionAtK` em `ModelTrainer.ts` deve considerar `pedidos reais ∪ demoPairs` na construcao do `clientOrderMap` usado para o split 80/20 do holdout. Hoje, `computePrecisionAtK` usa apenas `orders` (PostgreSQL) e ignora `demoPairs` (Neo4j), causando `train/eval mismatch`: o modelo e treinado em uma distribuicao (real ∪ demo) e avaliado em outra (so real).
+
+**Reason:** O Professor Doutor em Engenharia de IA Aplicada (Sistemas de Recomendacao) e o Professor Doutor em Deep Learning convergiram que `train/eval mismatch` e um erro classico que invalida a metrica reportada. Como o objetivo declarado deste projeto e **demonstrar o ciclo de melhoria com retreino a partir de compras demo**, a metrica precisa enxergar o mesmo universo que o treino enxerga. Sem isso, a UI mostra `Regressao` mesmo quando o modelo melhorou para o experimento que o usuario acabou de executar — exatamente o oposto da narrativa pedagogica do projeto.
+
+**Trade-off:** Clientes com poucas amostras (so demos e <2 compras) seguem filtrados por `allPurchased.length < 2`. Considerar elevar para `< 3` para reduzir variancia em cenarios com 1 demo isolada (registrar como `Todo` separado).
+
+**Impact:** `ModelTrainer.ts` (`computePrecisionAtK` recebe `demoPairs` ja carregadas em `train()` antes do calculo), `TrainingResult.precisionAt5` passa a refletir o universo `real ∪ demo`, `VersionedModelStore.saveVersioned()` continua usando esse `precisionAt5` como gate (com banda — ver AD-039). Documentar mudanca no README sob "Why Precision@K, not Accuracy?".
+
+**Status:** Approved by Committee ✓ (Professor Doutor em Engenharia de IA Aplicada + Professor Doutor em Deep Learning + Arquiteto de Solucoes IA, 2026-04-28) — pendente `specify feature`
+
+---
+
+### AD-036: M11 — protocolo de validacao usa cesta homogenea `snacks/Nestle` + veredito por self-consistency (2026-04-27)
+
+**Decision:** Para validar se o retreino do M11 estava aprendendo pelo motivo certo, o protocolo oficial da sessao usou o cliente `Supermercado Familia BR` com cesta homogenea `Nestle Wafer Chocolate 3-pack`, `Nestle Baton Dark Chocolate 16g` e `Nestle Passatempo Cookies 130g`. O veredito foi definido por tres sinais em conjunto: (1) testes focais do dataset/negative sampling, (2) `precisionAt5` via `/model/status`, e (3) comportamento qualitativo das colunas `Com IA` -> `Com Demo` -> `Pos-Retreino`.
+
+**Reason:** Um cluster homogeneo `mesma categoria + mesmo supplier` maximiza o sinal esperado dos ADR-031/032 e reduz a ambiguidade de interpretar queda/subida de itens apos compras demo e retreino.
+
+**Trade-off:** O experimento entrega evidencia forte de consistencia interna, mas com generalizacao limitada porque cobre apenas um cliente e um cluster. Ainda vale repetir em um segundo cluster para ganhar confianca estatistica.
+
+**Impact:** Artefatos salvos em `frontend/e2e/screenshots/manual-validation/`. Resultado observado: `trainingSamples` `1363 -> 1378` (+15 coerente com `3 x (1 positivo + 4 negativos)`), `precisionAt5` estavel em `0.6`, e itens correlatos do cluster subindo de `5/6/8/9` para `2/3/4/6`.
+
+**Status:** Accepted ✓ (Validation protocol recorded)
+
+---
 
 ### AD-033: M12 — StartupRecoveryService para self-healing do modelo no boot do AI Service (2026-04-27)
 
@@ -325,11 +513,57 @@ _Last updated: 2026-04-27 — Session: M12 execute concluido (Self-Healing Model
 
 ## Blockers
 
-_None at this time._
+### B-001 — `precisionAt5` reportado nao reflete o objetivo pedagogico do projeto enquanto demos forem ground truth
+**Discovered:** 2026-04-28
+**Impact:** Alta — Bloqueia a narrativa "treinar com demo -> ver melhoria real" em todas as sessoes do showcase. UI marca `Regressao` mesmo quando o ranking local melhorou, e o gate de promocao em `VersionedModelStore.saveVersioned()` decide com base nessa metrica enviesada.
+**Workaround:** Avaliar qualitativamente via colunas `Com IA` / `Com Demo` / `Pos-Retreino` e pelo movimento de itens correlatos do cluster comprado, em vez de confiar no `precisionAt5` exibido.
+**Resolution (atualizado):** Resolvido pela arquitetura de AD-043 — com demos saindo do treino, `precisionAt5` volta a ser calculado somente sobre pedidos confirmados, eliminando o train/eval mismatch na raiz. Bloqueio fecha quando `M13 — Cart, Checkout & Async Retrain Capture` entregar a remocao de `demoPairs` no `ModelTrainer.train` + `computePrecisionAtK` somente sobre `orders`.
 
 ---
 
 ## Lessons Learned
+
+### L-012 — Misturar `intencao` (carrinho) com `evento de treino` (pedido) cria gap entre metrica e narrativa
+**Source:** Comite de Arquitetura/IA — sessao de 2026-04-28 (origem do AD-043)
+- Sistemas de recomendacao reais separam **intencao do cliente em sessao** (carrinho, navegacao, click) de **evento de treino confirmado** (pedido). O MVP atual misturava os dois ao usar `BOUGHT {is_demo: true}` como entrada de treino e como sinal de intencao ao mesmo tempo.
+- Os sintomas observados no experimento `Distribuidora Central Sao Paulo` foram todos consequencia desse acoplamento: gap entre `precisionAt5` (computado em `orders` reais) e o "uplift" visivel no ranking local; `Com Demo` congelando porque a intencao nao tem `Confirmar`; demos persistindo indefinidamente em `Neo4j` apos reload; opacidade na promocao do modelo porque o que deveria ser uma decisao explicita do usuario virou um efeito colateral de cada compra demo.
+- Aprendizado: arquitetar primeiro **a separacao de eventos** (cart vs order), depois decidir o que treina. Embeddings de produto sao ortogonais a essa decisao e podem viver em qualquer dos dois lados (no projeto, ja vivem pre-computados no `Neo4j`, o que torna a transicao para AD-043 barata).
+
+### L-011 — `precisionAt5` global pode cair enquanto a recomendacao local melhora
+**Source:** Comite de Arquitetura/IA — sessao de 2026-04-28
+- Em datasets pequenos como o do projeto (~20 clientes, 52 produtos), retreinar com forte sinal local de um cliente pode mover o modelo "para perto" desse cliente e degradar marginalmente o desempenho medio em outros clientes do holdout.
+- Isso aparece como `precisionAt5` caindo (ex.: `0.6000 -> 0.5000`) enquanto o ranking ordenado por IA do proprio cliente passa a mostrar `2 beverages` no top-10 que antes nao apareciam.
+- A leitura correta exige separar **qualidade global** (`precisionAt5`) de **uplift local** (movimento dentro do cluster comprado). Ambos sao validos, e nenhum sozinho conta a historia toda.
+
+### L-010 — Reload da pagina nao limpa o backend; demos persistem como `BOUGHT {is_demo: true}` no Neo4j
+**Source:** Experimento manual `Distribuidora Central Sao Paulo` (2026-04-28)
+- O frontend persiste apenas `selectedClient` no `localStorage` (`partialize: (state) => ({ selectedClient: state.selectedClient })` em `store/index.ts`); `demoBoughtByClient` e estado de UI nao persistem.
+- Apos `F5`, badges `demo` somem dos cards, mas as edges `BOUGHT {is_demo: true}` continuam no Neo4j ate uma chamada explicita de `Limpar Demo` (`clearAllDemoBought`).
+- Consequencia operacional: continuar comprando "novos" beverages apos o reload e correto e cumulativo. Recomprar os mesmos itens que ja estao como demo nao adiciona sinal porque o treino colapsa por `Set` em `clientOrderMap`.
+
+### L-009 — Catalogo "Ordenado por IA" so mostra score do top-10 e isso polui o diagnostico
+**Source:** Experimento manual `Distribuidora Central Sao Paulo` (2026-04-28)
+- `useRecommendationFetcher.ts` chama `/api/proxy/recommend` com `limit: 10`; `ProductCard` so renderiza `ScoreBadge` quando ha score no `scoreMap`.
+- Itens fora do top-10 ficam sem badge mesmo no modo ordenado, dando a impressao de que "sumiram" do ranking quando na verdade so cairam para fora dos 10 com score reportado.
+- Para experimentos de showcase, isso esconde justamente o que o avaliador quer ver: como itens correlatos do cluster comprado se movem fora do top-10. Mitigacao depende de `AD-042` (ver Decisions).
+
+### L-008 — Coluna `Com Demo` congela na primeira compra demo de uma sessao
+**Source:** Experimento manual `Distribuidora Central Sao Paulo` (2026-04-28)
+- Em `AnalysisPanel.tsx`, o `useEffect` da Phase 2 so dispara quando `analysisPhaseRef.current === 'initial'`. Apos a primeira compra demo, a fase muda para `'demo'` e o efeito nao executa mais, mesmo que `demoBoughtByClient` mude.
+- O `analysisSlice.captureDemo` reforca isso ao ignorar atualizacoes que nao venham de `phase: 'initial'`.
+- Resultado observado: em sessoes com 2+ compras demo acumuladas (ex.: `Brahma Chopp` + `Brahma Zero`, depois mais 3 beverages), a coluna `Com Demo` reflete apenas o estado pos-1a-compra; as colunas `Com IA` -> `Com Demo` -> `Pos-Retreino` deixam de contar a historia real e levam a interpretacao errada do experimento.
+
+### L-006 — Produtos comprados somem do ranking por design; o sinal correto e a subida de correlatos
+**Source:** Validacao manual M11 — pesos `1:4` + negative sampling (2026-04-27)
+- Os produtos comprados via demo podem desaparecer totalmente do ranking apos retreino sem que isso indique regressao.
+- O `RecommendationService` exclui produtos ja comprados do conjunto de candidatos ao chamar `getCandidateProducts(country, purchasedIds)`.
+- Na interpretacao do showcase, o criterio correto e observar se itens correlatos do mesmo cluster sobem ou se mantem fortes (`Nestle Classic`, `Nestle Chokito`, `Nestle Crunch`, `Nestle Charge`), e nao esperar que o item comprado continue recomendavel.
+
+### L-007 — `trainingSamples` e uma heuristica rapida para provar que as compras demo entraram no treino
+**Source:** Validacao manual M11 — pesos `1:4` + negative sampling (2026-04-27)
+- Comparar `trainingSamples` antes/depois foi suficiente para validar que as compras demo participaram do retreino sem precisar instrumentacao adicional.
+- No experimento, `trainingSamples` subiu de `1363` para `1378`, exatamente `+15`, consistente com `3 compras x (1 positivo + 4 negativos)`.
+- Essa checagem funciona bem como sanity check operacional antes de analisar score ou ranking.
 
 ### L-001 — parte05 bugs to avoid
 **Source:** Exploration of `exemplo-01-ecommerce-recomendations-z/parte05`
@@ -368,6 +602,21 @@ _None at this time._
 
 ## Todos
 
+- [x] **Pos-Comite 2026-04-28 (AD-043/044/045) — `plan features`:** roadmap reorganizado em torno do fluxo `Carrinho -> Pedido -> Treino` + ancora visual `ModelStatusPanel`. Proximos milestones: **M13 — Cart, Checkout & Async Retrain Capture** | **M14 — Catalog Score Visibility & Cart-Aware Showcase** | **M15 — Cart Integrity & Comparative UX**. `ROADMAP.md` atualizado e features marcadas como `PLANNED`.
+- [x] **Pos-Comite (AD-043/044/045) — `specify feature` (M13):** "Cart, Checkout & Async Retrain Capture". 68 reqs (CART-01..CART-68). Frequencia de retrain decidida como `every_checkout` no MVP. `spec.md` criado em `.specs/features/m13-cart-checkout-async-retrain/spec.md`.
+- [x] **Pos-Comite (AD-043/044/045/046) — `task feature` (M13):** `tasks.md` do M13 foi realinhado ao design final (arquitetura + UI). Plano agora contem 20 tarefas com `CartSummaryBar`, semantica real de `TabNav`, acessibilidade/motion, queue semantics + `afterCommit`, gates `build` ao fim de cada fase e E2E final `m13-cart-async-retrain`.
+- [x] **Pos-Comite (AD-043/044/045/046) — `design complex UI` (M13):** passada complementar de UI aplicada sobre o design do M13; `design.md` promovido para `Approved` com `Interaction States`, `Animation Spec`, `Accessibility Checklist`, findings adicionais de `Staff Product Engineer` + `Staff UI Designer`, e ADR-046 (`Responsive Cart Summary Bar`).
+- [x] **Pos-Comite (AD-043/042) — `specify feature` (M14):** "Catalog Score Visibility & Cart-Aware Showcase". `spec.md` criado em `.specs/features/m14-catalog-score-visibility-cart-aware-showcase/spec.md` com 43 requisitos (`SHOW-01..SHOW-43`) cobrindo scores em toda a grade relevante, timeline `Com Carrinho` reativa, deltas comparativos, migracao de vocabulário do fluxo principal e cap/modo diagnostico explicito.
+- [x] **Pos-Comite (AD-043/041/042/044/045) — `specify feature` (M15):** "Cart Integrity & Comparative UX". `spec.md` criado em `.specs/features/m15-cart-integrity-comparative-ux/spec.md` com 30 requisitos (`INTEG-01..INTEG-30`) cobrindo validacao por pais no carrinho, enriquecimento real do `ClientProfileCard` e polish final dos estados `promoted/rejected/failed/unknown`.
+- [ ] **Pos-Comite (AD-043) — Migracao de dados:** definir e executar script para limpar/ignorar edges `BOUGHT {is_demo: true}` legadas no Neo4j antes do go-live da nova arquitetura. Documentar no `STATE.md` quando concluido.
+- [ ] **Pos-Comite (AD-043) — Renomear vocabulario no frontend:** `Demo Comprar` -> `Adicionar ao Carrinho`, `Limpar Demo` -> `Esvaziar Carrinho`, `Com Demo` -> `Com Carrinho`, `demoSlice` -> `cartSlice`. Tratar como sub-task de `M14`.
+- [ ] **Pos-Comite (AD-044) — Renomear `RetrainPanel -> ModelStatusPanel`** + atualizar imports, testes E2E (`m9b-deep-retrain.spec.ts` -> `m13-cart-async-retrain.spec.ts`) e referencias em design.md M9-B (ADR-023/024/025 mantem-se validos com componente renomeado). Tratar como sub-task de `M13`.
+- [ ] **Pos-Comite (AD-045) — Renomear `useRetrainJob -> useModelStatus`** + trocar fonte de verdade de `jobId` para `version`; manter `epoch`/`samples`/`loss` derivados de `lastTrainingProgress` no payload de `/model/status`. Tratar como sub-task de `M13`.
+- [ ] **Pos-Comite (AD-044) — Botao "Retreinar Modelo" no modo `Avancado`/`modo demo`:** mover botao para `<Collapsible>` colapsavel; adicionar badge "modo demo" para deixar claro que e fora do fluxo de producao; manter como ferramenta de instrutor/diagnostico. Tratar como sub-task de `M13`.
+- [x] **Resolvido — Frequencia de retrain pos-checkout (gray area):** decisao final registrada no `spec.md` do M13 como `every_checkout`; `POST /carts/{clientId}/checkout` retorna `expectedTrainingTriggered: true` para carrinho nao-vazio no MVP.
+- [ ] **Pos-Comite (AD-043) — Avaliar elevar `allPurchased.length < 2` para `< 3`** em `computePrecisionAtK` para reduzir variancia em clientes com 1 pedido isolado (sugestao do Professor Doutor em Deep Learning, originalmente sob AD-037). Tratar como sub-task do `specify feature` de `M13`.
+- [ ] **Pos-Comite (AD-043) — Documentar no README** a nova arquitetura `Carrinho -> Pedido -> Treino`, removendo a nota sobre `precisionAt5_full`/`EVAL_INCLUDE_DEMOS` (AD-037/AD-038 estao superseded) e explicando que `precisionAt5` agora reflete apenas pedidos confirmados.
+- [ ] Repetir o protocolo de validacao M11 com um segundo cluster homogeneo (`personal_care/Unilever` ou `beverages/Nestle`) para tentar converter o resultado de `sucesso parcial` em `sucesso forte`
 - [x] **M11 quick fix (ADR-031):** `supplierId?: string` adicionado ao `ProductDTO`; filtro soft negatives em `buildTrainingDataset` (exclusão de categoria+supplierName); 2 novos testes unitários; ESLint ✓; 74/74 Vitest ✓. Commit: `fix(ai-service): exclude soft negatives by category+supplier to prevent gradient interference (ADR-031)`
 - [x] **M11 quick fix (ADR-032):** `cosineSimilarity` pura adicionada a `training-utils.ts`; filtro `softPositiveIdsBySimilarity` (threshold via `SOFT_NEGATIVE_SIM_THRESHOLD`, default 0.65) aplicado após ADR-031; 2 novos testes (exclusão por cosine + threshold=1.0 desabilitado); ESLint ✓; 76/76 Vitest ✓. Commit: `fix(ai-service): add cosine similarity soft negative filter to complement ADR-031 (ADR-032)`
 - [x] **Specify M12:** `spec.md` criado para Self-Healing Model Startup (12 reqs, M12-01..M12-12)
@@ -420,6 +669,10 @@ _None at this time._
 ---
 
 ## Deferred Ideas
+
+- **SSE/WebSocket para eventos do modelo (`/model/events`) (Comite AD-045 — 2026-04-28):** Avaliada como Opcao 3 do mecanismo de captura da coluna `Pos-Efetivar` e rejeitada para o MVP por exigir nova infra de transporte (SSE ou WebSocket no `ai-service`/`api-service`) com beneficio nao-proporcional ao custo no escopo atual. O Staff observou que o polling em `/model/status` (Opcao 2 escolhida) ja desacopla a UI de filas de jobs e sobrevive a reload sem custo extra. Endereca-se em producao real, quando: (1) houver multiplos clientes simultaneos esperando retrain (custo cumulativo de polling vira relevante); (2) o `ai-service` precisar emitir outros eventos alem de promocao de modelo (ex: `embedding.synced`, `cart.checkout.failed`); (3) houver requisito de latencia sub-segundo na atualizacao da UI. Severidade: Baixa para MVP. Pre-condicao: AD-045 implementado e validado em producao demo.
+
+- **Endpoint `recommendFromCandidate` para mostrar "o que teria acontecido" quando o candidato e rejeitado (Comite AD-045 Opcao 3b — 2026-04-28):** Quando o `promotion gate` (AD-039/AD-040) rejeita o modelo `candidate`, a coluna `Pos-Efetivar` reusa as recs do `current` (Opcao 3a escolhida) com banner ambar explicando a rejeicao. Pedagogicamente isso e "sem efeito visivel" — o avaliador nao consegue ver o que o modelo candidato teria recomendado. Solucao deferida: novo endpoint `POST /recommendations/candidate` que serve as recomendacoes do `candidate` sem promove-lo, permitindo a UI mostrar duas sub-colunas em `Pos-Efetivar` ("Modelo atual mantido" + "Candidato rejeitado teria mostrado"). Aumenta o valor pedagogico do showcase ao custo de carregar o `candidate` em memoria simultaneamente ao `current`. Severidade: Baixa. Pre-condicao: AD-040 implementado (separacao explicita de `current/candidate` no `VersionedModelStore`).
 
 - **Remoção de `spring-boot-starter-webflux` do api-service:** `AiSyncClient` foi reescrito com `java.net.http.HttpClient` (ADR-015 revisado). Resta `AiServiceClient.recommend()` como único consumidor do `WebClient`. Reescrevê-lo com `java.net.http.HttpClient` eliminaria o `spring-boot-starter-webflux` do classpath, removendo o Netty como dependência transitiva e reduzindo o modelo mental do projeto para servlet puro + virtual threads. **Endereçar em M9 como primeira task técnica (pre-feature cleanup).**
 

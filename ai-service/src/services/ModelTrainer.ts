@@ -46,6 +46,10 @@ export interface TrainingDataProbe {
   orders: number
 }
 
+export interface TrainedCandidate extends TrainingResult {
+  model: tf.LayersModel
+}
+
 async function fetchAllPages<T>(
   baseUrl: string,
   fetchOrThrow: (url: string) => Promise<unknown>
@@ -66,10 +70,12 @@ async function fetchTrainingData(apiServiceUrl: string): Promise<{
   products: ProductDTO[]
   orders: OrderDTO[]
 }> {
+  const TRAINING_HEADERS = { 'Cache-Control': 'no-cache' } as const
+
   const fetchOrThrow = async (url: string): Promise<unknown> => {
     let res: Response
     try {
-      res = await fetch(url)
+      res = await fetch(url, { headers: TRAINING_HEADERS })
     } catch {
       throw new ApiServiceUnavailableError()
     }
@@ -144,7 +150,7 @@ export class ModelTrainer {
   private _progressCallback?: (epoch: number, totalEpochs: number, loss: number) => void
 
   constructor(
-    private readonly modelStore: ModelStore,
+    private readonly _modelStore: ModelStore,
     private readonly repo: Neo4jRepository,
     // EmbeddingService injected for dependency consistency; reserved for future use
     private readonly _embeddingService: EmbeddingService,
@@ -256,11 +262,10 @@ export class ModelTrainer {
     return totalClients === 0 ? 0 : clientsWithHit / totalClients
   }
 
-  async train(): Promise<TrainingResult> {
+  async train(): Promise<TrainedCandidate> {
     if (this._isTraining) throw new ConflictError()
 
     this._isTraining = true
-    this.modelStore.setTraining(new Date().toISOString())
     const startMs = Date.now()
 
     try {
@@ -280,28 +285,12 @@ export class ModelTrainer {
         console.warn('[ModelTrainer] Neo4j sync failed (non-fatal):', syncErr)
       }
 
-      let demoPairs: { clientId: string; productId: string }[] = []
-      try {
-        demoPairs = await this.repo.getAllDemoBoughtPairs()
-        if (demoPairs.length > 0) {
-          console.info(`[ModelTrainer] ${demoPairs.length} demo purchase(s) will be included in training`)
-        }
-      } catch (demoErr) {
-        console.warn('[ModelTrainer] Failed to fetch demo purchases (non-fatal):', demoErr)
-      }
-
       const clientOrderMap = new Map<string, Set<string>>()
       for (const order of orders) {
         if (!clientOrderMap.has(order.clientId)) clientOrderMap.set(order.clientId, new Set())
         for (const item of order.items) {
           clientOrderMap.get(order.clientId)!.add(item.productId)
         }
-      }
-
-      // Merge demo purchases — ADR-026: creates new entries for clients with demos but no real orders
-      for (const { clientId, productId } of demoPairs) {
-        if (!clientOrderMap.has(clientId)) clientOrderMap.set(clientId, new Set())
-        clientOrderMap.get(clientId)!.add(productId)
       }
 
       const { inputVectors, labels } = buildTrainingDataset(
@@ -358,7 +347,6 @@ export class ModelTrainer {
             console.info(
               `[ModelTrainer] Epoch ${epoch + 1}/${EPOCHS} — loss: ${loss.toFixed(4)} — accuracy: ${accuracy.toFixed(4)}`
             )
-            this.modelStore.setProgress(epoch + 1, EPOCHS)
             this._progressCallback?.(epoch + 1, EPOCHS, loss)
 
             if (prevLoss - loss > LOSS_MIN_DELTA) {
@@ -387,15 +375,22 @@ export class ModelTrainer {
 
       await model.save('file:///tmp/model')
 
-      const trainedAt = new Date().toISOString()
       const durationMs = Date.now() - startMs
-      this.modelStore.setModel(model, { trainedAt, finalLoss, finalAccuracy, trainingSamples, durationMs, syncedAt, precisionAt5 })
       this._isTraining = false
 
-      return { status: 'trained', epochs: EPOCHS, finalLoss, finalAccuracy, trainingSamples, durationMs, syncedAt, precisionAt5 }
+      return {
+        status: 'trained',
+        epochs: EPOCHS,
+        finalLoss,
+        finalAccuracy,
+        trainingSamples,
+        durationMs,
+        syncedAt,
+        precisionAt5,
+        model,
+      }
     } catch (err) {
       this._isTraining = false
-      this.modelStore.reset()
       throw err
     }
   }

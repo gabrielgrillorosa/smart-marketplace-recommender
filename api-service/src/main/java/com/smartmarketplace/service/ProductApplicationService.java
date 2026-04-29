@@ -40,12 +40,15 @@ public class ProductApplicationService {
         this.aiSyncClient = aiSyncClient;
     }
 
+   
     @Cacheable(value = CacheNames.CATALOG_LIST,
-            key = "#page + '-' + #size + '-' + #category + '-' + #country + '-' + #supplier + '-' + #search")
+            key = "#page + '-' + #size + '-' + #category + '-' + #country + '-' + #supplier + '-' + #search",
+            condition = "!#noCache")
     @Transactional(readOnly = true)
     public PagedResponse<ProductSummaryDTO> listProducts(int page, int size,
                                                           String category, String country,
-                                                          String supplier, String search) {
+                                                          String supplier, String search,
+                                                          boolean noCache) {
         Specification<Product> spec = Specification.where(null);
         if (category != null) spec = spec.and(ProductSpecifications.hasCategory(category));
         if (country != null) spec = spec.and(ProductSpecifications.availableInCountry(country));

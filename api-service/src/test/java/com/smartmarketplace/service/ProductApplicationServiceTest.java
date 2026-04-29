@@ -54,6 +54,20 @@ class ProductApplicationServiceTest {
     private ProductApplicationService service;
 
     @Test
+    void listProducts_returnsEmptyPagedResponse_whenRepositoryEmpty() {
+        Page<Product> emptyPage = new PageImpl<>(List.of(), PageRequest.of(0, 100), 0);
+        when(productRepository.findAll(any(Specification.class), any(PageRequest.class)))
+                .thenReturn(emptyPage);
+
+        PagedResponse<ProductSummaryDTO> response =
+                service.listProducts(0, 100, null, null, null, null, false);
+
+        assertThat(response.items()).isEmpty();
+        assertThat(response.totalItems()).isZero();
+        assertThat(response.totalPages()).isZero();
+    }
+
+    @Test
     void listProducts_returnsPagedResponse() {
         Country country = new Country();
         country.setCode("BR");
@@ -81,7 +95,7 @@ class ProductApplicationServiceTest {
                 .thenReturn(page);
 
         PagedResponse<ProductSummaryDTO> response =
-                service.listProducts(0, 20, null, null, null, null);
+                service.listProducts(0, 20, null, null, null, null, false);
 
         assertThat(response.items()).hasSize(1);
         assertThat(response.totalItems()).isEqualTo(1);

@@ -37,19 +37,26 @@ if (Math.abs(NEURAL_WEIGHT + SEMANTIC_WEIGHT - 1.0) > 1e-9) {
   console.warn('[ai-service] Warning: NEURAL_WEIGHT + SEMANTIC_WEIGHT != 1.0 — scores may not sum to 1')
 }
 
-function parseAutoHealModel(rawValue: string | undefined): boolean {
-  if (!rawValue) return true
+function parseBooleanFlag(rawValue: string | undefined, varName: string, defaultValue: boolean): boolean {
+  if (rawValue === undefined || rawValue === '') return defaultValue
   if (rawValue === 'false') return false
   if (rawValue === 'true') return true
 
   console.warn(
-    `[ai-service] WARNING: AUTO_HEAL_MODEL="${rawValue}" is invalid. ` +
-    'Using default true. Set AUTO_HEAL_MODEL=false to disable startup recovery.'
+    `[ai-service] WARNING: ${varName}="${rawValue}" is invalid. ` +
+    `Using default ${defaultValue}. Set ${varName}=true or ${varName}=false.`
   )
-  return true
+  return defaultValue
 }
 
-const AUTO_HEAL_MODEL = parseAutoHealModel(process.env.AUTO_HEAL_MODEL)
+const AUTO_HEAL_MODEL = parseBooleanFlag(process.env.AUTO_HEAL_MODEL, 'AUTO_HEAL_MODEL', true)
+const AUTO_SEED_ON_BOOT = parseBooleanFlag(process.env.AUTO_SEED_ON_BOOT, 'AUTO_SEED_ON_BOOT', true)
+
+const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost'
+const POSTGRES_PORT = parseInt(process.env.POSTGRES_PORT ?? '5432', 10)
+const POSTGRES_DB = process.env.POSTGRES_DB ?? 'marketplace'
+const POSTGRES_USER = process.env.POSTGRES_USER ?? 'postgres'
+const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD ?? 'postgres'
 
 export const ENV = Object.freeze({
   NEO4J_URI,
@@ -58,13 +65,17 @@ export const ENV = Object.freeze({
   OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY as string | undefined,
   OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
   PORT: parseInt(process.env.PORT ?? '3001', 10),
-  // Model for local HuggingFace embeddings (sentence-transformers, runs inside the container)
   EMBEDDING_MODEL: process.env.EMBEDDING_MODEL ?? 'sentence-transformers/all-MiniLM-L6-v2',
-  // Model for OpenRouter LLM inference (RAG chat)
   LLM_MODEL: process.env.LLM_MODEL ?? 'meta-llama/llama-3.2-3b-instruct:free',
   API_SERVICE_URL: process.env.API_SERVICE_URL ?? '',
   NEURAL_WEIGHT,
   SEMANTIC_WEIGHT,
   AUTO_HEAL_MODEL,
+  AUTO_SEED_ON_BOOT,
+  POSTGRES_HOST,
+  POSTGRES_PORT,
+  POSTGRES_DB,
+  POSTGRES_USER,
+  POSTGRES_PASSWORD,
   ADMIN_API_KEY: process.env.ADMIN_API_KEY as string | undefined,
 })
