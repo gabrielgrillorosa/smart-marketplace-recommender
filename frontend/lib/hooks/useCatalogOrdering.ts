@@ -2,15 +2,17 @@ import { useAppStore } from '@/store';
 
 export function useCatalogOrdering() {
   const ordered = useAppStore((s) => s.ordered);
-  const setOrdered = useAppStore((s) => s.setOrdered);
+  const coverageMode = useAppStore((s) => s.coverageMode);
+  const clearRecommendations = useAppStore((s) => s.clearRecommendations);
+  const setCoverageMode = useAppStore((s) => s.setCoverageMode);
 
-  function toggle() {
-    setOrdered(!ordered);
+  function enableDiagnostic() {
+    setCoverageMode('diagnostic');
   }
 
   function reset() {
-    setOrdered(false);
+    clearRecommendations();
   }
 
-  return { ordered, toggle, reset };
+  return { ordered, coverageMode, enableDiagnostic, reset };
 }

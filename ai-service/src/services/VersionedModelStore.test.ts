@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VersionedModelStore, FsPort } from '../services/VersionedModelStore.js'
 import type { TrainingResult } from '../types/index.js'
 
@@ -31,78 +31,116 @@ const makeFsPort = (overrides: Partial<FsPort> = {}): FsPort => ({
 describe('VersionedModelStore', () => {
   let fsPort: ReturnType<typeof makeFsPort>
   let store: VersionedModelStore
+  const originalTolerance = process.env.MODEL_PROMOTION_TOLERANCE
 
   beforeEach(() => {
     fsPort = makeFsPort()
     store = new VersionedModelStore(fsPort)
+    delete process.env.MODEL_PROMOTION_TOLERANCE
     vi.clearAllMocks()
   })
 
+  afterEach(() => {
+    process.env.MODEL_PROMOTION_TOLERANCE = originalTolerance
+  })
+
   describe('saveVersioned()', () => {
-    it('promotes symlink when newPrecisionAt5 >= currentPrecisionAt5 (first model)', async () => {
+    it('promotes first model when there is no current precision baseline', async () => {
       const model = makeFakeModel()
       const result = makeResult({ precisionAt5: 0.5 })
 
-      await store.saveVersioned(model as unknown as import('@tensorflow/tfjs-node').LayersModel, result)
+      await store.saveVersioned(
+        model as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        result,
+        { triggeredBy: 'manual' }
+      )
 
       expect(fsPort.symlink).toHaveBeenCalled()
+      const governance = store.getGovernanceStatus()
+      expect(governance.lastTrainingResult).toBe('promoted')
+      expect(governance.currentVersion).toBeTruthy()
     })
 
-    it('does NOT update symlink when newPrecisionAt5 < currentPrecisionAt5', async () => {
-      // First: train with precisionAt5 = 0.8
+    it('promotes candidate inside default tolerance band (0.02)', async () => {
       const model1 = makeFakeModel()
       const result1 = makeResult({ precisionAt5: 0.8 })
-      await store.saveVersioned(model1 as unknown as import('@tensorflow/tfjs-node').LayersModel, result1)
+      await store.saveVersioned(
+        model1 as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        result1,
+        { triggeredBy: 'manual' }
+      )
 
       const symlinkCallCount = (fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length
 
-      // Second: attempt with lower precision
       const model2 = makeFakeModel()
-      const result2 = makeResult({ precisionAt5: 0.3 })
-      await store.saveVersioned(model2 as unknown as import('@tensorflow/tfjs-node').LayersModel, result2)
+      const result2 = makeResult({ precisionAt5: 0.79 })
+      await store.saveVersioned(
+        model2 as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        result2,
+        { triggeredBy: 'checkout', orderId: 'order-1' }
+      )
 
-      // symlink should not have been called again
+      expect((fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length).toBe(symlinkCallCount + 1)
+      const governance = store.getGovernanceStatus()
+      expect(governance.lastTrainingResult).toBe('promoted')
+      expect(governance.lastTrainingTriggeredBy).toBe('checkout')
+      expect(governance.lastOrderId).toBe('order-1')
+    })
+
+    it('rejects candidate below currentPrecisionAt5 - tolerance and records decision metadata', async () => {
+      const promotedModel = makeFakeModel()
+      await store.saveVersioned(
+        promotedModel as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({ precisionAt5: 0.8 }),
+        { triggeredBy: 'manual' }
+      )
+
+      const symlinkCallCount = (fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length
+      const weakerCandidate = makeFakeModel()
+      await store.saveVersioned(
+        weakerCandidate as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({ precisionAt5: 0.75 }),
+        { triggeredBy: 'checkout', orderId: 'order-2' }
+      )
+
       expect((fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length).toBe(symlinkCallCount)
+
+      const governance = store.getGovernanceStatus()
+      expect(governance.lastTrainingResult).toBe('rejected')
+      expect(governance.lastDecision?.accepted).toBe(false)
+      expect(governance.lastDecision?.candidatePrecisionAt5).toBe(0.75)
+      expect(governance.lastDecision?.currentPrecisionAt5).toBe(0.8)
+      expect(governance.lastDecision?.tolerance).toBe(0.02)
+      expect(governance.lastDecision?.currentVersion).toBeTruthy()
     })
 
-    it('uses loss comparison when precisionAt5 === 0 and current loss is lower', async () => {
-      // Set up a "current" trained model with loss=0.5 via setModel
-      store.setModel(
-        {} as unknown as import('@tensorflow/tfjs-node').LayersModel,
-        {
-          trainedAt: new Date().toISOString(),
-          finalLoss: 0.5,
-          finalAccuracy: 0.9,
-          trainingSamples: 100,
-          durationMs: 1000,
-        }
+    it('supports strict zero tolerance when MODEL_PROMOTION_TOLERANCE=0', async () => {
+      process.env.MODEL_PROMOTION_TOLERANCE = '0'
+
+      await store.saveVersioned(
+        makeFakeModel() as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({ precisionAt5: 0.8 }),
+        { triggeredBy: 'manual' }
       )
 
-      const model = makeFakeModel()
-      // Lower loss → should be accepted
-      const result = makeResult({ precisionAt5: 0, finalLoss: 0.3 })
-      await store.saveVersioned(model as unknown as import('@tensorflow/tfjs-node').LayersModel, result)
+      const symlinkCallCount = (fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length
 
-      expect(fsPort.symlink).toHaveBeenCalled()
+      await store.saveVersioned(
+        makeFakeModel() as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({ precisionAt5: 0.79 }),
+        { triggeredBy: 'manual' }
+      )
+
+      expect((fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length).toBe(symlinkCallCount)
+      expect(store.getGovernanceStatus().lastTrainingResult).toBe('rejected')
     })
 
-    it('does NOT promote when precisionAt5 === 0 and new loss > current loss', async () => {
-      store.setModel(
-        {} as unknown as import('@tensorflow/tfjs-node').LayersModel,
-        {
-          trainedAt: new Date().toISOString(),
-          finalLoss: 0.2,
-          finalAccuracy: 0.9,
-          trainingSamples: 100,
-          durationMs: 1000,
-        }
-      )
-
-      const model = makeFakeModel()
-      const result = makeResult({ precisionAt5: 0, finalLoss: 0.5 })
-      await store.saveVersioned(model as unknown as import('@tensorflow/tfjs-node').LayersModel, result)
-
-      expect(fsPort.symlink).not.toHaveBeenCalled()
+    it('marks failed governance metadata when training fails', () => {
+      store.markTrainingFailed({ triggeredBy: 'checkout', orderId: 'order-3' })
+      const governance = store.getGovernanceStatus()
+      expect(governance.lastTrainingResult).toBe('failed')
+      expect(governance.lastTrainingTriggeredBy).toBe('checkout')
+      expect(governance.lastOrderId).toBe('order-3')
     })
   })
 

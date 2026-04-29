@@ -1,73 +1,172 @@
 import type { StateCreator } from 'zustand';
 import type { RecommendationResult } from '@/lib/types';
+import type { RankingWindow } from '@/lib/showcase/ranking-window';
 
 export type Snapshot = {
   recommendations: RecommendationResult[];
   capturedAt: string;
+  window: RankingWindow;
 };
 
 export type AnalysisState =
   | { phase: 'empty' }
   | { phase: 'initial'; clientId: string; initial: Snapshot }
-  | { phase: 'demo'; clientId: string; initial: Snapshot; demo: Snapshot }
-  | { phase: 'retrained'; clientId: string; initial: Snapshot; demo: Snapshot; retrained: Snapshot };
+  | { phase: 'cart'; clientId: string; initial: Snapshot; cart: Snapshot }
+  | { phase: 'postCheckout'; clientId: string; initial: Snapshot; cart: Snapshot | null; postCheckout: Snapshot };
 
 export interface AnalysisSlice {
   analysis: AnalysisState;
-  captureInitial: (clientId: string, recs: RecommendationResult[]) => void;
-  captureDemo: (clientId: string, recs: RecommendationResult[]) => void;
-  captureRetrained: (clientId: string, recs: RecommendationResult[]) => void;
+  awaitingRetrainSince: number | null;
+  lastObservedVersion: string | null;
+  awaitingForOrderId: string | null;
+  captureInitial: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
+  captureCartAware: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
+  clearCartAware: (clientId: string) => void;
+  captureRetrained: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
+  startAwaitingRetrain: (orderId: string | null, observedVersion: string | null) => void;
+  clearAwaitingRetrain: () => void;
   resetAnalysis: () => void;
+  // Resets only the snapshots (keeps awaiting-retrain state). Used when the
+  // ranking window changes and we need to recapture, but a checkout-triggered
+  // retrain is in flight and we must not lose its `lastObservedVersion`.
+  resetAnalysisSnapshots: () => void;
 }
 
 export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   analysis: { phase: 'empty' },
+  awaitingRetrainSince: null,
+  lastObservedVersion: null,
+  awaitingForOrderId: null,
 
-  captureInitial: (clientId, recs) => {
+  captureInitial: (clientId, recs, window) => {
     const current = get().analysis;
     if (current.phase !== 'empty') return;
     set({
       analysis: {
         phase: 'initial',
         clientId,
-        initial: { recommendations: recs, capturedAt: new Date().toISOString() },
+        initial: { recommendations: recs, capturedAt: new Date().toISOString(), window },
       },
     });
   },
 
-  captureDemo: (clientId, recs) => {
+  captureCartAware: (clientId, recs, window) => {
     const current = get().analysis;
-    if (current.phase !== 'initial') return;
+    if (current.phase === 'empty') return;
     if (current.clientId !== clientId) return;
+
+    const cartSnapshot: Snapshot = {
+      recommendations: recs,
+      capturedAt: new Date().toISOString(),
+      window,
+    };
+    if (current.phase === 'initial') {
+      set({
+        analysis: {
+          phase: 'cart',
+          clientId,
+          initial: current.initial,
+          cart: cartSnapshot,
+        },
+      });
+      return;
+    }
+
+    if (current.phase === 'cart') {
+      set({
+        analysis: {
+          phase: 'cart',
+          clientId,
+          initial: current.initial,
+          cart: cartSnapshot,
+        },
+      });
+      return;
+    }
+
     set({
       analysis: {
-        phase: 'demo',
+        phase: 'postCheckout',
         clientId,
         initial: current.initial,
-        demo: { recommendations: recs, capturedAt: new Date().toISOString() },
+        cart: cartSnapshot,
+        postCheckout: current.postCheckout,
       },
     });
   },
 
-  captureRetrained: (clientId, recs) => {
+  clearCartAware: (clientId) => {
     const current = get().analysis;
-    if (current.phase !== 'demo' && current.phase !== 'initial') return;
-    if (current.clientId !== clientId) return;
-    const demoSnapshot: Snapshot = current.phase === 'demo'
-      ? current.demo
-      : { recommendations: [], capturedAt: new Date().toISOString() };
+    if (current.phase === 'empty' || current.clientId !== clientId) return;
+    if (current.phase === 'initial') return;
+
+    if (current.phase === 'cart') {
+      set({
+        analysis: {
+          phase: 'initial',
+          clientId,
+          initial: current.initial,
+        },
+      });
+      return;
+    }
+
     set({
       analysis: {
-        phase: 'retrained',
+        phase: 'postCheckout',
         clientId,
         initial: current.initial,
-        demo: demoSnapshot,
-        retrained: { recommendations: recs, capturedAt: new Date().toISOString() },
+        cart: null,
+        postCheckout: current.postCheckout,
       },
+    });
+  },
+
+  captureRetrained: (clientId, recs, window) => {
+    const current = get().analysis;
+    if (current.phase === 'empty') return;
+    if (current.clientId !== clientId) return;
+
+    set({
+      analysis: {
+        phase: 'postCheckout',
+        clientId,
+        initial: current.initial,
+        cart: current.phase === 'initial' ? null : current.cart,
+        postCheckout: { recommendations: recs, capturedAt: new Date().toISOString(), window },
+      },
+      awaitingRetrainSince: null,
+      lastObservedVersion: null,
+      awaitingForOrderId: null,
+    });
+  },
+
+  startAwaitingRetrain: (orderId, observedVersion) => {
+    set({
+      awaitingRetrainSince: Date.now(),
+      lastObservedVersion: observedVersion,
+      awaitingForOrderId: orderId,
+    });
+  },
+
+  clearAwaitingRetrain: () => {
+    set({
+      awaitingRetrainSince: null,
+      lastObservedVersion: null,
+      awaitingForOrderId: null,
     });
   },
 
   resetAnalysis: () => {
+    set({
+      analysis: { phase: 'empty' },
+      awaitingRetrainSince: null,
+      lastObservedVersion: null,
+      awaitingForOrderId: null,
+    });
+  },
+
+  resetAnalysisSnapshots: () => {
     set({ analysis: { phase: 'empty' } });
   },
 });

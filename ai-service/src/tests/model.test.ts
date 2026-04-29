@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { buildApp } from './helpers/buildApp.js'
 import { ModelStore } from '../services/ModelStore.js'
 
@@ -133,5 +133,99 @@ describe('ModelStore enriched status includes syncedAt and precisionAt5', () => 
     const enriched = modelStore.getEnrichedStatus()
     expect(enriched.syncedAt).toBe(syncedAt)
     expect(enriched.precisionAt5).toBe(0.65)
+  })
+})
+
+describe('GET /api/v1/model/status governance metadata (M13)', () => {
+  it('returns null governance fields before first training decision', async () => {
+    const modelStore = new ModelStore()
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore,
+      versionedModelStore: {
+        getHistory: vi.fn().mockResolvedValue([]),
+        getGovernanceStatus: vi.fn().mockReturnValue({
+          currentVersion: null,
+          lastTrainingResult: null,
+          lastTrainingTriggeredBy: null,
+          lastOrderId: null,
+          lastDecision: null,
+        }),
+      },
+      cronScheduler: {
+        getNextExecution: vi.fn().mockReturnValue(new Date('2030-01-01T00:00:00.000Z')),
+      },
+      modelTrainer: {},
+      recommendationService: {},
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/model/status',
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.payload)
+    expect(body.currentVersion).toBeNull()
+    expect(body.lastTrainingResult).toBeNull()
+    expect(body.lastTrainingTriggeredBy).toBeNull()
+    expect(body.lastOrderId).toBeNull()
+    expect(body.lastDecision).toBeNull()
+  })
+
+  it('returns rejected decision payload and sets status=training when job is active', async () => {
+    const modelStore = new ModelStore()
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore,
+      versionedModelStore: {
+        getHistory: vi.fn().mockResolvedValue([
+          { filename: 'model-current.json', timestamp: '', precisionAt5: 0, loss: 0, accepted: true },
+        ]),
+        getGovernanceStatus: vi.fn().mockReturnValue({
+          currentVersion: 'model-current.json',
+          lastTrainingResult: 'rejected',
+          lastTrainingTriggeredBy: 'checkout',
+          lastOrderId: 'order-123',
+          lastDecision: {
+            accepted: false,
+            reason: 'candidate_below_tolerance_gate',
+            currentPrecisionAt5: 0.8,
+            candidatePrecisionAt5: 0.75,
+            tolerance: 0.02,
+            currentVersion: 'model-current.json',
+          },
+        }),
+      },
+      cronScheduler: {
+        getNextExecution: vi.fn().mockReturnValue(new Date('2030-01-01T00:00:00.000Z')),
+      },
+      trainingJobRegistry: {
+        getActiveJobId: vi.fn().mockReturnValue('job-active'),
+        getJob: vi.fn(),
+      } as never,
+      modelTrainer: {},
+      recommendationService: {},
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/model/status',
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.payload)
+    expect(body.status).toBe('training')
+    expect(body.currentVersion).toBe('model-current.json')
+    expect(body.lastTrainingResult).toBe('rejected')
+    expect(body.lastTrainingTriggeredBy).toBe('checkout')
+    expect(body.lastOrderId).toBe('order-123')
+    expect(body.lastDecision?.accepted).toBe(false)
   })
 })

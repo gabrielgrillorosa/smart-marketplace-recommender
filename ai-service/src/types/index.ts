@@ -38,6 +38,17 @@ export interface RAGResponse {
 // M4 — Neural Recommendation Model types
 
 export type ModelStatus = 'untrained' | 'training' | 'trained'
+export type TrainingTrigger = 'checkout' | 'manual'
+export type LastTrainingResult = 'promoted' | 'rejected' | 'failed'
+
+export interface LastDecision {
+  accepted: boolean
+  reason: string
+  currentPrecisionAt5: number
+  candidatePrecisionAt5: number
+  tolerance: number
+  currentVersion: string | null
+}
 
 export interface TrainingStatus {
   status: ModelStatus
@@ -51,6 +62,11 @@ export interface TrainingStatus {
   staleWarning?: string
   syncedAt?: string
   precisionAt5?: number
+  currentVersion?: string | null
+  lastTrainingResult?: LastTrainingResult | null
+  lastTrainingTriggeredBy?: TrainingTrigger | null
+  lastOrderId?: string | null
+  lastDecision?: LastDecision | null
 }
 
 export interface TrainingMetadata {
@@ -111,6 +127,8 @@ export type JobStatus = 'queued' | 'running' | 'done' | 'failed'
 export interface TrainingJob {
   jobId: string
   status: JobStatus
+  triggeredBy?: TrainingTrigger
+  orderId?: string
   epoch?: number
   totalEpochs?: number
   loss?: number

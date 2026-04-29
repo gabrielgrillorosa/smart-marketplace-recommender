@@ -1,0 +1,883 @@
+{
+  "client": {
+    "id": "cccccccc-0001-4000-8000-000000000001",
+    "name": "Supermercado Família BR"
+  },
+  "basket": [
+    {
+      "id": "55555555-0005-4000-8000-000000000005",
+      "name": "Nestlé Wafer Chocolate 3-pack"
+    },
+    {
+      "id": "55555555-0006-4000-8000-000000000006",
+      "name": "Nestlé Baton Dark Chocolate 16g"
+    },
+    {
+      "id": "55555555-0008-4000-8000-000000000008",
+      "name": "Nestlé Passatempo Cookies 130g"
+    }
+  ],
+  "screenshots": {
+    "analysisBaseline": "/home/gabriel/Documentos/learn/pos/pos-ia-applied-engenering/engenharia-de-software-com-ia-aplicada-main/modulo01-fundamentos-de-ia-e-llms-para-programadores/smart-marketplace-recommender/frontend/e2e/screenshots/manual-validation/analysis-baseline.png",
+    "catalogAfterDemo": "/home/gabriel/Documentos/learn/pos/pos-ia-applied-engenering/engenharia-de-software-com-ia-aplicada-main/modulo01-fundamentos-de-ia-e-llms-para-programadores/smart-marketplace-recommender/frontend/e2e/screenshots/manual-validation/catalog-after-demo.png",
+    "analysisDemo": "/home/gabriel/Documentos/learn/pos/pos-ia-applied-engenering/engenharia-de-software-com-ia-aplicada-main/modulo01-fundamentos-de-ia-e-llms-para-programadores/smart-marketplace-recommender/frontend/e2e/screenshots/manual-validation/analysis-demo.png",
+    "trainingInProgress": "/home/gabriel/Documentos/learn/pos/pos-ia-applied-engenering/engenharia-de-software-com-ia-aplicada-main/modulo01-fundamentos-de-ia-e-llms-para-programadores/smart-marketplace-recommender/frontend/e2e/screenshots/manual-validation/training-in-progress.png",
+    "analysisPostRetrain": "/home/gabriel/Documentos/learn/pos/pos-ia-applied-engenering/engenharia-de-software-com-ia-aplicada-main/modulo01-fundamentos-de-ia-e-llms-para-programadores/smart-marketplace-recommender/frontend/e2e/screenshots/manual-validation/analysis-post-retrain.png"
+  },
+  "baselineModel": {
+    "status": "trained",
+    "trainedAt": "2026-04-28T00:51:37.445Z",
+    "finalLoss": 0.27800819277763367,
+    "finalAccuracy": 0.9853265285491943,
+    "trainingSamples": 1363,
+    "syncedAt": "2026-04-28T00:51:37.445Z",
+    "precisionAt5": 0.6,
+    "staleDays": 0,
+    "models": [],
+    "nextScheduledTraining": "2026-04-28T02:00:00.000Z"
+  },
+  "baselineRecommendations": [
+    {
+      "rank": 1,
+      "name": "Pond's Moisturizing Cream 100g",
+      "category": "personal_care",
+      "supplier": "",
+      "finalScore": 0.838673,
+      "neuralScore": 0.99981,
+      "semanticScore": 0.596967,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 2,
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.816597,
+      "neuralScore": 1,
+      "semanticScore": 0.541492,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 3,
+      "name": "Vim Toilet Cleaner 500ml",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.795113,
+      "neuralScore": 0.999999,
+      "semanticScore": 0.487783,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 4,
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.793031,
+      "neuralScore": 0.999971,
+      "semanticScore": 0.482622,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 5,
+      "name": "Nestlé Chokito 32g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.791311,
+      "neuralScore": 0.999835,
+      "semanticScore": 0.478526,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 6,
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.788221,
+      "neuralScore": 0.997608,
+      "semanticScore": 0.47414,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 7,
+      "name": "Omo Liquid Detergent Color 1.5L",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.7823,
+      "neuralScore": 0.999863,
+      "semanticScore": 0.455955,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 8,
+      "name": "Nestlé Wafer Chocolate 3-pack",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.778757,
+      "neuralScore": 0.999863,
+      "semanticScore": 0.447099,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 9,
+      "name": "Nestlé Passatempo Cookies 130g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.772457,
+      "neuralScore": 0.999746,
+      "semanticScore": 0.431522,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 10,
+      "name": "Omo Powder Detergent 1kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.771521,
+      "neuralScore": 0.999974,
+      "semanticScore": 0.428842,
+      "matchReason": "neural"
+    }
+  ],
+  "uiBaselineColumn": [
+    {
+      "rank": "1",
+      "name": "Pond's Moisturizing Cream 100g",
+      "scoreBadge": "84% match"
+    },
+    {
+      "rank": "2",
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "scoreBadge": "82% match"
+    },
+    {
+      "rank": "3",
+      "name": "Vim Toilet Cleaner 500ml",
+      "scoreBadge": "80% match"
+    },
+    {
+      "rank": "4",
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "5",
+      "name": "Nestlé Chokito 32g",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "6",
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "7",
+      "name": "Omo Liquid Detergent Color 1.5L",
+      "scoreBadge": "78% match"
+    },
+    {
+      "rank": "8",
+      "name": "Nestlé Wafer Chocolate 3-pack",
+      "scoreBadge": "78% match"
+    },
+    {
+      "rank": "9",
+      "name": "Nestlé Passatempo Cookies 130g",
+      "scoreBadge": "77% match"
+    },
+    {
+      "rank": "10",
+      "name": "Omo Powder Detergent 1kg",
+      "scoreBadge": "77% match"
+    }
+  ],
+  "perPurchase": [
+    {
+      "bought": {
+        "id": "55555555-0005-4000-8000-000000000005",
+        "name": "Nestlé Wafer Chocolate 3-pack"
+      },
+      "recommendationsAfterPurchase": [
+        {
+          "rank": 1,
+          "name": "Pond's Moisturizing Cream 100g",
+          "category": "personal_care",
+          "supplier": "",
+          "finalScore": 0.842994,
+          "neuralScore": 0.999939,
+          "semanticScore": 0.607576,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 2,
+          "name": "Surf Powder Tropical Fragrance 2kg",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.814992,
+          "neuralScore": 1,
+          "semanticScore": 0.53748,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 3,
+          "name": "Nestlé Classic Milk Chocolate 100g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.804961,
+          "neuralScore": 0.999034,
+          "semanticScore": 0.51385,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 4,
+          "name": "Nestlé Chokito 32g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.804012,
+          "neuralScore": 0.999942,
+          "semanticScore": 0.510116,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 5,
+          "name": "Comfort Ultra Fabric Softener 1L",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.792225,
+          "neuralScore": 0.999991,
+          "semanticScore": 0.480575,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 6,
+          "name": "Vim Toilet Cleaner 500ml",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.788736,
+          "neuralScore": 1,
+          "semanticScore": 0.47184,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 7,
+          "name": "Nestlé Passatempo Cookies 130g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.785818,
+          "neuralScore": 0.999904,
+          "semanticScore": 0.464688,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 8,
+          "name": "Nestlé Crunch 50g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.785217,
+          "neuralScore": 0.999939,
+          "semanticScore": 0.463134,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 9,
+          "name": "Omo Liquid Detergent Color 1.5L",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.774139,
+          "neuralScore": 0.999954,
+          "semanticScore": 0.435416,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 10,
+          "name": "Nestlé Baton Dark Chocolate 16g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.771884,
+          "neuralScore": 0.999979,
+          "semanticScore": 0.429742,
+          "matchReason": "neural"
+        }
+      ]
+    },
+    {
+      "bought": {
+        "id": "55555555-0006-4000-8000-000000000006",
+        "name": "Nestlé Baton Dark Chocolate 16g"
+      },
+      "recommendationsAfterPurchase": [
+        {
+          "rank": 1,
+          "name": "Pond's Moisturizing Cream 100g",
+          "category": "personal_care",
+          "supplier": "",
+          "finalScore": 0.841073,
+          "neuralScore": 0.99996,
+          "semanticScore": 0.602743,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 2,
+          "name": "Nestlé Classic Milk Chocolate 100g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.821979,
+          "neuralScore": 0.999234,
+          "semanticScore": 0.556097,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 3,
+          "name": "Nestlé Chokito 32g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.814582,
+          "neuralScore": 0.999959,
+          "semanticScore": 0.536516,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 4,
+          "name": "Surf Powder Tropical Fragrance 2kg",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.811364,
+          "neuralScore": 1,
+          "semanticScore": 0.528409,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 5,
+          "name": "Nestlé Passatempo Cookies 130g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.801861,
+          "neuralScore": 0.999927,
+          "semanticScore": 0.504764,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 6,
+          "name": "Nestlé Crunch 50g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.79988,
+          "neuralScore": 0.999957,
+          "semanticScore": 0.499765,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 7,
+          "name": "Comfort Ultra Fabric Softener 1L",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.788216,
+          "neuralScore": 0.999994,
+          "semanticScore": 0.470549,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 8,
+          "name": "Vim Toilet Cleaner 500ml",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.782674,
+          "neuralScore": 1,
+          "semanticScore": 0.456685,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 9,
+          "name": "Nestlé Charge Peanut Bar 30g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.781795,
+          "neuralScore": 0.999994,
+          "semanticScore": 0.454495,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 10,
+          "name": "Omo Liquid Detergent Color 1.5L",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.767034,
+          "neuralScore": 0.999969,
+          "semanticScore": 0.417631,
+          "matchReason": "neural"
+        }
+      ]
+    },
+    {
+      "bought": {
+        "id": "55555555-0008-4000-8000-000000000008",
+        "name": "Nestlé Passatempo Cookies 130g"
+      },
+      "recommendationsAfterPurchase": [
+        {
+          "rank": 1,
+          "name": "Pond's Moisturizing Cream 100g",
+          "category": "personal_care",
+          "supplier": "",
+          "finalScore": 0.840142,
+          "neuralScore": 0.999982,
+          "semanticScore": 0.600382,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 2,
+          "name": "Nestlé Classic Milk Chocolate 100g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.830537,
+          "neuralScore": 0.999596,
+          "semanticScore": 0.576948,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 3,
+          "name": "Nestlé Chokito 32g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.826189,
+          "neuralScore": 0.999981,
+          "semanticScore": 0.565502,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 4,
+          "name": "Nestlé Crunch 50g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.810517,
+          "neuralScore": 0.999979,
+          "semanticScore": 0.526325,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 5,
+          "name": "Surf Powder Tropical Fragrance 2kg",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.807684,
+          "neuralScore": 1,
+          "semanticScore": 0.51921,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 6,
+          "name": "Nestlé Charge Peanut Bar 30g",
+          "category": "snacks",
+          "supplier": "",
+          "finalScore": 0.79087,
+          "neuralScore": 0.999997,
+          "semanticScore": 0.477179,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 7,
+          "name": "Comfort Ultra Fabric Softener 1L",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.783496,
+          "neuralScore": 0.999997,
+          "semanticScore": 0.458744,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 8,
+          "name": "Vim Toilet Cleaner 500ml",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.776876,
+          "neuralScore": 1,
+          "semanticScore": 0.442191,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 9,
+          "name": "Skol Beats Senses 313ml",
+          "category": "beverages",
+          "supplier": "",
+          "finalScore": 0.766997,
+          "neuralScore": 0.987267,
+          "semanticScore": 0.436592,
+          "matchReason": "neural"
+        },
+        {
+          "rank": 10,
+          "name": "Omo Powder Detergent 1kg",
+          "category": "cleaning",
+          "supplier": "",
+          "finalScore": 0.761349,
+          "neuralScore": 0.999997,
+          "semanticScore": 0.403377,
+          "matchReason": "neural"
+        }
+      ]
+    }
+  ],
+  "uiDemoColumn": [
+    {
+      "rank": "1",
+      "name": "Pond's Moisturizing Cream 100g",
+      "scoreBadge": "84% match"
+    },
+    {
+      "rank": "2",
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "scoreBadge": "81% match"
+    },
+    {
+      "rank": "3",
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "scoreBadge": "80% match"
+    },
+    {
+      "rank": "4",
+      "name": "Nestlé Chokito 32g",
+      "scoreBadge": "80% match"
+    },
+    {
+      "rank": "5",
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "6",
+      "name": "Vim Toilet Cleaner 500ml",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "7",
+      "name": "Nestlé Passatempo Cookies 130g",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "8",
+      "name": "Nestlé Crunch 50g",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "9",
+      "name": "Omo Liquid Detergent Color 1.5L",
+      "scoreBadge": "77% match"
+    },
+    {
+      "rank": "10",
+      "name": "Nestlé Baton Dark Chocolate 16g",
+      "scoreBadge": "77% match"
+    }
+  ],
+  "demoRecommendations": [
+    {
+      "rank": 1,
+      "name": "Pond's Moisturizing Cream 100g",
+      "category": "personal_care",
+      "supplier": "",
+      "finalScore": 0.840142,
+      "neuralScore": 0.999982,
+      "semanticScore": 0.600382,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 2,
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.830537,
+      "neuralScore": 0.999596,
+      "semanticScore": 0.576948,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 3,
+      "name": "Nestlé Chokito 32g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.826189,
+      "neuralScore": 0.999981,
+      "semanticScore": 0.565502,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 4,
+      "name": "Nestlé Crunch 50g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.810517,
+      "neuralScore": 0.999979,
+      "semanticScore": 0.526325,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 5,
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.807684,
+      "neuralScore": 1,
+      "semanticScore": 0.51921,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 6,
+      "name": "Nestlé Charge Peanut Bar 30g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.79087,
+      "neuralScore": 0.999997,
+      "semanticScore": 0.477179,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 7,
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.783496,
+      "neuralScore": 0.999997,
+      "semanticScore": 0.458744,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 8,
+      "name": "Vim Toilet Cleaner 500ml",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.776876,
+      "neuralScore": 1,
+      "semanticScore": 0.442191,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 9,
+      "name": "Skol Beats Senses 313ml",
+      "category": "beverages",
+      "supplier": "",
+      "finalScore": 0.766997,
+      "neuralScore": 0.987267,
+      "semanticScore": 0.436592,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 10,
+      "name": "Omo Powder Detergent 1kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.761349,
+      "neuralScore": 0.999997,
+      "semanticScore": 0.403377,
+      "matchReason": "neural"
+    }
+  ],
+  "trainStart": {
+    "jobId": "983152f0-9b3e-44e7-9ad1-71b3a30931c9",
+    "status": "queued",
+    "message": "Training job queued"
+  },
+  "trainingPoll": [
+    {
+      "observedAt": "2026-04-28T01:18:39.202Z",
+      "status": "running",
+      "epoch": 8,
+      "totalEpochs": 30,
+      "loss": 0.49746885895729065
+    },
+    {
+      "observedAt": "2026-04-28T01:18:41.211Z",
+      "status": "running",
+      "epoch": 14,
+      "totalEpochs": 30,
+      "loss": 0.42157045006752014
+    },
+    {
+      "observedAt": "2026-04-28T01:18:43.219Z",
+      "status": "running",
+      "epoch": 22,
+      "totalEpochs": 30,
+      "loss": 0.3433787524700165
+    },
+    {
+      "observedAt": "2026-04-28T01:18:45.228Z",
+      "status": "done",
+      "epoch": 30,
+      "totalEpochs": 30,
+      "loss": 0.27781662344932556
+    }
+  ],
+  "trainingFinalStatus": {
+    "jobId": "983152f0-9b3e-44e7-9ad1-71b3a30931c9",
+    "status": "done",
+    "startedAt": "2026-04-28T01:18:36.121Z",
+    "epoch": 30,
+    "totalEpochs": 30,
+    "loss": 0.27781662344932556,
+    "completedAt": "2026-04-28T01:18:45.111Z"
+  },
+  "afterModel": {
+    "status": "trained",
+    "trainedAt": "2026-04-28T01:18:36.267Z",
+    "finalLoss": 0.27781662344932556,
+    "finalAccuracy": 0.9840348362922668,
+    "trainingSamples": 1378,
+    "syncedAt": "2026-04-28T01:18:36.267Z",
+    "precisionAt5": 0.6,
+    "staleDays": 0,
+    "models": [],
+    "nextScheduledTraining": "2026-04-28T02:00:00.000Z"
+  },
+  "afterRecommendations": [
+    {
+      "rank": 1,
+      "name": "Pond's Moisturizing Cream 100g",
+      "category": "personal_care",
+      "supplier": "",
+      "finalScore": 0.840096,
+      "neuralScore": 0.999906,
+      "semanticScore": 0.600382,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 2,
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.829914,
+      "neuralScore": 0.998559,
+      "semanticScore": 0.576948,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 3,
+      "name": "Nestlé Chokito 32g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.826147,
+      "neuralScore": 0.999911,
+      "semanticScore": 0.565502,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 4,
+      "name": "Nestlé Crunch 50g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.810473,
+      "neuralScore": 0.999905,
+      "semanticScore": 0.526325,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 5,
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.807684,
+      "neuralScore": 1,
+      "semanticScore": 0.51921,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 6,
+      "name": "Nestlé Charge Peanut Bar 30g",
+      "category": "snacks",
+      "supplier": "",
+      "finalScore": 0.790864,
+      "neuralScore": 0.999988,
+      "semanticScore": 0.477179,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 7,
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.783486,
+      "neuralScore": 0.99998,
+      "semanticScore": 0.458744,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 8,
+      "name": "Vim Toilet Cleaner 500ml",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.776876,
+      "neuralScore": 0.999999,
+      "semanticScore": 0.442191,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 9,
+      "name": "Omo Powder Detergent 1kg",
+      "category": "cleaning",
+      "supplier": "",
+      "finalScore": 0.76134,
+      "neuralScore": 0.999982,
+      "semanticScore": 0.403377,
+      "matchReason": "neural"
+    },
+    {
+      "rank": 10,
+      "name": "Skol Beats Senses 313ml",
+      "category": "beverages",
+      "supplier": "",
+      "finalScore": 0.759623,
+      "neuralScore": 0.974976,
+      "semanticScore": 0.436592,
+      "matchReason": "neural"
+    }
+  ],
+  "uiPostRetrainColumn": [
+    {
+      "rank": "1",
+      "name": "Pond's Moisturizing Cream 100g",
+      "scoreBadge": "84% match"
+    },
+    {
+      "rank": "2",
+      "name": "Nestlé Classic Milk Chocolate 100g",
+      "scoreBadge": "83% match"
+    },
+    {
+      "rank": "3",
+      "name": "Nestlé Chokito 32g",
+      "scoreBadge": "83% match"
+    },
+    {
+      "rank": "4",
+      "name": "Nestlé Crunch 50g",
+      "scoreBadge": "81% match"
+    },
+    {
+      "rank": "5",
+      "name": "Surf Powder Tropical Fragrance 2kg",
+      "scoreBadge": "81% match"
+    },
+    {
+      "rank": "6",
+      "name": "Nestlé Charge Peanut Bar 30g",
+      "scoreBadge": "79% match"
+    },
+    {
+      "rank": "7",
+      "name": "Comfort Ultra Fabric Softener 1L",
+      "scoreBadge": "78% match"
+    },
+    {
+      "rank": "8",
+      "name": "Vim Toilet Cleaner 500ml",
+      "scoreBadge": "78% match"
+    },
+    {
+      "rank": "9",
+      "name": "Omo Powder Detergent 1kg",
+      "scoreBadge": "76% match"
+    },
+    {
+      "rank": "10",
+      "name": "Skol Beats Senses 313ml",
+      "scoreBadge": "76% match"
+    }
+  ]
+}

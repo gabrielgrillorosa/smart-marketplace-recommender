@@ -20,25 +20,42 @@ export async function modelRoutes(
 
   fastify.get('/model/status', async (_request, reply) => {
     const base = modelStore.getEnrichedStatus()
+    const governance = versionedModelStore?.getGovernanceStatus() ?? {
+      currentVersion: null,
+      lastTrainingResult: null,
+      lastTrainingTriggeredBy: null,
+      lastOrderId: null,
+      lastDecision: null,
+    }
+    const activeJobId = registry?.getActiveJobId()
+    const status = activeJobId ? 'training' : base.status
 
-    if (!versionedModelStore || !cronScheduler) {
-      return reply.code(200).send(base)
+    if (!versionedModelStore) {
+      return reply.code(200).send({
+        ...base,
+        status,
+        currentVersion: governance.currentVersion,
+        lastTrainingResult: governance.lastTrainingResult,
+        lastTrainingTriggeredBy: governance.lastTrainingTriggeredBy,
+        lastOrderId: governance.lastOrderId,
+        lastDecision: governance.lastDecision,
+      })
     }
 
     const models = await versionedModelStore.getHistory()
-    let currentModel: string | undefined
-    try {
-      const history = await versionedModelStore.getHistory()
-      currentModel = history.find((m) => m.accepted)?.filename
-    } catch {
-      // graceful degradation
-    }
+    const currentModel = governance.currentVersion ?? models.find((m) => m.accepted)?.filename
 
     const enriched = {
       ...base,
+      status,
       currentModel,
       models,
-      nextScheduledTraining: cronScheduler.getNextExecution().toISOString(),
+      nextScheduledTraining: cronScheduler?.getNextExecution().toISOString(),
+      currentVersion: governance.currentVersion,
+      lastTrainingResult: governance.lastTrainingResult,
+      lastTrainingTriggeredBy: governance.lastTrainingTriggeredBy,
+      lastOrderId: governance.lastOrderId,
+      lastDecision: governance.lastDecision,
     }
 
     return reply.code(200).send(enriched)

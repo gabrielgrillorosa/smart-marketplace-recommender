@@ -1,7 +1,7 @@
 export interface ProductSummary {
   id: string;
   name: string;
-  category: string;
+  category?: string;
 }
 
 export interface Client {
@@ -9,8 +9,8 @@ export interface Client {
   name: string;
   segment: string;
   country: string;
-  totalOrders: number;
-  recentProducts: ProductSummary[];
+  totalOrders?: number;
+  recentProducts?: ProductSummary[];
 }
 
 export interface Product {
@@ -64,6 +64,23 @@ export interface Message {
 
 export type ServiceStatus = 'up' | 'down' | 'unknown';
 
+export interface CartItem {
+  productId: string;
+  quantity: number;
+}
+
+export interface Cart {
+  cartId: string | null;
+  clientId: string;
+  items: CartItem[];
+  itemCount: number;
+}
+
+export interface CheckoutResponse {
+  orderId: string;
+  expectedTrainingTriggered: boolean;
+}
+
 export type JobStatus = 'idle' | 'queued' | 'running' | 'done' | 'failed' | 'network-error';
 
 export interface ModelMetrics {
@@ -88,6 +105,55 @@ export interface TrainStatusResponse {
   eta: number | null;
 }
 
+export interface PurchaseSummary {
+  totalOrders: number;
+  totalItems: number;
+  totalSpent: number;
+  lastOrderAt: string | null;
+}
+
+export interface ClientDetailResponse {
+  id: string;
+  name: string;
+  segment: string;
+  countryCode: string;
+  purchaseSummary: PurchaseSummary | null;
+}
+
+export interface ClientOrderItem {
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+}
+
+export interface ClientOrder {
+  id: string;
+  orderDate: string;
+  total: number;
+  items: ClientOrderItem[];
+}
+
+export interface OrderHistoryResponse {
+  items: ClientOrder[];
+  page: number;
+  size: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+export type ClientProfileLoadState = 'loading' | 'ready' | 'empty' | 'partial' | 'unavailable';
+
+export interface ClientProfileViewModel {
+  status: ClientProfileLoadState;
+  baseClient: Client;
+  totalOrders: number | null;
+  totalSpent: number | null;
+  lastOrderAt: string | null;
+  recentProducts: ProductSummary[];
+  warnings: string[];
+}
+
 export interface ModelStatusResponse {
   status?: string;
   trainedAt?: string;
@@ -95,4 +161,16 @@ export interface ModelStatusResponse {
   finalAccuracy?: number;
   trainingSamples?: number;
   precisionAt5?: number;
+  currentVersion?: string | null;
+  lastTrainingResult?: 'promoted' | 'rejected' | 'failed' | null;
+  lastTrainingTriggeredBy?: 'checkout' | 'manual' | null;
+  lastOrderId?: string | null;
+  lastDecision?: {
+    accepted: boolean;
+    reason: string;
+    currentPrecisionAt5: number;
+    candidatePrecisionAt5: number;
+    tolerance: number;
+    currentVersion: string | null;
+  } | null;
 }

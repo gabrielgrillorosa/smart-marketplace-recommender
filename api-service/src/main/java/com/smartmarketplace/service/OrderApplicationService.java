@@ -23,13 +23,16 @@ public class OrderApplicationService {
     private final OrderRepository orderRepository;
     private final ClientRepository clientRepository;
     private final ProductRepository productRepository;
+    private final ProductAvailabilityPolicy productAvailabilityPolicy;
 
     public OrderApplicationService(OrderRepository orderRepository,
                                    ClientRepository clientRepository,
-                                   ProductRepository productRepository) {
+                                   ProductRepository productRepository,
+                                   ProductAvailabilityPolicy productAvailabilityPolicy) {
         this.orderRepository = orderRepository;
         this.clientRepository = clientRepository;
         this.productRepository = productRepository;
+        this.productAvailabilityPolicy = productAvailabilityPolicy;
     }
 
     @Transactional
@@ -53,18 +56,9 @@ public class OrderApplicationService {
             throw new ResourceNotFoundException("Product", unknown);
         }
 
-        String clientCountry = client.getCountry().getCode().trim();
         Map<UUID, Product> productMap = products.stream()
                 .collect(Collectors.toMap(Product::getId, Function.identity()));
-
-        for (Product product : products) {
-            boolean availableInCountry = product.getCountries().stream()
-                    .anyMatch(c -> c.getCode().trim().equals(clientCountry));
-            if (!availableInCountry) {
-                throw new BusinessRuleException(
-                        "Product " + product.getName() + " is not available in country " + clientCountry);
-            }
-        }
+        productAvailabilityPolicy.assertAllAvailableForClientCountry(client, products);
 
         Order order = new Order();
         order.setClient(client);

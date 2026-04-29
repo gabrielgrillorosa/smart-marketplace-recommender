@@ -121,6 +121,147 @@ describe('POST /api/v1/recommend', () => {
   })
 })
 
+describe('POST /api/v1/recommend/from-cart', () => {
+  it('returns 200 for non-empty cart recommendations', async () => {
+    const mockRecommendations = [
+      {
+        id: 'prod-010',
+        name: 'Complementary Product',
+        category: 'beverages',
+        price: 18.5,
+        sku: 'SKU-010',
+        finalScore: 0.82,
+        neuralScore: 0.8,
+        semanticScore: 0.85,
+        matchReason: 'hybrid' as const,
+      },
+    ]
+
+    const mockRecommendationService = {
+      recommend: vi.fn(),
+      recommendFromCart: vi.fn().mockResolvedValue(mockRecommendations),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      recommendationService: mockRecommendationService,
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/recommend/from-cart',
+      payload: { clientId: 'client-001', productIds: ['prod-001', 'prod-002'], limit: 5 },
+    })
+
+    expect(response.statusCode).toBe(200)
+    const body = JSON.parse(response.payload)
+    expect(Array.isArray(body)).toBe(true)
+    expect(mockRecommendationService.recommendFromCart).toHaveBeenCalledWith(
+      'client-001',
+      ['prod-001', 'prod-002'],
+      5
+    )
+  })
+
+  it('returns 200 for empty productIds and delegates to service fallback behavior', async () => {
+    const mockRecommendationService = {
+      recommend: vi.fn(),
+      recommendFromCart: vi.fn().mockResolvedValue({ recommendations: [], reason: 'No new products' }),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      recommendationService: mockRecommendationService,
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/recommend/from-cart',
+      payload: { clientId: 'client-001', productIds: [] },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(mockRecommendationService.recommendFromCart).toHaveBeenCalledWith('client-001', [], 10)
+  })
+
+  it('returns 200 when cart has missing embeddings but service still returns recommendations', async () => {
+    const mockRecommendationService = {
+      recommend: vi.fn(),
+      recommendFromCart: vi.fn().mockResolvedValue([]),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      recommendationService: mockRecommendationService,
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/recommend/from-cart',
+      payload: { clientId: 'client-001', productIds: ['missing-embedding-id'] },
+    })
+
+    expect(response.statusCode).toBe(200)
+  })
+
+  it('returns 200 when client has no prior orders but cart profile is provided by service', async () => {
+    const mockRecommendationService = {
+      recommend: vi.fn(),
+      recommendFromCart: vi.fn().mockResolvedValue([
+        {
+          id: 'prod-777',
+          name: 'Starter Product',
+          category: 'snacks',
+          price: 4.9,
+          sku: 'SKU-777',
+          finalScore: 0.71,
+          neuralScore: 0.69,
+          semanticScore: 0.74,
+          matchReason: 'semantic' as const,
+        },
+      ]),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: {},
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      recommendationService: mockRecommendationService,
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/recommend/from-cart',
+      payload: { clientId: 'new-client', productIds: ['prod-777'], limit: 3 },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(mockRecommendationService.recommendFromCart).toHaveBeenCalledWith(
+      'new-client',
+      ['prod-777'],
+      3
+    )
+  })
+})
+
 describe('computeFinalScore (pure function, M6-12)', () => {
   it('computes 0.6 * neural + 0.4 * semantic correctly', () => {
     expect(computeFinalScore(1.0, 0.5, 0.6, 0.4)).toBeCloseTo(0.8, 5)

@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createClientSlice, type ClientSlice } from './clientSlice';
-import { createDemoSlice, type DemoSlice } from './demoSlice';
 import { createRecommendationSlice, type RecommendationSlice } from './recommendationSlice';
 import { createAnalysisSlice, type AnalysisSlice } from './analysisSlice';
+import { createCartSlice, type CartSlice } from './cartSlice';
 
-type CombinedStore = ClientSlice & DemoSlice & RecommendationSlice & AnalysisSlice;
+type CombinedStore = ClientSlice & RecommendationSlice & AnalysisSlice & CartSlice;
 
 export const useAppStore = create<CombinedStore>()(
   persist(
@@ -19,32 +19,37 @@ export const useAppStore = create<CombinedStore>()(
           const prevId = prevClient?.id;
           const newId = newClient?.id;
           if (prevId && prevId !== newId) {
-            get().clearDemoForClient(prevId);
             get().clearRecommendations();
             get().resetAnalysis();
+            get().clearCartStateForClient(prevId);
           }
         },
         get,
         api
       ),
-      ...createDemoSlice(set, get, api),
       ...createRecommendationSlice(set, get, api),
       ...createAnalysisSlice(set, get, api),
+      ...createCartSlice(set, get, api),
       setSelectedClient: (client) => {
         const prevClient = get().selectedClient;
         set({ selectedClient: client });
         const prevId = prevClient?.id;
         const newId = client?.id;
         if (prevId && prevId !== newId) {
-          get().clearDemoForClient(prevId);
           get().clearRecommendations();
           get().resetAnalysis();
+          get().clearCartStateForClient(prevId);
         }
       },
     }),
     {
       name: 'smr-client',
-      partialize: (state) => ({ selectedClient: state.selectedClient }),
+      partialize: (state) => ({
+        selectedClient: state.selectedClient,
+        awaitingRetrainSince: state.awaitingRetrainSince,
+        lastObservedVersion: state.lastObservedVersion,
+        awaitingForOrderId: state.awaitingForOrderId,
+      }),
       skipHydration: true,
     }
   )

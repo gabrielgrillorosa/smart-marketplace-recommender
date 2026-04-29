@@ -1,4 +1,6 @@
 -- Cleanup in FK-safe order (test isolation: re-run before every test)
+DELETE FROM cart_items;
+DELETE FROM carts;
 DELETE FROM order_items;
 DELETE FROM orders;
 DELETE FROM product_countries;

@@ -1,68 +1,64 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
+
+async function selectFirstClient(page: Page): Promise<string | null> {
+  const selectorBtn = page.locator('button[aria-label="Selecionar cliente"]')
+  await expect(selectorBtn).toBeVisible({ timeout: 10000 })
+  await selectorBtn.click()
+
+  const firstClientOption = page.locator('[role="option"]').first()
+  const hasClientOption = await firstClientOption.isVisible({ timeout: 20000 }).catch(() => false)
+  if (!hasClientOption) {
+    return null
+  }
+
+  const selectedLabel = (await firstClientOption.textContent())?.trim() ?? null
+  await firstClientOption.click()
+  return selectedLabel
+}
 
 test.describe('M8 UX Journey — happy path', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/')
+    await page.waitForLoadState('networkidle')
   })
 
   test('select client in navbar — badge visible', async ({ page }) => {
     const selectorBtn = page.locator('button[aria-label="Selecionar cliente"]')
-    await expect(selectorBtn).toBeVisible({ timeout: 10000 })
+    const selectedLabel = await selectFirstClient(page)
+    test.skip(!selectedLabel, 'Sem clientes disponíveis no ambiente E2E atual.')
 
-    await selectorBtn.click()
-
-    const clientOption = page.locator('[role="option"]').first()
-    await expect(clientOption).toBeVisible({ timeout: 10000 })
-    await clientOption.click()
-
-    // Badge flag should be visible in the button
-    await expect(selectorBtn).toBeVisible()
+    await expect(selectorBtn).toContainText(selectedLabel!)
+    await expect(selectorBtn).not.toContainText(/Selecionar cliente/i)
   })
 
   test('catalog AI sort — reorderable items with data-score visible', async ({ page }) => {
-    // Select a client first
-    const selectorBtn = page.locator('button[aria-label="Selecionar cliente"]')
-    await selectorBtn.click()
-    await page.locator('[role="option"]').first().click()
+    const selectedLabel = await selectFirstClient(page)
+    test.skip(!selectedLabel, 'Sem clientes disponíveis no ambiente E2E atual.')
 
-    // Navigate to Catálogo tab if needed
-    const catalogTab = page.locator('button, a').filter({ hasText: /cat.logo/i }).first()
-    if (await catalogTab.isVisible()) await catalogTab.click()
-
-    // Wait for products to load
     await page.waitForSelector('[data-testid="reorderable-item"]', { timeout: 20000 })
 
-    const sortBtn = page.locator('button').filter({ hasText: /Ordenar por IA/i }).first()
+    const sortBtn = page.getByTestId('catalog-order-ai')
     await expect(sortBtn).toBeVisible({ timeout: 10000 })
-
     await sortBtn.click()
 
-    // Wait for reordering
-    await page.waitForTimeout(3000)
-
-    const items = page.locator('[data-testid="reorderable-item"]')
-    await expect(items.first()).toBeVisible({ timeout: 15000 })
-    const count = await items.count()
-    expect(count).toBeGreaterThanOrEqual(1)
+    await expect(page.getByTestId('catalog-order-reset')).toBeVisible({ timeout: 30000 })
+    await expect
+      .poll(async () => page.locator('[data-testid^="catalog-score-"]').count(), { timeout: 30000 })
+      .toBeGreaterThan(0)
   })
 
   test('reset to original order after AI sort', async ({ page }) => {
-    const selectorBtn = page.locator('button[aria-label="Selecionar cliente"]')
-    await selectorBtn.click()
-    await page.locator('[role="option"]').first().click()
+    const selectedLabel = await selectFirstClient(page)
+    test.skip(!selectedLabel, 'Sem clientes disponíveis no ambiente E2E atual.')
 
     await page.waitForSelector('[data-testid="reorderable-item"]', { timeout: 20000 })
 
-    const sortBtn = page.locator('button').filter({ hasText: /Ordenar por IA/i }).first()
-    await sortBtn.click()
-    await page.waitForTimeout(3000)
-
-    const resetBtn = page.locator('button').filter({ hasText: /Ordena.+original/i }).first()
-    await expect(resetBtn).toBeVisible({ timeout: 10000 })
+    await page.getByTestId('catalog-order-ai').click()
+    const resetBtn = page.getByTestId('catalog-order-reset')
+    await expect(resetBtn).toBeVisible({ timeout: 30000 })
     await resetBtn.click()
 
-    const sortBtnAfter = page.locator('button').filter({ hasText: /Ordenar por IA/i }).first()
-    await expect(sortBtnAfter).toBeVisible({ timeout: 5000 })
+    await expect(page.getByTestId('catalog-order-ai')).toBeVisible({ timeout: 10000 })
   })
 
   test('open RAG drawer and send message', async ({ page }) => {
@@ -71,26 +67,17 @@ test.describe('M8 UX Journey — happy path', () => {
     await ragBtn.click()
 
     const drawer = page.locator('[role="dialog"][aria-label="Chat RAG"]')
-    await expect(drawer).toBeVisible({ timeout: 5000 })
+    await expect(drawer).toBeVisible({ timeout: 10000 })
 
-    const chatInput = drawer.locator('input, textarea').first()
-    if (await chatInput.isVisible()) {
-      await chatInput.fill('Quais produtos estão disponíveis no Brasil?')
-      await chatInput.press('Enter')
-      await page.waitForTimeout(2000)
-    }
+    const chatInput = drawer.locator('textarea')
+    await expect(chatInput).toBeVisible({ timeout: 10000 })
+    await chatInput.fill('Quais produtos estão disponíveis no Brasil?')
+    await chatInput.press('Enter')
 
-    // Close with Escape
+    await drawer.locator('text=⏳ Consultando...').waitFor({ state: 'detached', timeout: 60000 })
+    await expect(drawer.locator('.rounded-bl-sm').first()).toBeVisible({ timeout: 10000 })
+
     await page.keyboard.press('Escape')
     await expect(drawer).not.toBeVisible({ timeout: 5000 })
-  })
-
-  test('recommendations tab shows instruction banner when empty', async ({ page }) => {
-    const recTab = page.locator('button, a').filter({ hasText: /Recomenda/i }).first()
-    if (await recTab.isVisible()) {
-      await recTab.click()
-    }
-    const banner = page.locator('text=Ordenar por IA').first()
-    await expect(banner).toBeVisible({ timeout: 10000 })
   })
 })

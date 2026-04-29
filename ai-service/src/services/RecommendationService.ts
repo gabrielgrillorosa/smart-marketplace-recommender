@@ -166,6 +166,96 @@ export class RecommendationService {
     return sliced
   }
 
+  async recommendFromCart(
+    clientId: string,
+    productIds: string[],
+    limit: number
+  ): Promise<RecommendResponse> {
+    const uniqueCartProductIds = Array.from(
+      new Set(productIds.map((id) => id.trim()).filter((id) => id.length > 0))
+    )
+
+    if (uniqueCartProductIds.length === 0) {
+      return this.recommend(clientId, limit)
+    }
+
+    const model = this.modelStore.getModel()
+    if (!model) throw new ModelNotTrainedError()
+
+    const client = await this.repo.getClientWithCountry(clientId)
+    if (!client) throw new ClientNotFoundError()
+
+    const [purchasedIds, purchasedEmbeddings, cartEmbeddings] = await Promise.all([
+      this.repo.getPurchasedProductIds(clientId),
+      this.repo.getClientPurchasedEmbeddings(clientId),
+      this.repo.getProductEmbeddings(uniqueCartProductIds),
+    ])
+
+    const profileEmbeddings = [...purchasedEmbeddings, ...cartEmbeddings]
+    if (profileEmbeddings.length === 0) throw new ClientNoPurchaseHistoryError()
+
+    const clientProfileVector = meanPooling(profileEmbeddings)
+    const excludedIds = Array.from(new Set([...purchasedIds, ...uniqueCartProductIds]))
+    const rawCandidates = await this.repo.getCandidateProducts(client.country, excludedIds)
+
+    const candidates = rawCandidates.filter((candidate) => {
+      if (!candidate.embedding || candidate.embedding.length === 0) {
+        console.warn(`[RecommendationService] Product ${candidate.id} skipped: no embedding`)
+        return false
+      }
+      return true
+    })
+
+    if (candidates.length === 0) {
+      return {
+        recommendations: [],
+        reason: 'No new products available for this client in their country',
+      }
+    }
+
+    const cappedLimit = Math.min(limit, 50)
+
+    const results: RecommendationResult[] = tf.tidy(() => {
+      const batchMatrix = tf.tensor2d(
+        candidates.map((candidate) => [...candidate.embedding, ...clientProfileVector]),
+        [candidates.length, 768]
+      )
+      const outputTensor = model.predict(batchMatrix) as tf.Tensor
+      const neuralScores = outputTensor.dataSync() as Float32Array
+
+      return candidates.map((candidate, index) => {
+        const neuralScore = neuralScores[index]
+        const semanticScore = cosine(clientProfileVector, candidate.embedding)
+        const finalScore = computeFinalScore(neuralScore, semanticScore, this.neuralWeight, this.semanticWeight)
+
+        const diff = Math.abs(neuralScore - semanticScore)
+        let matchReason: MatchReason
+        if (diff < 0.05) {
+          matchReason = 'hybrid'
+        } else if (neuralScore > semanticScore) {
+          matchReason = 'neural'
+        } else {
+          matchReason = 'semantic'
+        }
+
+        return {
+          id: candidate.id,
+          name: candidate.name,
+          category: candidate.category,
+          price: candidate.price,
+          sku: candidate.sku,
+          finalScore,
+          neuralScore,
+          semanticScore,
+          matchReason,
+        }
+      })
+    })
+
+    results.sort((a, b) => b.finalScore - a.finalScore)
+    return results.slice(0, cappedLimit)
+  }
+
   async recommendFromVector(
     clientId: string,
     limit: number,

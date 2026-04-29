@@ -35,6 +35,9 @@ class OrderApplicationServiceTest {
     @Mock
     private ProductRepository productRepository;
 
+    @Mock
+    private ProductAvailabilityPolicy productAvailabilityPolicy;
+
     @InjectMocks
     private OrderApplicationService service;
 

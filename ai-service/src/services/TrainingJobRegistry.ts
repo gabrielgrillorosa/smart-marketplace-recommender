@@ -1,13 +1,23 @@
 import { randomUUID } from 'node:crypto'
-import { TrainingJob, JobStatus } from '../types/index.js'
+import { TrainingJob, JobStatus, TrainingTrigger } from '../types/index.js'
 import { ModelTrainer, ConflictError } from './ModelTrainer.js'
-import { VersionedModelStore } from './VersionedModelStore.js'
+import { SaveVersionedContext, VersionedModelStore } from './VersionedModelStore.js'
 
 const MAX_JOBS = 20
+
+type EnqueueStrategy = 'queue' | 'reject'
+
+interface EnqueueOptions {
+  triggeredBy: TrainingTrigger
+  orderId?: string
+  strategy: EnqueueStrategy
+}
 
 export class TrainingJobRegistry {
   private readonly jobs = new Map<string, TrainingJob>()
   private readonly waiters = new Map<string, Set<(job: TrainingJob) => void>>()
+  private readonly queue: string[] = []
+  private activeJobId?: string
 
   constructor(
     private readonly modelTrainer: ModelTrainer,
@@ -15,13 +25,18 @@ export class TrainingJobRegistry {
   ) {}
 
   getActiveJobId(): string | undefined {
-    return Array.from(this.jobs.values()).find(
-      (j) => j.status === 'queued' || j.status === 'running'
-    )?.jobId
+    return this.activeJobId ?? this.queue[0]
   }
 
-  enqueue(): { jobId: string; status: JobStatus; message: string } {
-    if (this.modelTrainer.isTraining) {
+  enqueue(input?: Partial<EnqueueOptions>): { jobId: string; status: JobStatus; message: string } {
+    const options: EnqueueOptions = {
+      triggeredBy: input?.triggeredBy ?? 'manual',
+      orderId: input?.orderId,
+      strategy: input?.strategy ?? 'reject',
+    }
+
+    const registryBusy = Boolean(this.activeJobId) || this.queue.length > 0 || this.modelTrainer.isTraining
+    if (options.strategy === 'reject' && registryBusy) {
       throw new ConflictError()
     }
 
@@ -30,12 +45,12 @@ export class TrainingJobRegistry {
       jobId,
       status: 'queued',
       startedAt: new Date().toISOString(),
+      triggeredBy: options.triggeredBy,
+      orderId: options.orderId,
     }
     this.jobs.set(jobId, job)
-
-    setImmediate(() => {
-      void this._runJob(jobId)
-    })
+    this.queue.push(jobId)
+    this._startNextJob()
 
     return { jobId, status: 'queued', message: 'Training job queued' }
   }
@@ -78,31 +93,37 @@ export class TrainingJobRegistry {
     const job = this.jobs.get(jobId)
     if (!job) return
 
+    this.activeJobId = jobId
     this._updateJob(jobId, { status: 'running' })
 
     this.modelTrainer.setProgressCallback((epoch, totalEpochs, loss) => {
       this._updateJob(jobId, { epoch, totalEpochs, loss })
     })
 
+    const context: SaveVersionedContext = {
+      triggeredBy: job.triggeredBy ?? 'manual',
+      orderId: job.orderId,
+    }
+
     try {
       const result = await this.modelTrainer.train()
-      const trainedModel = this.versionedModelStore.getModel()
-      if (trainedModel) {
-        await this.versionedModelStore.saveVersioned(trainedModel, result)
-      }
+      await this.versionedModelStore.saveVersioned(result.model, result, context)
       this._updateJob(jobId, {
         status: 'done',
         completedAt: new Date().toISOString(),
         loss: result.finalLoss,
       })
     } catch (err) {
+      this.versionedModelStore.markTrainingFailed(context)
       this._updateJob(jobId, {
         status: 'failed',
         completedAt: new Date().toISOString(),
         error: err instanceof Error ? err.message : String(err),
       })
     } finally {
+      this.activeJobId = undefined
       this._pruneJobs()
+      this._startNextJob()
     }
   }
 
@@ -146,5 +167,20 @@ export class TrainingJobRegistry {
 
   private _isTerminal(status: JobStatus): boolean {
     return status === 'done' || status === 'failed'
+  }
+
+  private _startNextJob(): void {
+    if (this.activeJobId || this.queue.length === 0) {
+      return
+    }
+
+    const nextJobId = this.queue.shift()
+    if (!nextJobId) {
+      return
+    }
+
+    setImmediate(() => {
+      void this._runJob(nextJobId)
+    })
   }
 }

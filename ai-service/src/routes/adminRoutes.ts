@@ -22,7 +22,7 @@ export const adminRoutes: FastifyPluginAsync<AdminRoutesOptions> = async (
 
   fastify.post('/model/train', async (_request, reply) => {
     try {
-      const result = registry.enqueue()
+      const result = registry.enqueue({ triggeredBy: 'manual', strategy: 'reject' })
       return reply.code(202).send(result)
     } catch (err) {
       if (err instanceof ConflictError) {

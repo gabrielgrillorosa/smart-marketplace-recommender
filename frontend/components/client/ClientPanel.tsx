@@ -1,10 +1,12 @@
 'use client';
 
 import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
+import { useSelectedClientProfile } from '@/lib/hooks/useSelectedClientProfile';
 import { ClientProfileCard } from './ClientProfileCard';
 
 export function ClientPanel() {
   const { selectedClient } = useSelectedClient();
+  const selectedClientProfile = useSelectedClientProfile(selectedClient);
 
   if (!selectedClient) {
     return (
@@ -17,7 +19,7 @@ export function ClientPanel() {
 
   return (
     <div className="space-y-4">
-      <ClientProfileCard client={selectedClient} />
+      {selectedClientProfile ? <ClientProfileCard profile={selectedClientProfile} /> : null}
       <p className="text-xs text-gray-400">
         Use &quot;✨ Ordenar por IA&quot; no Catálogo para obter recomendações para este cliente.
       </p>

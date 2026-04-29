@@ -21,14 +21,15 @@ const makeTrainer = (opts: { isTraining?: boolean; shouldFail?: boolean } = {}) 
         durationMs: 1000,
         syncedAt: new Date().toISOString(),
         precisionAt5: 0.6,
+        model: {} as import('@tensorflow/tfjs-node').LayersModel,
       }
     }),
   }
 }
 
 const makeVersionedModelStore = () => ({
-  getModel: vi.fn(() => null),
   saveVersioned: vi.fn(async () => {}),
+  markTrainingFailed: vi.fn(),
 })
 
 describe('TrainingJobRegistry', () => {
@@ -73,6 +74,22 @@ describe('TrainingJobRegistry', () => {
     )
 
     expect(() => busyRegistry.enqueue()).toThrow()
+  })
+
+  it('enqueue() keeps queue semantics for checkout strategy when busy', () => {
+    const busyTrainer = makeTrainer({ isTraining: true })
+    const busyRegistry = new TrainingJobRegistry(
+      busyTrainer as unknown as import('../services/ModelTrainer.js').ModelTrainer,
+      store as unknown as import('../services/VersionedModelStore.js').VersionedModelStore,
+    )
+
+    const queued = busyRegistry.enqueue({
+      triggeredBy: 'checkout',
+      strategy: 'queue',
+      orderId: 'order-1',
+    })
+
+    expect(queued.status).toBe('queued')
   })
 
   it('job transitions queued → running → done when train() resolves', async () => {

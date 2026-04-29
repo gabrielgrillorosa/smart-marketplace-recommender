@@ -4,7 +4,9 @@ export function useRecommendations() {
   const recommendations = useAppStore((s) => s.recommendations);
   const loading = useAppStore((s) => s.loading);
   const isFallback = useAppStore((s) => s.isFallback);
-  const cachedForClientId = useAppStore((s) => s.cachedForClientId);
+  const requestKey = useAppStore((s) => s.requestKey);
+  const coverageMeta = useAppStore((s) => s.coverageMeta);
+  const coverageMode = useAppStore((s) => s.coverageMode);
 
-  return { recommendations, loading, isFallback, cachedForClientId };
+  return { recommendations, loading, isFallback, requestKey, coverageMeta, coverageMode };
 }

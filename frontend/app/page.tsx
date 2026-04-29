@@ -15,15 +15,33 @@ export default function Home() {
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-6">
-        {activeTab === 'catalog' && <CatalogPanel />}
-        {/* ADR-023: AnalysisPanel always-mounted to preserve useRetrainJob state across tab navigation */}
         <div
-          aria-hidden={activeTab !== 'analysis'}
-          className={activeTab !== 'analysis' ? 'hidden' : 'block'}
+          id="panel-catalog"
+          role="tabpanel"
+          aria-labelledby="tab-catalog"
+          hidden={activeTab !== 'catalog'}
+        >
+          <CatalogPanel />
+        </div>
+
+        {/* Always mounted to preserve async status across tab navigation */}
+        <div
+          id="panel-analysis"
+          role="tabpanel"
+          aria-labelledby="tab-analysis"
+          hidden={activeTab !== 'analysis'}
         >
           <AnalysisPanel />
         </div>
-        {activeTab === 'chat' && <RAGChatPanel />}
+
+        <div
+          id="panel-chat"
+          role="tabpanel"
+          aria-labelledby="tab-chat"
+          hidden={activeTab !== 'chat'}
+        >
+          <RAGChatPanel />
+        </div>
       </main>
     </div>
   );

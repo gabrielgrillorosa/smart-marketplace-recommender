@@ -4,11 +4,14 @@ import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScoreBadge } from '@/components/catalog/ScoreBadge';
 import type { RecommendationResult } from '@/lib/types';
+import type { RecommendationDelta } from '@/lib/showcase/deltas';
+import { RecommendationDeltaBadge } from './RecommendationDeltaBadge';
 
 type ColorScheme = 'gray' | 'blue' | 'emerald' | 'violet';
 
 export interface RecommendationColumnProps {
   title: string;
+  columnTestId?: string;
   badge?: React.ReactNode;
   recommendations: RecommendationResult[] | null;
   loading?: boolean;
@@ -16,6 +19,7 @@ export interface RecommendationColumnProps {
   colorScheme: ColorScheme;
   capturedAt?: string;
   hideScore?: boolean;
+  deltaByProductId?: Record<string, RecommendationDelta>;
 }
 
 const headerColorMap: Record<ColorScheme, string> = {
@@ -34,6 +38,7 @@ function formatTime(isoString: string): string {
 
 export function RecommendationColumn({
   title,
+  columnTestId,
   badge,
   recommendations,
   loading = false,
@@ -41,15 +46,23 @@ export function RecommendationColumn({
   colorScheme,
   capturedAt,
   hideScore = false,
+  deltaByProductId = {},
 }: RecommendationColumnProps) {
   // Derive visibility directly from props — CSS transition handles the fade-in.
   // Using requestAnimationFrame + cleanup was cancelling the animation on re-renders.
   const hasItems = recommendations !== null && recommendations.length > 0;
+  // Show items as soon as they are available, even if `loading` is still true.
+  // This prevents stale loading flags (e.g. from cancelled effects) from hiding data
+  // that is already ready to render.
+  const showSkeletons = loading && !hasItems;
 
   const headerClass = headerColorMap[colorScheme];
 
   return (
-    <div className="flex flex-col rounded-lg border border-gray-200 overflow-hidden">
+    <div
+      className="flex flex-col overflow-hidden rounded-lg border border-gray-200"
+      data-testid={columnTestId}
+    >
       {/* Header */}
       <div className={cn('flex items-center justify-between gap-2 px-3 py-2', headerClass)}>
         <div className="flex items-center gap-2">
@@ -69,7 +82,7 @@ export function RecommendationColumn({
 
       {/* Body */}
       <div className="flex-1 bg-white p-2">
-        {loading ? (
+        {showSkeletons ? (
           <ul aria-label={`Recomendações ${title} carregando`} className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <li key={i}>
@@ -91,21 +104,39 @@ export function RecommendationColumn({
             {recommendations!.map((rec, index) => (
               <li
                 key={rec.product.id}
-                className="flex min-h-[44px] items-center gap-2 rounded border border-gray-100 bg-gray-50 px-2 py-1.5"
+                data-testid={columnTestId ? `${columnTestId}-item-${rec.product.id}` : undefined}
+                className="flex min-h-[44px] items-start gap-2 rounded border border-gray-100 bg-gray-50 px-2 py-1.5"
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600">
                   {index + 1}
                 </span>
-                <span className="flex-1 truncate text-xs font-medium text-gray-800">
-                  {rec.product.name}
-                </span>
-                {!hideScore && (
-                  <ScoreBadge
-                    finalScore={rec.finalScore}
-                    neuralScore={rec.neuralScore ?? 0}
-                    semanticScore={rec.semanticScore ?? 0}
-                  />
-                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">
+                      {rec.product.name}
+                    </span>
+                    {!hideScore && (
+                      <ScoreBadge
+                        finalScore={rec.finalScore}
+                        neuralScore={rec.neuralScore ?? 0}
+                        semanticScore={rec.semanticScore ?? 0}
+                      />
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="truncate text-[11px] text-gray-500">
+                      {rec.product.supplier} · {rec.product.category}
+                    </span>
+                    {deltaByProductId[rec.product.id] && (
+                      <RecommendationDeltaBadge
+                        delta={deltaByProductId[rec.product.id]}
+                        dataTestId={
+                          columnTestId ? `${columnTestId}-delta-${rec.product.id}` : undefined
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
               </li>
             ))}
           </ul>

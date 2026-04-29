@@ -53,9 +53,25 @@ CREATE TABLE IF NOT EXISTS order_items (
     unit_price NUMERIC(10,2) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS carts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id),
+    CONSTRAINT uk_cart_client_id UNIQUE (client_id)
+);
+
+CREATE TABLE IF NOT EXISTS cart_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    cart_id UUID NOT NULL REFERENCES carts(id),
+    product_id UUID NOT NULL REFERENCES products(id),
+    quantity INTEGER NOT NULL CHECK (quantity > 0),
+    CONSTRAINT uk_cart_item_cart_product UNIQUE (cart_id, product_id)
+);
+
 -- Indexes for common query patterns (M2)
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_clients_country ON clients(country_code);
 CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items(cart_id);
+CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);

@@ -1,24 +1,49 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
-import { useRetrainJob } from '@/lib/hooks/useRetrainJob';
+import { useModelStatus } from '@/lib/hooks/useModelStatus';
+import { useSelectedClientProfile } from '@/lib/hooks/useSelectedClientProfile';
 import { useAppStore } from '@/store';
 import { ClientProfileCard } from '@/components/client/ClientProfileCard';
-import { RetrainPanel } from '@/components/retrain/RetrainPanel';
+import { ModelStatusPanel } from '@/components/retrain/ModelStatusPanel';
 import { RecommendationColumn } from '@/components/analysis/RecommendationColumn';
+import { PostCheckoutOutcomeNotice } from '@/components/analysis/PostCheckoutOutcomeNotice';
 import { seededShuffle } from '@/lib/utils/shuffle';
 import type { RecommendationResult } from '@/lib/types';
+import {
+  DEFAULT_FULL_COVERAGE_CAP,
+  hasSameRankingWindow,
+  resolveShowcaseRankingWindow,
+} from '@/lib/showcase/ranking-window';
+import { buildRecommendationDeltaMap } from '@/lib/showcase/deltas';
+import { buildPostCheckoutOutcome } from '@/lib/showcase/post-checkout-outcome';
 
-async function fetchRecs(clientId: string): Promise<RecommendationResult[]> {
+async function fetchRecs(clientId: string, limit: number): Promise<RecommendationResult[]> {
   const res = await fetch('/api/proxy/recommend', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ clientId, limit: 10 }),
+    body: JSON.stringify({ clientId, limit }),
     cache: 'no-store',
   });
   if (!res.ok) return [];
   // The proxy already runs adaptRecommendations and returns { results, isFallback }
+  const data = await res.json() as { results?: RecommendationResult[] };
+  return Array.isArray(data?.results) ? data.results : [];
+}
+
+async function fetchCartAwareRecs(
+  clientId: string,
+  productIds: string[],
+  limit: number
+): Promise<RecommendationResult[]> {
+  const res = await fetch('/api/proxy/recommend/from-cart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId, productIds, limit }),
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
   const data = await res.json() as { results?: RecommendationResult[] };
   return Array.isArray(data?.results) ? data.results : [];
 }
@@ -28,143 +53,188 @@ export function AnalysisPanel() {
 
   const analysis = useAppStore((s) => s.analysis);
   const captureInitial = useAppStore((s) => s.captureInitial);
-  const captureDemo = useAppStore((s) => s.captureDemo);
+  const captureCartAware = useAppStore((s) => s.captureCartAware);
+  const clearCartAware = useAppStore((s) => s.clearCartAware);
   const captureRetrained = useAppStore((s) => s.captureRetrained);
   const resetAnalysis = useAppStore((s) => s.resetAnalysis);
-  const demoBoughtByClient = useAppStore((s) => s.demoBoughtByClient);
-
-  const retrainJob = useRetrainJob();
-  const { status: jobStatus } = retrainJob;
+  const resetAnalysisSnapshots = useAppStore((s) => s.resetAnalysisSnapshots);
+  const cartByClient = useAppStore((s) => s.cartByClient);
+  const coverageMode = useAppStore((s) => s.coverageMode);
+  const catalogCoverageMeta = useAppStore((s) => s.coverageMeta);
+  const modelStatus = useModelStatus();
+  const selectedClientProfile = useSelectedClientProfile(selectedClient);
 
   const [noAiRecs, setNoAiRecs] = useState<RecommendationResult[] | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
-  const [retrainedLoading, setRetrainedLoading] = useState(false);
+  const [cartLoading, setCartLoading] = useState(false);
+  const [postCheckoutLoading, setPostCheckoutLoading] = useState(false);
 
-  const prevDemoCountRef = useRef(0);
-  const prevJobStatusRef = useRef<string>('idle');
-  // Ref for analysis.phase to read current value without adding it as effect dependency
-  const analysisPhaseRef = useRef(analysis.phase);
-  useEffect(() => { analysisPhaseRef.current = analysis.phase; }, [analysis.phase]);
+  const prevCartKeyRef = useRef<string>('');
+  const lastCapturedVersionRef = useRef<string | null>(null);
+  const analysisCatalogSize = catalogCoverageMeta?.totalCatalogItems ?? DEFAULT_FULL_COVERAGE_CAP;
+  const analysisWindow = useMemo(
+    () => resolveShowcaseRankingWindow({ totalCatalogItems: analysisCatalogSize, mode: coverageMode }),
+    [analysisCatalogSize, coverageMode]
+  );
 
-  // Stable refs for store actions — prevents useEffect dependency churn
-  const captureInitialRef = useRef(captureInitial);
-  const captureDemoRef = useRef(captureDemo);
-  const captureRetrainedRef = useRef(captureRetrained);
-  useEffect(() => { captureInitialRef.current = captureInitial; }, [captureInitial]);
-  useEffect(() => { captureDemoRef.current = captureDemo; }, [captureDemo]);
-  useEffect(() => { captureRetrainedRef.current = captureRetrained; }, [captureRetrained]);
+  useEffect(() => {
+    prevCartKeyRef.current = '';
+    lastCapturedVersionRef.current = null;
+    setNoAiRecs(null);
+  }, [selectedClient?.id]);
 
-  // PHASE 1 — fetch initial snapshot when client is selected.
-  // Reads analysis.phase via ref so the effect never re-runs when phase changes
-  // (which would cancel the in-flight fetch and lock initialLoading=true forever).
+  const cartProductIds = useMemo(() => {
+    if (!selectedClient) return [];
+    return (cartByClient[selectedClient.id]?.items ?? []).map((item) => item.productId);
+  }, [cartByClient, selectedClient]);
+
   useEffect(() => {
     if (!selectedClient) return;
-    if (analysisPhaseRef.current !== 'empty') return;
+    if (analysis.phase === 'empty' || analysis.clientId !== selectedClient.id) return;
+    if (hasSameRankingWindow(analysis.initial.window, analysisWindow)) return;
+
+    prevCartKeyRef.current = '';
+    lastCapturedVersionRef.current = null;
+    setNoAiRecs(null);
+    // Reset only the snapshots (keep `awaitingRetrainSince` and
+    // `lastObservedVersion` intact) so a post-checkout retrain in flight is
+    // still detected correctly when the ranking window changes mid-flow.
+    resetAnalysisSnapshots();
+  }, [analysis, analysisWindow, resetAnalysisSnapshots, selectedClient]);
+
+  // Phase 1: baseline snapshots (`Sem IA` + `Com IA`)
+  useEffect(() => {
+    if (!selectedClient) return;
+    if (
+      analysis.phase !== 'empty' &&
+      analysis.clientId === selectedClient.id &&
+      hasSameRankingWindow(analysis.initial.window, analysisWindow)
+    ) {
+      setNoAiRecs(seededShuffle(analysis.initial.recommendations, selectedClient.id));
+      return;
+    }
+    if (analysis.phase !== 'empty' && analysis.clientId === selectedClient.id) return;
 
     let cancelled = false;
     setInitialLoading(true);
 
-    fetchRecs(selectedClient.id)
+    fetchRecs(selectedClient.id, analysisWindow.requestedLimit)
       .then((recs) => {
         if (cancelled) return;
         setNoAiRecs(seededShuffle(recs, selectedClient.id));
-        captureInitialRef.current(selectedClient.id, recs);
+        captureInitial(selectedClient.id, recs, analysisWindow);
       })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setInitialLoading(false); });
+      // Always clear the loading flag, even when the effect was cancelled by a
+      // re-run (e.g. captureInitial mutates `analysis` which is a dependency).
+      // Otherwise the column stays in skeleton state forever.
+      .finally(() => { setInitialLoading(false); });
 
     return () => { cancelled = true; };
-  // Only re-run when the client changes — phase read via ref
-  }, [selectedClient?.id]);
+  }, [analysis, analysisWindow, captureInitial, selectedClient]);
 
-  // Reset local state when analysis is reset (phase goes back to empty)
+  // Phase 2: cart-aware snapshot (`Com Carrinho`)
   useEffect(() => {
-    if (analysis.phase === 'empty') {
-      setNoAiRecs(null);
-      prevDemoCountRef.current = 0;
-      prevJobStatusRef.current = 'idle';
-      // Re-trigger initial fetch by re-running the Phase 1 effect would require
-      // selectedClient?.id to change — instead we call it directly here
-      if (selectedClient) {
-        let cancelled = false;
-        setInitialLoading(true);
-        fetchRecs(selectedClient.id)
-          .then((recs) => {
-            if (cancelled) return;
-            setNoAiRecs(seededShuffle(recs, selectedClient.id));
-            captureInitialRef.current(selectedClient.id, recs);
-          })
-          .catch(() => {})
-          .finally(() => { if (!cancelled) setInitialLoading(false); });
-        return () => { cancelled = true; };
-      }
+    if (!selectedClient) return;
+    if (analysis.phase === 'empty' || analysis.clientId !== selectedClient.id) return;
+
+    const key = cartProductIds.join(',');
+    if (key === prevCartKeyRef.current) return;
+    prevCartKeyRef.current = key;
+
+    if (cartProductIds.length === 0) {
+      clearCartAware(selectedClient.id);
+      // Cart is empty: ensure no stale loading flag from a previous cart-aware fetch
+      // keeps the skeletons visible.
+      setCartLoading(false);
+      return;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysis.phase]);
-
-  // Also keep selectedClient in a ref so Phase 2 and Phase 3 closures are never stale
-  const selectedClientRef = useRef(selectedClient);
-  useEffect(() => { selectedClientRef.current = selectedClient; }, [selectedClient]);
-
-  // PHASE 2 — fire when demoBoughtByClient changes; read phase via ref to avoid effect restart
-  useEffect(() => {
-    const client = selectedClientRef.current;
-    if (!client) return;
-    if (analysisPhaseRef.current !== 'initial') return;
-
-    const demoBought = demoBoughtByClient[client.id] ?? [];
-    const demoCount = demoBought.length;
-
-    if (demoCount === 0) { prevDemoCountRef.current = 0; return; }
-    if (demoCount === prevDemoCountRef.current) return;
-    prevDemoCountRef.current = demoCount;
 
     let cancelled = false;
-    setDemoLoading(true);
-
-    fetchRecs(client.id)
-      .then((recs) => { if (!cancelled) captureDemoRef.current(client.id, recs); })
+    setCartLoading(true);
+    fetchCartAwareRecs(selectedClient.id, cartProductIds, analysisWindow.requestedLimit)
+      .then((recs) => {
+        if (cancelled) return;
+        captureCartAware(selectedClient.id, recs, analysisWindow);
+      })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setDemoLoading(false); });
+      // Always clear the loading flag, even when the effect is cancelled by a
+      // subsequent cart change. Otherwise the column gets stuck on skeletons
+      // after the user clears the cart.
+      .finally(() => {
+        setCartLoading(false);
+      });
 
-    return () => { cancelled = true; };
-  // Only re-run when demo purchases change — phase and client read via refs
-  }, [demoBoughtByClient]);
+    return () => {
+      cancelled = true;
+    };
+  }, [analysis, analysisWindow, captureCartAware, cartProductIds, clearCartAware, selectedClient]);
 
-  // PHASE 3 — fire when jobStatus changes; read phase via ref to avoid effect restart
+  // Phase 3: post-checkout capture (`Pos-Efetivar`) when model promotion is detected.
   useEffect(() => {
-    const prev = prevJobStatusRef.current;
-    prevJobStatusRef.current = jobStatus;
+    if (!selectedClient) return;
+    if (modelStatus.panelState !== 'promoted') return;
+    const currentVersion = modelStatus.modelStatus?.currentVersion ?? null;
+    if (!currentVersion || currentVersion === lastCapturedVersionRef.current) return;
 
-    if (jobStatus !== 'done' || prev === 'done') return;
+    lastCapturedVersionRef.current = currentVersion;
+    setPostCheckoutLoading(true);
 
-    const client = selectedClientRef.current;
-    if (!client) return;
-    if (analysisPhaseRef.current !== 'demo' && analysisPhaseRef.current !== 'initial') return;
-
-    let cancelled = false;
-    setRetrainedLoading(true);
-
-    fetchRecs(client.id)
-      .then((recs) => { if (!cancelled) captureRetrainedRef.current(client.id, recs); })
+    fetchRecs(selectedClient.id, analysisWindow.requestedLimit)
+      .then((recs) => {
+        // Capture the snapshot even if the effect was cancelled by a subsequent
+        // model-status update (e.g. a follow-up retrain that was rejected). The
+        // user already saw a promotion happen and we want the matching column
+        // populated so the showcase reflects what was observed.
+        captureRetrained(selectedClient.id, recs, analysisWindow);
+      })
       .catch(() => {})
-      .finally(() => { if (!cancelled) setRetrainedLoading(false); });
-
-    return () => { cancelled = true; };
-  // Only re-run when jobStatus changes — phase and client read via refs
-  }, [jobStatus]);
+      // Always clear the loading flag, even when the effect was cancelled.
+      .finally(() => {
+        setPostCheckoutLoading(false);
+      });
+  }, [analysisWindow, captureRetrained, modelStatus.modelStatus?.currentVersion, modelStatus.panelState, selectedClient]);
 
   // Derive snapshot data for each column
-  const initialRecs = analysis.phase !== 'empty' ? analysis.initial.recommendations : null;
-  const initialCapturedAt = analysis.phase !== 'empty' ? analysis.initial.capturedAt : undefined;
-  const demoRecs = (analysis.phase === 'demo' || analysis.phase === 'retrained') ? analysis.demo.recommendations : null;
-  const demoCapturedAt = (analysis.phase === 'demo' || analysis.phase === 'retrained') ? analysis.demo.capturedAt : undefined;
-  const retrainedRecs = analysis.phase === 'retrained' ? analysis.retrained.recommendations : null;
-  const retrainedCapturedAt = analysis.phase === 'retrained' ? analysis.retrained.capturedAt : undefined;
+  const initialSnapshot = analysis.phase !== 'empty' ? analysis.initial : null;
+  const cartSnapshot =
+    analysis.phase === 'cart' ? analysis.cart : analysis.phase === 'postCheckout' ? analysis.cart : null;
+  const postCheckoutSnapshot = analysis.phase === 'postCheckout' ? analysis.postCheckout : null;
+
+  const initialRecs = initialSnapshot?.recommendations ?? null;
+  const initialCapturedAt = initialSnapshot?.capturedAt;
+  const cartRecs = cartSnapshot?.recommendations ?? null;
+  const cartCapturedAt = cartSnapshot?.capturedAt;
+  const postCheckoutRecs = postCheckoutSnapshot?.recommendations ?? null;
+  const postCheckoutCapturedAt = postCheckoutSnapshot?.capturedAt;
+  const postCheckoutOutcome = useMemo(
+    () =>
+      buildPostCheckoutOutcome(
+        modelStatus.panelState,
+        modelStatus.modelStatus,
+        postCheckoutSnapshot !== null
+      ),
+    [modelStatus.modelStatus, modelStatus.panelState, postCheckoutSnapshot]
+  );
+  const postCheckoutEmptyMessage = postCheckoutOutcome
+    ? postCheckoutOutcome.kind === 'rejected'
+      ? 'Sem novo ranking visível: o modelo atual foi mantido.'
+      : postCheckoutOutcome.kind === 'failed'
+        ? 'Sem novo snapshot: o retreinamento pós-checkout não concluiu.'
+        : 'Aguardando confirmação do resultado pós-checkout.'
+    : 'Efetive o checkout para capturar recomendações atualizadas';
+
+  const cartDeltaByProductId = useMemo(
+    () => buildRecommendationDeltaMap(initialSnapshot, cartSnapshot),
+    [cartSnapshot, initialSnapshot]
+  );
+  const postCheckoutDeltaByProductId = useMemo(
+    () => buildRecommendationDeltaMap(cartSnapshot, postCheckoutSnapshot),
+    [cartSnapshot, postCheckoutSnapshot]
+  );
 
   const clientSection = selectedClient ? (
-    <ClientProfileCard client={selectedClient} />
+    selectedClientProfile ? <ClientProfileCard profile={selectedClientProfile} /> : null
   ) : (
     <div className="rounded-lg border border-dashed border-gray-300 py-8 text-center text-gray-400">
       <p className="text-3xl mb-2">👤</p>
@@ -176,6 +246,7 @@ export function AnalysisPanel() {
     <>
       <RecommendationColumn
         title="Sem IA"
+        columnTestId="analysis-column-no-ai"
         colorScheme="gray"
         recommendations={noAiRecs}
         loading={initialLoading}
@@ -184,6 +255,7 @@ export function AnalysisPanel() {
       />
       <RecommendationColumn
         title="Com IA"
+        columnTestId="analysis-column-initial"
         colorScheme="blue"
         recommendations={initialRecs}
         capturedAt={initialCapturedAt}
@@ -191,21 +263,35 @@ export function AnalysisPanel() {
         emptyMessage="Selecione um cliente na navbar"
       />
       <RecommendationColumn
-        title="Com Demo"
+        title="Com Carrinho"
+        columnTestId="analysis-column-cart"
         colorScheme="emerald"
-        recommendations={demoRecs}
-        capturedAt={demoCapturedAt}
-        loading={demoLoading}
-        emptyMessage="Faça uma compra demo no catálogo"
+        recommendations={cartRecs}
+        capturedAt={cartCapturedAt}
+        loading={cartLoading}
+        emptyMessage="Adicione itens ao carrinho no catálogo"
+        deltaByProductId={cartDeltaByProductId}
       />
-      <RecommendationColumn
-        title="Pós-Retreino"
-        colorScheme="violet"
-        recommendations={retrainedRecs}
-        capturedAt={retrainedCapturedAt}
-        loading={retrainedLoading}
-        emptyMessage="Retreine o modelo acima para ver"
-      />
+      <div id="pos-efetivar">
+        {postCheckoutOutcome ? (
+          <div className="mb-3">
+            <PostCheckoutOutcomeNotice
+              outcome={postCheckoutOutcome}
+              onRefresh={postCheckoutOutcome.kind === 'unknown' ? modelStatus.refreshStatus : undefined}
+            />
+          </div>
+        ) : null}
+        <RecommendationColumn
+          title="Pos-Efetivar"
+          columnTestId="analysis-column-post-checkout"
+          colorScheme="violet"
+          recommendations={postCheckoutRecs}
+          capturedAt={postCheckoutCapturedAt}
+          loading={postCheckoutLoading}
+          emptyMessage={postCheckoutEmptyMessage}
+          deltaByProductId={postCheckoutDeltaByProductId}
+        />
+      </div>
     </>
   );
 
@@ -213,15 +299,15 @@ export function AnalysisPanel() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {clientSection}
-        <RetrainPanel retrainJob={retrainJob} />
+        <ModelStatusPanel modelStatusHook={modelStatus} />
       </div>
 
       <div className="border-t border-gray-200 pt-6 space-y-3">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-800">📊 AI Learning Showcase</h2>
+            <h2 className="text-base font-semibold text-gray-800">📊 Showcase de aprendizagem com carrinho</h2>
             <p className="mt-1 text-xs text-gray-500">
-              Acompanhe as 4 fases: selecione cliente → faça compras demo → retreine o modelo.
+              Acompanhe as 4 fases: selecione cliente → monte carrinho → checkout → captura pós-efetivar.
             </p>
           </div>
           {analysis.phase !== 'empty' && (
@@ -234,8 +320,7 @@ export function AnalysisPanel() {
             </button>
           )}
         </div>
-        <div className="hidden lg:grid lg:grid-cols-4 lg:gap-3">{columns}</div>
-        <div className="grid grid-cols-1 gap-3 lg:hidden">{columns}</div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 lg:gap-3">{columns}</div>
       </div>
     </div>
   );

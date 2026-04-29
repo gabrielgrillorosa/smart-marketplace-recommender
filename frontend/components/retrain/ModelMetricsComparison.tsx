@@ -40,7 +40,7 @@ export function ModelMetricsComparison({ before, after, loading }: ModelMetricsC
   if (!before) {
     return (
       <p className="text-sm text-gray-500">
-        Nenhum modelo treinado — clique em Retreinar Modelo para começar
+        Nenhum modelo treinado ainda. Aguarde um novo pedido ou use o retreino manual legado.
       </p>
     );
   }

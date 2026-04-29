@@ -4,6 +4,11 @@ import { useState } from 'react';
 import type { Client, RecommendationResult } from '@/lib/types';
 import { apiFetch } from '@/lib/fetch-wrapper';
 import { useAppStore } from '@/store';
+import {
+  buildCoverageMeta,
+  buildShowcaseRequestKey,
+  resolveShowcaseRankingWindow,
+} from '@/lib/showcase/ranking-window';
 
 interface RecommendButtonProps {
   client: Client;
@@ -11,6 +16,7 @@ interface RecommendButtonProps {
 
 export function RecommendButton({ client }: RecommendButtonProps) {
   const setRecommendations = useAppStore((s) => s.setRecommendations);
+  const clearRecommendations = useAppStore((s) => s.clearRecommendations);
   const setLoading = useAppStore((s) => s.setLoading);
   const [fetching, setFetching] = useState(false);
 
@@ -23,9 +29,25 @@ export function RecommendButton({ client }: RecommendButtonProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId: client.id, limit: 10 }),
       });
-      setRecommendations(raw.results ?? [], raw.isFallback ?? false, client.id);
+      const results = raw.results ?? [];
+      const window = resolveShowcaseRankingWindow({ totalCatalogItems: results.length, mode: 'full' });
+      const requestKey = buildShowcaseRequestKey({
+        clientId: client.id,
+        window,
+        searchStateKind: 'filtered-catalog',
+      });
+
+      setRecommendations(
+        results,
+        raw.isFallback ?? false,
+        buildCoverageMeta({
+          window,
+          requestKey,
+          receivedCount: results.length,
+        })
+      );
     } catch {
-      setRecommendations([], false, client.id);
+      clearRecommendations();
     } finally {
       setFetching(false);
       setLoading(false);

@@ -19,6 +19,7 @@
 
     <properties>
         <java.version>21</java.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
@@ -168,13 +169,6 @@
                                     <includes>
                                         <include>com.smartmarketplace.service.*</include>
                                     </includes>
-                                    <excludes>
-                                        <!-- AiServiceClient is exercised end-to-end against
-                                             the real AI service in environments where it is
-                                             reachable; covering it from unit tests would
-                                             require mocking WebClient internals. -->
-                                        <exclude>com.smartmarketplace.service.AiServiceClient</exclude>
-                                    </excludes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>

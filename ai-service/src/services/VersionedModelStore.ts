@@ -2,7 +2,13 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as tf from '@tensorflow/tfjs-node'
 import { ModelStore } from './ModelStore.js'
-import { ModelHistoryEntry, TrainingResult } from '../types/index.js'
+import {
+  LastDecision,
+  LastTrainingResult,
+  ModelHistoryEntry,
+  TrainingResult,
+  TrainingTrigger,
+} from '../types/index.js'
 
 export interface FsPort {
   symlink(target: string, linkPath: string): Promise<void>
@@ -25,13 +31,29 @@ export const defaultFsPort: FsPort = {
 const MODEL_DIR = '/tmp/model'
 const CURRENT_LINK = path.join(MODEL_DIR, 'current')
 const MAX_HISTORY = 5
+const DEFAULT_PROMOTION_TOLERANCE = 0.02
+
+export interface SaveVersionedContext {
+  triggeredBy: TrainingTrigger
+  orderId?: string
+}
 
 export class VersionedModelStore extends ModelStore {
+  private currentVersion: string | null = null
+  private lastTrainingResult: LastTrainingResult | null = null
+  private lastTrainingTriggeredBy: TrainingTrigger | null = null
+  private lastOrderId: string | null = null
+  private lastDecision: LastDecision | null = null
+
   constructor(private readonly fsPort: FsPort = defaultFsPort) {
     super()
   }
 
-  async saveVersioned(model: tf.LayersModel, result: TrainingResult): Promise<void> {
+  async saveVersioned(
+    model: tf.LayersModel,
+    result: TrainingResult,
+    context: SaveVersionedContext
+  ): Promise<void> {
     await this.fsPort.mkdir(MODEL_DIR, { recursive: true })
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -40,46 +62,55 @@ export class VersionedModelStore extends ModelStore {
 
     await model.save(`file://${filePath.replace(/\.json$/, '')}`)
 
-    const currentPrecisionAt5 = await this._getCurrentPrecisionAt5()
-    const newPrecisionAt5 = result.precisionAt5 ?? 0
+    const tolerance = this._getPromotionTolerance()
+    const candidatePrecisionAt5 = result.precisionAt5 ?? 0
+    const status = this.getStatus()
+    const hasCurrentPrecision = status.status === 'trained' && typeof status.precisionAt5 === 'number'
+    const currentPrecisionAt5 = hasCurrentPrecision ? status.precisionAt5 ?? 0 : 0
 
-    if (newPrecisionAt5 > 0 || currentPrecisionAt5 > 0) {
-      // At least one model has a precision metric — use it for comparison
-      if (newPrecisionAt5 >= currentPrecisionAt5) {
-        await this._updateSymlink(filename)
-        super.setModel(model, {
-          trainedAt: result.syncedAt ?? new Date().toISOString(),
-          finalLoss: result.finalLoss,
-          finalAccuracy: result.finalAccuracy,
-          trainingSamples: result.trainingSamples,
-          durationMs: result.durationMs,
-          syncedAt: result.syncedAt,
-          precisionAt5: newPrecisionAt5,
-        })
-      } else {
-        console.info(
-          `[VersionedModelStore] New model rejected: precisionAt5 ${newPrecisionAt5.toFixed(4)} < current ${currentPrecisionAt5.toFixed(4)}`
-        )
-      }
+    let accepted = false
+    let reason = 'no_current_precision_baseline'
+
+    if (!hasCurrentPrecision) {
+      accepted = true
+    } else if (candidatePrecisionAt5 >= currentPrecisionAt5 - tolerance) {
+      accepted = true
+      reason = 'candidate_within_tolerance_band'
     } else {
-      // fallback: compare loss (lower is better) when both precisionAt5 === 0
-      const currentLoss = await this._getCurrentLoss()
-      if (result.finalLoss <= currentLoss || currentLoss === Infinity) {
-        await this._updateSymlink(filename)
-        super.setModel(model, {
-          trainedAt: result.syncedAt ?? new Date().toISOString(),
-          finalLoss: result.finalLoss,
-          finalAccuracy: result.finalAccuracy,
-          trainingSamples: result.trainingSamples,
-          durationMs: result.durationMs,
-          syncedAt: result.syncedAt,
-          precisionAt5: newPrecisionAt5,
-        })
-      } else {
-        console.info(
-          `[VersionedModelStore] New model rejected (loss fallback): ${result.finalLoss.toFixed(4)} > current ${currentLoss.toFixed(4)}`
-        )
+      reason = 'candidate_below_tolerance_gate'
+    }
+
+    this.lastTrainingTriggeredBy = context.triggeredBy
+    this.lastOrderId = context.orderId ?? null
+
+    if (accepted) {
+      await this._updateSymlink(filename)
+      this.currentVersion = filename
+      this.lastTrainingResult = 'promoted'
+      this.lastDecision = null
+
+      super.setModel(model, {
+        trainedAt: result.syncedAt ?? new Date().toISOString(),
+        finalLoss: result.finalLoss,
+        finalAccuracy: result.finalAccuracy,
+        trainingSamples: result.trainingSamples,
+        durationMs: result.durationMs,
+        syncedAt: result.syncedAt,
+        precisionAt5: candidatePrecisionAt5,
+      })
+    } else {
+      this.lastTrainingResult = 'rejected'
+      this.lastDecision = {
+        accepted: false,
+        reason,
+        currentPrecisionAt5,
+        candidatePrecisionAt5,
+        tolerance,
+        currentVersion: this.currentVersion,
       }
+      console.info(
+        `[VersionedModelStore] New model rejected: precisionAt5 ${candidatePrecisionAt5.toFixed(4)} below gate ${(currentPrecisionAt5 - tolerance).toFixed(4)} (current=${currentPrecisionAt5.toFixed(4)}, tolerance=${tolerance.toFixed(4)})`
+      )
     }
 
     await this.pruneHistory()
@@ -106,6 +137,7 @@ export class VersionedModelStore extends ModelStore {
           trainingSamples: 0,
           durationMs: 0,
         })
+        this.currentVersion = mostRecent
         console.info(`[VersionedModelStore] Loaded most recent model: ${mostRecent}`)
       } catch {
         console.info('[VersionedModelStore] No loadable model found — starting untrained')
@@ -124,6 +156,7 @@ export class VersionedModelStore extends ModelStore {
         trainingSamples: 0,
         durationMs: 0,
       })
+      this.currentVersion = path.basename(target)
       console.info(`[VersionedModelStore] Loaded current model from symlink: ${target}`)
     } catch (err) {
       console.warn('[VersionedModelStore] Failed to load current model:', err)
@@ -163,6 +196,29 @@ export class VersionedModelStore extends ModelStore {
     }
   }
 
+  markTrainingFailed(context: SaveVersionedContext): void {
+    this.lastTrainingResult = 'failed'
+    this.lastTrainingTriggeredBy = context.triggeredBy
+    this.lastOrderId = context.orderId ?? null
+    this.lastDecision = null
+  }
+
+  getGovernanceStatus(): {
+    currentVersion: string | null
+    lastTrainingResult: LastTrainingResult | null
+    lastTrainingTriggeredBy: TrainingTrigger | null
+    lastOrderId: string | null
+    lastDecision: LastDecision | null
+  } {
+    return {
+      currentVersion: this.currentVersion,
+      lastTrainingResult: this.lastTrainingResult,
+      lastTrainingTriggeredBy: this.lastTrainingTriggeredBy,
+      lastOrderId: this.lastOrderId,
+      lastDecision: this.lastDecision,
+    }
+  }
+
   private async _getModelFilesSortedByMtime(): Promise<string[]> {
     try {
       const entries = await this.fsPort.readdir(MODEL_DIR)
@@ -185,15 +241,20 @@ export class VersionedModelStore extends ModelStore {
     }
   }
 
-  private async _getCurrentPrecisionAt5(): Promise<number> {
-    const status = this.getStatus()
-    return status.precisionAt5 ?? 0
-  }
+  private _getPromotionTolerance(): number {
+    const rawTolerance = process.env.MODEL_PROMOTION_TOLERANCE
+    if (rawTolerance == null || rawTolerance === '') {
+      return DEFAULT_PROMOTION_TOLERANCE
+    }
 
-  private async _getCurrentLoss(): Promise<number> {
-    const status = this.getStatus()
-    if (status.status !== 'trained' || !status.finalLoss) return Infinity
-    return status.finalLoss
+    const parsed = Number(rawTolerance)
+    if (Number.isNaN(parsed) || parsed < 0) {
+      console.warn(
+        `[VersionedModelStore] Invalid MODEL_PROMOTION_TOLERANCE="${rawTolerance}", using ${DEFAULT_PROMOTION_TOLERANCE}`
+      )
+      return DEFAULT_PROMOTION_TOLERANCE
+    }
+    return parsed
   }
 
   private async _updateSymlink(filename: string): Promise<void> {

@@ -1,5 +1,7 @@
 package com.smartmarketplace.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.smartmarketplace.dto.ProductDetailDTO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +13,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
 
 @Service
 public class AiSyncClient {
@@ -19,12 +23,14 @@ public class AiSyncClient {
 
     private final HttpClient httpClient;
     private final String aiServiceBaseUrl;
+    private final ObjectMapper objectMapper;
 
     public AiSyncClient(@Value("${ai.service.base-url}") String aiServiceBaseUrl) {
         this.aiServiceBaseUrl = aiServiceBaseUrl;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
+        this.objectMapper = new ObjectMapper();
     }
 
     public void notifyProductCreated(ProductDetailDTO product) {
@@ -58,6 +64,38 @@ public class AiSyncClient {
                 .start(runnable);
     }
 
+    public void notifyCheckoutCompleted(UUID orderId, UUID clientId, List<UUID> productIds) {
+        CheckoutSyncRequest payload = new CheckoutSyncRequest(clientId, productIds);
+
+        Runnable runnable = () -> {
+            try {
+                String jsonBody = objectMapper.writeValueAsString(payload);
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(aiServiceBaseUrl + "/api/v1/orders/" + orderId + "/sync-and-train"))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .timeout(Duration.ofSeconds(10))
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    log.warn("[AiSyncClient] checkout sync-and-train returned {} for order {}",
+                            response.statusCode(), orderId);
+                }
+            } catch (JsonProcessingException e) {
+                log.warn("[AiSyncClient] Failed to serialize checkout payload for order {}: {}",
+                        orderId, e.getMessage());
+            } catch (Exception e) {
+                log.warn("[AiSyncClient] Failed to notify checkout completion for order {}: {}",
+                        orderId, e.getMessage());
+            }
+        };
+
+        Thread.ofVirtual()
+                .name("ai-sync-checkout-" + orderId)
+                .start(runnable);
+    }
+
     String buildPayload(ProductDetailDTO product) {
         String countryCodes = product.availableCountries().stream()
                 .map(c -> "\"" + c + "\"")
@@ -85,4 +123,6 @@ public class AiSyncClient {
                 .replace("\r", "\\r")
                 .replace("\t", "\\t");
     }
+
+    private record CheckoutSyncRequest(UUID clientId, List<UUID> productIds) {}
 }

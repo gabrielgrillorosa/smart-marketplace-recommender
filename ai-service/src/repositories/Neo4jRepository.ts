@@ -163,7 +163,9 @@ export class Neo4jRepository {
     const session = this.driver.session()
     try {
       const result = await session.run(
-        'MATCH (:Client {id: $id})-[:BOUGHT]->(p:Product) RETURN p.id AS id',
+        `MATCH (:Client {id: $id})-[r:BOUGHT]->(p:Product)
+         WHERE coalesce(r.is_demo, false) = false
+         RETURN p.id AS id`,
         { id: clientId }
       )
       return result.records.map((r) => r.get('id'))
@@ -178,7 +180,10 @@ export class Neo4jRepository {
     const session = this.driver.session()
     try {
       const result = await session.run(
-        'MATCH (:Client {id: $id})-[:BOUGHT]->(p:Product) WHERE p.embedding IS NOT NULL RETURN p.embedding AS embedding',
+        `MATCH (:Client {id: $id})-[r:BOUGHT]->(p:Product)
+         WHERE coalesce(r.is_demo, false) = false
+           AND p.embedding IS NOT NULL
+         RETURN p.embedding AS embedding`,
         { id: clientId }
       )
       return result.records.map((r) => r.get('embedding') as number[])
@@ -342,6 +347,29 @@ export class Neo4jRepository {
       if (result.records.length === 0) return null
       const embedding = result.records[0].get('embedding')
       return embedding ?? null
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async getProductEmbeddings(productIds: string[]): Promise<number[][]> {
+    if (productIds.length === 0) {
+      return []
+    }
+
+    const session = this.driver.session()
+    try {
+      const result = await session.run(
+        `UNWIND $productIds AS productId
+         MATCH (p:Product {id: productId})
+         WHERE p.embedding IS NOT NULL
+         RETURN p.embedding AS embedding`,
+        { productIds }
+      )
+
+      return result.records.map((r) => r.get('embedding') as number[])
     } catch (err) {
       throw new Neo4jUnavailableError(err)
     } finally {

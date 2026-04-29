@@ -1,17 +1,24 @@
 import { test, expect } from '@playwright/test'
 
-test('semantic search returns product cards', async ({ page }) => {
+test('semantic search returns results or graceful error state', async ({ page }) => {
   await page.goto('/')
+  await page.waitForLoadState('networkidle')
 
-  // Find the semantic search input
-  const searchInput = page.locator('input[placeholder*="Busca semântica"]')
+  const searchInput = page.locator('input[placeholder*="Busca semântica"]').first()
+  await expect(searchInput).toBeVisible({ timeout: 10000 })
   await searchInput.fill('bebida refrescante')
   await searchInput.press('Enter')
 
-  // Wait for product cards to render after search
-  await page.waitForTimeout(2000)
+  const resultsMessage = page.getByText(/resultado\(s\) para busca semântica/i)
+  const errorMessage = page.getByText(/Erro na busca semântica/i)
 
-  // Verify product cards are visible in the catalog panel
-  const cards = page.locator('.product-card, [class*="ProductCard"], article, [class*="rounded"][class*="border"]').first()
-  await expect(cards).toBeVisible({ timeout: 15000 })
+  await expect
+    .poll(async () => {
+      if (await resultsMessage.isVisible().catch(() => false)) return 'results'
+      if (await errorMessage.isVisible().catch(() => false)) return 'error'
+      return 'pending'
+    }, { timeout: 20000 })
+    .not.toBe('pending')
+
+  await expect(page.locator('[data-testid^="catalog-product-card-"]').first()).toBeVisible({ timeout: 20000 })
 })

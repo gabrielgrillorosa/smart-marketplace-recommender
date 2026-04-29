@@ -21,7 +21,7 @@ interface RawClient {
 }
 
 interface PageResponse {
-  content?: Client[];
+  content?: RawClient[];
   items?: RawClient[];
 }
 
@@ -31,8 +31,6 @@ function toClient(raw: RawClient): Client {
     name: raw.name,
     segment: raw.segment,
     country: raw.countryCode,
-    totalOrders: 0,
-    recentProducts: [],
   };
 }
 
@@ -44,19 +42,17 @@ export function ClientSelectorDropdown() {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    apiFetch<PageResponse | Client[]>('/backend/api/v1/clients?size=100')
+    apiFetch<PageResponse | RawClient[]>('/backend/api/v1/clients?size=100')
       .then((data) => {
-        let raw: RawClient[] | Client[];
+        let raw: RawClient[];
         if (Array.isArray(data)) {
-          raw = data;
+          raw = data as RawClient[];
         } else if ((data as PageResponse).items) {
           raw = (data as PageResponse).items!;
         } else {
           raw = (data as PageResponse).content ?? [];
         }
-        const list = (raw as RawClient[]).map((item) =>
-          'country' in item ? (item as unknown as Client) : toClient(item)
-        );
+        const list = raw.map(toClient);
         setClients(list);
       })
       .catch(() => setError(true))

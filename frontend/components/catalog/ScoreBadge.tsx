@@ -1,5 +1,6 @@
 'use client';
 
+import { useId } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
 export interface ScoreBadgeProps {
@@ -16,18 +17,18 @@ function colorClass(score: number): string {
 
 export function ScoreBadge({ finalScore, neuralScore, semanticScore }: ScoreBadgeProps) {
   const pct = Math.round(finalScore * 100);
-  const tooltipId = `score-breakdown-${pct}`;
+  const tooltipId = useId();
 
   return (
     <Tooltip.Provider delayDuration={200}>
       <Tooltip.Root>
         <Tooltip.Trigger asChild>
           <span
-            aria-label={`Score: ${pct}% match`}
+            aria-label={`Score IA: ${pct}%`}
             aria-describedby={tooltipId}
             className={`inline-flex items-center rounded border px-1.5 py-0.5 text-xs font-medium motion-safe:transition-opacity motion-safe:duration-150 ${colorClass(finalScore)}`}
           >
-            {pct}% match
+            {pct}% score
           </span>
         </Tooltip.Trigger>
         <Tooltip.Portal>
@@ -36,6 +37,7 @@ export function ScoreBadge({ finalScore, neuralScore, semanticScore }: ScoreBadg
             side="top"
             className="rounded bg-gray-900 px-2.5 py-1.5 text-xs text-white shadow-md"
           >
+            <p>Score final: {finalScore.toFixed(2)}</p>
             <p>Neural: {neuralScore.toFixed(2)}</p>
             <p>Semântico: {semanticScore.toFixed(2)}</p>
             <Tooltip.Arrow className="fill-gray-900" />
