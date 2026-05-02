@@ -30,6 +30,7 @@ postgres/data/
 volumes/
 
 # ── IDE / OS ──────────────────────────────────────────────────────────────────
+.cursor/
 .idea/
 .vscode/
 !.vscode/settings.json
