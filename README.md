@@ -15,6 +15,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Neural architecture benchmark (CLI)](#neural-architecture-benchmark-cli)
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
+- [M17 — Recency-aware profile & ranking](#m17--recency-aware-profile--ranking)
 - [RAG Pipeline](#rag-pipeline)
 - [Service Communication Patterns](#service-communication-patterns)
 - [Async Training: 202 + Polling Pattern](#async-training-202--polling-pattern)
@@ -449,6 +450,85 @@ graph LR
 Weights are configurable via `NEURAL_WEIGHT` and `SEMANTIC_WEIGHT` env vars. The current 60/40 split was evaluated by a three-expert committee using Tree-of-Thought + Self-Consistency reasoning.
 
 **`matchReason` field** in recommendation responses tells the client which signal dominated: `neural` | `semantic` | `hybrid`.
+
+---
+
+## M17 — Recency-aware profile & ranking
+
+Milestone **[M17](.specs/features/m17-phased-recency-ranking-signals/spec.md)** rolls out recency in **orthogonal phases** ([ADR-062](.specs/features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md)): **P1** re-ranks candidates after the hybrid score; **P2** changes how the **client profile vector** is built so training and inference stay aligned ([ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)). Score transparency for the UI lives in [ADR-063](.specs/features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md) / [ADR-064](.specs/features/m17-phased-recency-ranking-signals/adr-064-rankingconfig-zustand-recommendation-slice.md). **Phase 3** (temporal attention inside the MLP) is planned, not implemented yet.
+
+Operational detail and env defaults: [`ai-service/README.md`](ai-service/README.md).
+
+### Where the two mechanisms sit in the pipeline
+
+```mermaid
+flowchart LR
+    subgraph P2["M17 P2 — profile vector p"]
+        HIST["📦 Confirmed purchases\nembedding + lastPurchase"]
+        CART["🛒 Cart items\nΔ = 0 days"]
+        AGG["⚙️ aggregateClientProfileEmbeddings\nmean | exp"]
+        HIST --> AGG
+        CART --> AGG
+    end
+
+    subgraph Hybrid["Hybrid (unchanged formula)"]
+        N["🧠 neuralScore"]
+        S["📐 semanticScore"]
+        FS["finalScore = w_n·N + w_s·S"]
+        N --> FS
+        S --> FS
+    end
+
+    subgraph P1["M17 P1 — re-rank (optional)"]
+        ANC["📌 Anchor embeddings\nlast N confirmed buys"]
+        RS["rankScore = finalScore\n+ w_r · max_k cos(cand, anchor_k)"]
+        ANC --> RS
+    end
+
+    AGG -->|"p feeds concat + cosine"| Hybrid
+    FS --> RS
+    RS --> OUT["📋 Sorted eligible list"]
+
+    classDef p2 fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#002211
+    classDef hyb fill:#FFE66D,stroke:#F08C00,stroke-width:2px,color:#1F1F1F
+    classDef p1 fill:#A8DADC,stroke:#1864AB,stroke-width:2px,color:#0B1F33
+    classDef out fill:#90EE90,stroke:#2F6B2F,stroke-width:2px,color:#003300
+
+    class HIST,CART,AGG p2
+    class N,S,FS hyb
+    class ANC,RS p1
+    class OUT out
+```
+
+### P2 — Exponential profile pooling (`PROFILE_POOLING_MODE=exp`)
+
+The **client profile** is the vector **p** passed into the MLP (concatenated with each candidate embedding) and into **semantic** cosine similarity. Implementation is a **single** TypeScript function shared by **training dataset construction**, **`POST /recommend`**, **`POST /recommend/from-cart`**, and offline **`precisionAtK`** — `aggregateClientProfileEmbeddings` in `ai-service/src/profile/clientProfileAggregation.ts` ([ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)).
+
+| Mode | Behaviour |
+|------|-----------|
+| **`mean`** (default) | Arithmetic mean of distinct purchase embeddings — legacy behaviour, uniform weight over history. |
+| **`exp`** | Weighted mean: each purchase *i* has age Δ*i* days vs a reference instant; **`w_i = exp(−Δ_i / τ)`** with **τ = H / ln 2** and **H** = `PROFILE_POOLING_HALF_LIFE_DAYS`. Recent purchases weigh more in **p**; cart lines use **Δ = 0** so current intent stays maximal weight. |
+
+**Training vs inference:** training uses order timestamps from the **API snapshot** and per-client **T_ref = max(order dates)** in that snapshot; at request time, inference uses **Neo4j** `lastPurchase` per SKU and **T_ref = request clock (UTC)**. Switching to **`exp`** changes gradients — **retrain** the MLP before expecting offline/online metrics to match.
+
+### P1 — Recency re-rank boost (`RECENCY_RERANK_WEIGHT` > 0)
+
+After **finalScore**, eligible candidates are sorted primarily by **rankScore**:
+
+`rankScore = finalScore + RECENCY_RERANK_WEIGHT × recencySimilarity`
+
+- **Anchors:** up to **`RECENCY_ANCHOR_COUNT`** distinct **confirmed** purchases (non-demo `BOUGHT`, `order_date` set, embedding present), most recent first.
+- **recencySimilarity:** **maximum** cosine similarity between the candidate product embedding and each anchor embedding (session-like “similar to something I recently bought”).
+
+When **`RECENCY_RERANK_WEIGHT = 0`** (default), no anchor query runs and ordering follows **finalScore** (plus tie-breaks). When the boost is on, consumers must **not** re-sort eligible rows by `finalScore` alone — use server **order** or **`rankScore`**.
+
+### API envelope (`rankingConfig` + breakdown)
+
+Successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` return **`rankingConfig`**: `neuralWeight`, `semanticWeight`, `recencyRerankWeight`, and optional P2 fields `profilePoolingMode`, `profilePoolingHalfLifeDays`. Ranked rows may include **`hybridNeuralTerm`**, **`hybridSemanticTerm`**, **`recencyBoostTerm`**, and when P1 is active **`recencySimilarity`** / **`rankScore`** for the score modal.
+
+### Configure (`.env` / compose)
+
+See [`.env.example`](.env.example): **`RECENCY_RERANK_WEIGHT`**, **`RECENCY_ANCHOR_COUNT`**, **`PROFILE_POOLING_MODE`**, **`PROFILE_POOLING_HALF_LIFE_DAYS`**.
 
 ---
 
@@ -1070,6 +1150,10 @@ All architectural decisions are documented in `.specs/features/` with context, a
 | ADR-032 | AI Showcase | Soft negative exclusion by cosine similarity — ANCE-simplified complement to ADR-031 |
 | ADR-052 | Self-Healing | AutoSeedService on boot + Cache-Control bypass for training reads — zero-touch cold start |
 | ADR-053 | Tech Debt | Migration roadmap: move seed responsibility from `ai-service` to `api-service` |
+| ADR-062 | M17 Recency | Phased rollout: P1 re-rank boost, P2 profile pooling, P3 attention (planned) |
+| ADR-063 | M17 Transparency | `rankingConfig` + per-term score fields on recommend responses |
+| ADR-064 | M17 Frontend | `rankingConfig` persisted in `recommendationSlice` (Zustand) |
+| ADR-065 | M17 P2 Pooling | Single `aggregateClientProfileEmbeddings` — train / infer / eval temporal alignment |
 
 ---
 
