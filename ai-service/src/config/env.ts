@@ -1,6 +1,7 @@
 import { parseRecencyAnchorCount, parseRecencyRerankWeight } from './recencyRerankEnv.js'
 import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } from './profilePoolingEnv.js'
 import { parseNeuralLossMode } from './neuralLossEnv.js'
+import { parseM22EnvFlags, assertM22EnvCombinationsOrThrow, logM22EnvSummary } from './m22Env.js'
 
 const missingVars: string[] = []
 
@@ -95,6 +96,10 @@ if (PROFILE_POOLING_RUNTIME.mode === 'attention_learned') {
 const NEURAL_LOSS_MODE = parseNeuralLossMode(process.env.NEURAL_LOSS_MODE)
 console.info(`[ai-service] NEURAL_LOSS_MODE=${NEURAL_LOSS_MODE}`)
 
+const M22_ENV = Object.freeze(parseM22EnvFlags(process.env))
+assertM22EnvCombinationsOrThrow(M22_ENV)
+logM22EnvSummary(M22_ENV)
+
 const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost'
 const POSTGRES_PORT = parseInt(process.env.POSTGRES_PORT ?? '5432', 10)
 const POSTGRES_DB = process.env.POSTGRES_DB ?? 'marketplace'
@@ -130,4 +135,5 @@ export const ENV = Object.freeze({
   PROFILE_POOLING_ATTENTION_MAX_ENTRIES: PROFILE_POOLING_RUNTIME.attentionMaxEntries ?? 0,
   PROFILE_POOLING_RUNTIME,
   NEURAL_LOSS_MODE,
+  M22_ENV,
 })

@@ -1,6 +1,6 @@
 # Roadmap
 
-**Current focus:** **M17 — Fase 2 (P2)** ou **Fase 3 (P3)** do [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md) quando priorizado ([spec M17](../features/m17-phased-recency-ranking-signals/spec.md)); calibração / baseline métrica em staging com `RECENCY_RERANK_WEIGHT` > 0 conforme necessidade. **M17 P1 + [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md)/064** ✅ **entregue** (2026-05-01). **M18** — Catálogo AD-055 ✅ (2026-04-30). Ver [STATE](STATE.md).
+**Current focus:** **M17 — Fase 2 (P2)** ou **Fase 3 (P3)** do [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md) quando priorizado ([spec M17](../features/m17-phased-recency-ranking-signals/spec.md)); calibração / baseline métrica em staging com `RECENCY_RERANK_WEIGHT` > 0 conforme necessidade. **M17 P1 + [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md)/064** ✅ **entregue** (2026-05-01). **M18** — Catálogo AD-055 ✅ (2026-04-30). **M22** — torre de item híbrida (denso + esparsa) para cold start — **IMPLEMENTED** no `ai-service` (2026-05-02, flags default off): [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [spec](../features/m22-hybrid-dual-item-tower-cold-start/spec.md). Ver [STATE](STATE.md).
 
 **Previous:** M17 P1 + transparência de score — **COMPLETE** ([spec](../features/m17-phased-recency-ranking-signals/spec.md), [design](../features/m17-phased-recency-ranking-signals/design.md), [tasks](../features/m17-phased-recency-ranking-signals/tasks.md)). M16 — ✅ **COMPLETE** (2026-04-30).
 
@@ -16,6 +16,7 @@
 | **—**   | **M19** — Pos-Efetivar deltas & baseline (ADR-065) — ✅ **IMPLEMENTED** (2026-05-01) | [ADR-065](../features/m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md); [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md); [tasks](../features/m19-pos-efetivar-showcase-deltas/tasks.md) | Verificação `npm run test:e2e` no `frontend` |
 | **—**   | **M20** — Retreino manual, métricas, showcase «Pos-Retreino» (ADR-067) — **DESIGNED** (2026-05-01) | [ADR-067](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | **Execute** T067-1 → T067-7 (gates por serviço) |
 | **—**   | **M21** — Evolução ranking/perfil/híbrido (ADR-070 + ADR-071) — **DESIGNED** (complex, 2026-05-01) | [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md); [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md); [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [design](../features/m21-ranking-evolution-committee-decisions/design.md); [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md) | **Execute** T21-1 → T21-7 (`ai-service`; ordem T1→…→T3) |
+| **—**   | **M22** — Torre de item híbrida (HF denso + esparsa categoria/marca/id) cold start — **IMPLEMENTED** (`ai-service`, 2026-05-02) | [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md); [spec M22](../features/m22-hybrid-dual-item-tower-cold-start/spec.md); [design M22](../features/m22-hybrid-dual-item-tower-cold-start/design.md); [tasks M22](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md) | **Operador:** activar `M22_*`, treinar, `precisionAt5`; não substitui M21 |
 
 
 **M18:** implementação + E2E `m18-catalog-ad055.spec.ts` — estado em [STATE § AD-055](STATE.md#state-ad-055).
@@ -25,6 +26,8 @@
 **M20 (ADR-067):** retreino só manual por defeito; métricas completas no job/`model/status`; UI **Pos-Retreino** vs **Com IA** + acção **Fixar novo normal** — **DESIGNED** ([design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md), [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md), [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md)).
 
 **M21 (ADR-070, ADR-071):** entregas incrementais **T1 → A → T2 → R → T4 → T3** (pairwise, atenção leve no perfil, negativos duros, fusão dinâmica, temperatura, loss combinada) sem substituir **M17 P3**; defaults legacy por env; gate **`precisionAt5`**. **DESIGNED** (complex; [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md), [design](../features/m21-ranking-evolution-committee-decisions/design.md), [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md)).
+
+**M22 ([ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md)):** segundo ramo de **item** com **features esparsas** (marca/categoria/id) fundido ao embedding **HF**, para cold start sem depender só de temperatura/janela; milestone **separado** de M21; **IMPLEMENTED** no `ai-service` (2026-05-02) — defaults `M22_*` off; ver [README](../../ai-service/README.md) e [tasks](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md).
 
 **Tech Debt:** ADR-053 — Migrate seed from `ai-service` to `api-service` (standalone spike / future debt item, ~4 days)
 
@@ -99,6 +102,18 @@
 **Target:** Principalmente `ai-service` (`ModelTrainer`, dataset, `RecommendationService`, offline eval); gate **`precisionAt5`** alinhado a protocolo de retreino (M20); documentação operador.
 
 **Specification:** [.specs/features/m21-ranking-evolution-committee-decisions/spec.md](../features/m21-ranking-evolution-committee-decisions/spec.md) (**M21-01**…**M21-16**). **Design (complex):** [.specs/features/m21-ranking-evolution-committee-decisions/design.md](../features/m21-ranking-evolution-committee-decisions/design.md). **Tasks:** [.specs/features/m21-ranking-evolution-committee-decisions/tasks.md](../features/m21-ranking-evolution-committee-decisions/tasks.md) (**T21-1**…**T21-7**). **ADRs:** [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md), [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md).
+
+---
+
+## M22 — Torre de item híbrida (denso HF + esparsa) & cold start — **IMPLEMENTED** (`ai-service`, 2026-05-02)
+
+**Goal:** Reduzir dependência de hiperparâmetros agressivos (temperatura de pooling / janela curta) para promover itens com **marca, categoria ou produto** pouco vistos no treino, introduzindo **memorização generalizável** via embeddings de lookup sobre metadados discretos, **fundidos** com o embedding HF, mantendo o **híbrido semântico** existente.
+
+**Target:** `ai-service` — extensão controlada de `ModelTrainer`, dataset, `neuralModelFactory`, `RecommendationService` e manifestos em disco; defaults **M22 off** até gate **`precisionAt5`**; alinhamento treino/inferência/cart/eval para composição do vector de item (padrão ADR-065 aplicado ao eixo item).
+
+**Specification:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md](../features/m22-hybrid-dual-item-tower-cold-start/spec.md) (**M22-01**…**M22-07**). **Design:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md](../features/m22-hybrid-dual-item-tower-cold-start/design.md). **Tasks:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/tasks.md](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md) (**Executed** T22-1…T22-10, 2026-05-02). **ADR:** [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md).
+
+**Relação com M21:** M22 **não** conclui nem substitui as faixas M21; pode ser priorizado **depois** ou em paralelo com consciência de superfície de treino/artefacto.
 
 ---
 

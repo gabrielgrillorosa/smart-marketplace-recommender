@@ -9,9 +9,15 @@ import {
   TrainingMetadata,
   TrainingResult,
   TrainingTrigger,
+  type ModelArchitectureKind,
   type NeuralHeadKind,
 } from '../types/index.js'
 import { NEURAL_HEAD_MANIFEST_FILENAME, parseNeuralHeadManifestJson } from './neuralHeadManifest.js'
+import {
+  M22_ITEM_MANIFEST_FILENAME,
+  readM22ItemManifestFromModelDir,
+  type M22ItemManifest,
+} from '../ml/m22Manifest.js'
 import {
   TRAINING_METADATA_FILENAME,
   modelFilenameToCheckpointIso,
@@ -78,6 +84,14 @@ export class VersionedModelStore extends ModelStore {
       'utf8'
     )
 
+    if (result.m22ItemManifest) {
+      await fs.writeFile(
+        path.join(modelDir, M22_ITEM_MANIFEST_FILENAME),
+        `${JSON.stringify(result.m22ItemManifest, null, 2)}\n`,
+        'utf8'
+      )
+    }
+
     const tolerance = this._getPromotionTolerance()
     const candidatePrecisionAt5 = result.precisionAt5 ?? 0
     const status = this.getStatus()
@@ -106,6 +120,7 @@ export class VersionedModelStore extends ModelStore {
       this.lastDecision = null
 
       const trainedAt = result.syncedAt ?? new Date().toISOString()
+      const arch: ModelArchitectureKind = result.modelArchitecture ?? (result.m22ItemManifest ? 'm22' : 'baseline')
       super.setModel(model, {
         trainedAt,
         finalLoss: result.finalLoss,
@@ -115,6 +130,10 @@ export class VersionedModelStore extends ModelStore {
         syncedAt: result.syncedAt,
         precisionAt5: candidatePrecisionAt5,
         neuralHeadKind: result.neuralHeadKind,
+        modelArchitecture: arch,
+      }, {
+        m22ItemManifest: result.m22ItemManifest ?? null,
+        modelArchitecture: arch,
       })
 
       const persisted: PersistedTrainingMetadata = {
@@ -150,6 +169,15 @@ export class VersionedModelStore extends ModelStore {
     await this.pruneHistory()
   }
 
+  private async _loadM22ManifestSafe(modelDir: string): Promise<M22ItemManifest | null> {
+    try {
+      return await readM22ItemManifestFromModelDir(modelDir)
+    } catch (e) {
+      console.warn('[VersionedModelStore] Invalid or unreadable M22 manifest — ignoring:', e)
+      return null
+    }
+  }
+
   async loadCurrent(): Promise<void> {
     try {
       await this.fsPort.readlink(CURRENT_LINK)
@@ -167,7 +195,13 @@ export class VersionedModelStore extends ModelStore {
         const loadedModel = await tf.loadLayersModel(`file://${modelPath}/model.json`)
         const diskMeta = await this._readPersistedTrainingMetadata(modelPath)
         const inferredTs = modelFilenameToCheckpointIso(mostRecent) ?? new Date().toISOString()
-        super.setModel(loadedModel, this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs))
+        const baseMeta = this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs)
+        const m22Manifest = await this._loadM22ManifestSafe(modelPath)
+        const arch: ModelArchitectureKind = m22Manifest ? 'm22' : 'baseline'
+        super.setModel(loadedModel, { ...baseMeta, modelArchitecture: arch }, {
+          m22ItemManifest: m22Manifest,
+          modelArchitecture: arch,
+        })
         this.currentVersion = mostRecent
         console.info(`[VersionedModelStore] Loaded most recent model: ${mostRecent}`)
       } catch {
@@ -184,7 +218,13 @@ export class VersionedModelStore extends ModelStore {
       const loadedModel = await tf.loadLayersModel(`file://${modelPath}/model.json`)
       const diskMeta = await this._readPersistedTrainingMetadata(modelPath)
       const inferredTs = modelFilenameToCheckpointIso(basename) ?? new Date().toISOString()
-      super.setModel(loadedModel, this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs))
+      const baseMeta = this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs)
+      const m22Manifest = await this._loadM22ManifestSafe(modelPath)
+      const arch: ModelArchitectureKind = m22Manifest ? 'm22' : 'baseline'
+      super.setModel(loadedModel, { ...baseMeta, modelArchitecture: arch }, {
+        m22ItemManifest: m22Manifest,
+        modelArchitecture: arch,
+      })
       this.currentVersion = basename
       console.info(`[VersionedModelStore] Loaded current model from symlink: ${target}`)
     } catch (err) {

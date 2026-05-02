@@ -7,6 +7,7 @@ import {
   RecommendationService,
 } from '../services/RecommendationService.js'
 import { Neo4jUnavailableError, ClientNotFoundError } from '../repositories/Neo4jRepository.js'
+import { M22_ENV_OFF } from '../config/m22Env.js'
 import { ProfilePoolingRuntimeHolder } from '../config/profilePoolingRuntimeHolder.js'
 
 describe('POST /api/v1/recommend', () => {
@@ -535,8 +536,10 @@ describe('RecommendationService.recommendFromVector', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
     const vec = Array.from({ length: 384 }, () => 0.01)
     const r = await svc.recommendFromVector('c1', 10, vec)
     expect(r).toEqual({
@@ -555,8 +558,10 @@ describe('RecommendationService.recommendFromVector', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
     const vec = Array.from({ length: 384 }, () => 0.01)
     const reason = 'No new products available for this client in their country'
     const r = await svc.recommendFromVector('c1', 10, vec, { emptyCatalogReason: reason })
@@ -576,8 +581,10 @@ describe('RecommendationService.recommendFromVector', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
     await expect(svc.recommendFromVector('unknown', 10, [])).rejects.toThrow(ClientNotFoundError)
   })
 })
@@ -639,8 +646,10 @@ describe('M17 recency re-rank (recommendFromVector)', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
     await svc.recommendFromVector('c1', 10, profile)
     expect(getAnchors).not.toHaveBeenCalled()
   })
@@ -657,9 +666,11 @@ describe('M17 recency re-rank (recommendFromVector)', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svcOff = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
-    const svcOn = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0.5, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svcOff = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
+    const svcOn = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0.5, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
 
     type Ranked = { sku: string; finalScore: number | null; rankScore?: number; recencySimilarity?: number }
     const offEnv = await svcOff.recommendFromVector('c1', 10, profile)
@@ -716,8 +727,10 @@ describe('M21 neural head at inference', () => {
     const mockStore = {
       getModel: vi.fn().mockReturnValue(mockModel),
       getNeuralHeadKind: vi.fn(() => 'ranking_linear' as const),
+      getModelArchitecture: vi.fn(() => 'baseline' as const),
+      getM22ItemManifest: vi.fn(() => null),
     }
-    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }))
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, new ProfilePoolingRuntimeHolder({ mode: 'mean', halfLifeDays: 30 }), M22_ENV_OFF)
     const env = await svc.recommendFromVector('c1', 5, profile)
     const n = env.recommendations[0]?.neuralScore
     expect(n).toBeCloseTo(0.5, 5)

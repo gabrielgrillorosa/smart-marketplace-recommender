@@ -33,6 +33,22 @@ Setting only `NEURAL_LOSS_MODE=pairwise` is **not** enough by itself:
 
 You still need the usual training prerequisites (Neo4j `BOUGHT` / embeddings, `API_SERVICE_URL` reachable, etc.).
 
+## M22 — Hybrid sparse item tower (`M22_*`, ADR-074)
+
+Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem, e_struct, e_id)** before the neural logit: **(A)** HF `e_sem` (384-d), **(B)** structural prior via **disjoint** embedding tables (brand, category, subcategory, `price_bucket`), **(C)** optional `product_id` memorisation (**separate** table from B). `semanticScore` (ADR-016) stays **cosine(profile, e_sem)**; the hybrid blend still uses `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`.
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `M22_ENABLED` | **`false`** | Master gate: when **off**, training and inference use the legacy **768-d** concat (`e_sem ‖ u`) path. |
+| `M22_STRUCTURAL` | **`false`** | Enables **(B)** (manifest + multi-input TF model). Effective only with **`M22_ENABLED=true`**. |
+| `M22_IDENTITY` | **`false`** | Enables **(C)**. **Requires `M22_STRUCTURAL=true`** or the service **refuses to start**. When off, the identity table is a single OOV slot. |
+
+**Rollback:** set `M22_ENABLED=false`, restart; repoint `current` to a pre-M22 checkpoint if needed. Promotion still uses **`precisionAt5`** vs `MODEL_PROMOTION_TOLERANCE`.
+
+**Sidecar:** promoted **m22** checkpoints write **`m22-item-manifest.json`** beside `model.json`. If env requests M22 but the loaded model is baseline or the manifest is invalid, a warning is logged and inference falls back to the **768-d** path.
+
+**Cold-start eval slice:** `computePrecisionAt5ColdStartCategorySlice` in `src/ml/rankingEval.ts` (global `precision@5` plus category cold slice; optional M22 scoring when a bundle is passed).
+
 ### Flow (M21 T1 — train vs infer)
 
 ```mermaid

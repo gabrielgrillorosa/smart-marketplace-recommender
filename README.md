@@ -17,6 +17,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
 - [M17 — Recency-aware profile & ranking](#m17--recency-aware-profile--ranking)
 - [M21 — Profile pooling and neural head](#m21--profile-pooling-and-neural-head)
+- [M22 — Hybrid dual item tower (delivered)](#m22--hybrid-dual-item-tower-delivered)
 - [RAG Pipeline](#rag-pipeline)
 - [Service Communication Patterns](#service-communication-patterns)
 - [Async Training: 202 + Polling Pattern](#async-training-202--polling-pattern)
@@ -44,6 +45,8 @@ The system combines three complementary signals:
 | Natural language | LLM-grounded RAG over Neo4j vector store | — |
 
 The frontend demonstrates the **full ML lifecycle** in a single interactive session: select a client → see initial recommendations → simulate purchases → observe real-time profile update → trigger full model retrain → compare before/after quality metrics.
+
+**Latest ranking stack (optional, flags):** milestone **[M22](#m22--hybrid-dual-item-tower-delivered)** adds a **dual item representation** — dense **semantic** (HuggingFace) plus **sparse structural** priors (brand, category, subcategory, price bucket) and an optional **identity** embedding keyed by `product_id` for SKU-level memorisation — fused with the **user vector** **u** from **[M21](#m21--profile-pooling-and-neural-head)** pooling (including **attention learned**). Defaults keep the legacy **768-d concat** path until operators enable `M22_*` and retrain.
 
 ---
 
@@ -242,6 +245,8 @@ graph LR
     class D1,DROP,D2 layer
     class OUT output
 ```
+
+**Baseline path above** (`768 = e_sem ‖ u`) is the default when **`M22_ENABLED=false`**. With **[M22](#m22--hybrid-dual-item-tower-delivered)** enabled and a valid **`m22-item-manifest.json`**, the neural branch uses **multi-input** fusion **f(u, e_sem, e_struct, e_id)** (concat → dense → logit) while **semanticScore** stays **cosine(u, e_sem)** per [ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md).
 
 **Architecture decisions (ADR-028):**
 
@@ -617,6 +622,89 @@ flowchart LR
 ```
 
 **Frontend:** a coluna de métricas mostra **«Cabeça do modelo»** com o mesmo significado que `GET /model/status` → `neuralHeadKind`.
+
+---
+
+## M22 — Hybrid dual item tower (delivered)
+
+**Milestone M22** (accepted **[ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md)**, implemented in `ai-service` 2026-05-02) refines **item** representation beyond a single dense product vector: it separates **semantic similarity** (text), **catalog / market structure** (discrete fields), and **per-SKU memorisation**, then fuses them with the **user tower**. This improves **cold start** for brands and categories new to the client without collapsing “popular in category” and “this exact SKU” into one sparse blob — the committee explicitly **rejected** a single mixed sparse tower for that reason.
+
+**Does not replace M21:** profile pooling modes, `NEURAL_LOSS_MODE`, and hybrid weights remain orthogonal — see [`ai-service/README.md`](ai-service/README.md).
+
+| Via | Role | Implementation sketch |
+|-----|------|----------------------|
+| **A — Semantic** | Content similarity; rich-text cold start | **e_sem** — 384-d HuggingFace embedding (same as legacy item branch). |
+| **B — Structural prior** | Brand, category, taxonomy, price band — **no** `product_id` here | Separate embedding tables → concatenated **e_struct** (manifest vocabularies + stable **price_bin_edges**). |
+| **C — Identity (optional)** | Memorise interactions per **`product_id`** | Separate embedding table from **B**; **OOV** index when unknown or when **`M22_IDENTITY=false`**. Extractor keeps **`idKey`** disjoint from structural keys (`itemSparseFeatureExtractor.ts`). |
+
+**Environment (defaults = pre-M22 behaviour):** `M22_ENABLED`, `M22_STRUCTURAL`, `M22_IDENTITY` — **`M22_IDENTITY` requires `M22_STRUCTURAL`** (fail-fast at boot). Promotion gate unchanged: **`precisionAt5`**.
+
+**Artifacts:** promoted checkpoints may ship **`m22-item-manifest.json`** (vocabs, `vocabSizes`, `identityEnabled`, `priceBinEdges`). If env asks for M22 but the loaded checkpoint is baseline or the manifest is invalid, the service logs a warning and falls back to the **768-d** path.
+
+**Offline evaluation:** cold-start category slice + optional M22 scoring in `ai-service/src/ml/rankingEval.ts`.
+
+**Design rationale — Tree-of-Thoughts + Self-Consistency:** [ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md) records a **multi-role committee** (architecture, Staff serving/data, QA, DL RecSys). Each role evaluated **alternative decompositions** (e.g. single sparse tower vs separated **B/C**) in parallel — analogous to **Tree-of-Thought** branching — and the **unanimous** approval after separating vocabs and projections mirrors **Self-Consistency** aggregation toward a stable decision. The same pattern informed **[ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md)** hybrid weights (60/40) via expert deliberation.
+
+Further detail: [.specs/features/m22-hybrid-dual-item-tower-cold-start/](.specs/features/m22-hybrid-dual-item-tower-cold-start/) · [roadmap](.specs/project/ROADMAP.md) · exported diagram copy: [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
+
+### End-to-end flow — user tower (M21) + dual item tower (M22) + hybrid
+
+```mermaid
+flowchart TB
+  subgraph UT["👤 User tower — M17 / M21"]
+    HIST["📦 Purchases + embeddings\n+ Δ days"] --> AGG["aggregateClientProfileEmbeddings"]
+    CART["🛒 Cart merged\nΔ = 0"] --> AGG
+    AGG --> PMODE{"PROFILE_POOLING_MODE"}
+    PMODE -->|"mean · exp · attention_light"| U1["u 384d"]
+    PMODE -->|"attention_learned"| U2["u 384d\nsoftmax w·e+b−λΔ/τ"]
+    U1 --> UVEC["u"]
+    U2 --> UVEC
+  end
+
+  subgraph SEM["🔤 Item A — Semantic dense"]
+    TXT["Title + description"] --> ENC["HF encoder"]
+    ENC --> ESEM["e_sem 384d"]
+  end
+
+  subgraph STR["📊 Item B — Structural sparse"]
+    BK["brand"] --> EV["Separate embedding\nlookups per field"]
+    CK["category"] --> EV
+    SK["subcategory"] --> EV
+    PK["price_bucket"] --> EV
+    EV --> EST["e_struct"]
+  end
+
+  subgraph IDN["🔖 Item C — Identity optional"]
+    PID["product_id"] --> EID["e_id or OOV"]
+  end
+
+  UVEC --> CAT["concat\nsem ‖ user ‖ struct ‖ id"]
+  ESEM --> CAT
+  EST --> CAT
+  EID --> CAT
+  CAT --> D64["Dense 64 + dropout"]
+  D64 --> LOGIT["Logit · sigmoid or linear\nper neural-head.json"]
+  LOGIT --> NSCR["neuralScore"]
+
+  ESEM --> COS["semanticScore\ncosine u vs e_sem"]
+  UVEC --> COS
+  NSCR --> FIN["finalScore\nNEURAL_WEIGHT · neural +\nSEMANTIC_WEIGHT · semantic"]
+  COS --> FIN
+
+  classDef userN fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#003300
+  classDef semN fill:#FFE66D,stroke:#F08C00,stroke-width:2px,color:#1a1a1a
+  classDef strN fill:#A8DADC,stroke:#1864AB,stroke-width:2px,color:#0B1F33
+  classDef idN fill:#E6E6FA,stroke:#5C4D8A,stroke-width:2px,color:#2d1b4e
+  classDef fuseN fill:#4ECDC4,stroke:#0B7285,stroke-width:2px,color:#ffffff
+  classDef outN fill:#90EE90,stroke:#2F6B2F,stroke-width:2px,color:#003300
+
+  class HIST,CART,AGG,PMODE,U1,U2,UVEC userN
+  class TXT,ENC,ESEM semN
+  class BK,CK,SK,PK,EV,EST strN
+  class PID,EID idN
+  class CAT,D64,LOGIT,NSCR fuseN
+  class COS,FIN outN
+```
 
 ---
 
@@ -1244,6 +1332,11 @@ All architectural decisions are documented in `.specs/features/` with context, a
 | ADR-063 | M17 Transparency | `rankingConfig` + per-term score fields on recommend responses |
 | ADR-064 | M17 Frontend | `rankingConfig` persisted in `recommendationSlice` (Zustand) |
 | ADR-065 | M17 P2 Pooling | Single `aggregateClientProfileEmbeddings` — train / infer / eval temporal alignment |
+| ADR-070 | M21 | Committee priorities and M17 P3 deferral |
+| ADR-071 | M21 | Neural head (BCE vs pairwise) and pure fusion boundary |
+| ADR-072 | M21 | Defer learned logits inside `attention_light`; path for learned pooling |
+| ADR-073 | M21 | Attention-learned JSON pooling (`attention_learned`) |
+| ADR-074 | M22 | Hybrid item tower — semantic / structural prior / optional identity (`m22-item-manifest.json`) |
 
 ---
 

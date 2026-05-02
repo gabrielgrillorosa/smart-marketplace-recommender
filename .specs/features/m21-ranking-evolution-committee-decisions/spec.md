@@ -26,6 +26,7 @@ O roadmap **[ADR-062](../m17-phased-recency-ranking-signals/adr-062-phased-recen
 | Item | Reason |
 |------|--------|
 | **M17 P3** (atenção temporal *dentro do MLP* ao nível do spec grande / Transformer) | Permanece em [spec M17 P3](../m17-phased-recency-ranking-signals/spec.md); dados insuficientes para priorizar aqui. |
+| **M22** (segunda torre de item esparsa + denso HF para cold start) | Milestone **distinto** — [spec M22](../m22-hybrid-dual-item-tower-cold-start/spec.md), [ADR-074](../m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md); não é entregue sob o nome M21. |
 | **Mudanças sem flags / defaults legacy** | Proibido por [ADR-070](./adr-070-m21-committee-priorities-and-m17-p3-deferral.md). |
 | **UI nova obrigatória** | Fora do núcleo; apenas se [M20](../m20-manual-retrain-metrics-pos-retreino/spec.md) ou showcase exigirem exposição de novos parâmetros (opcional, fase posterior). |
 | **Calibração de pesos pagos / multi-tenant** | Portfolio single-tenant; R/T4 são heurísticas locais ao processo de fusão. |

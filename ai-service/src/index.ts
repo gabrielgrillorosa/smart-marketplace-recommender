@@ -94,7 +94,8 @@ export async function start(): Promise<void> {
       ENV.NEURAL_WEIGHT,
       ENV.SEMANTIC_WEIGHT,
       profilePoolingHolder,
-      ENV.NEURAL_LOSS_MODE
+      ENV.NEURAL_LOSS_MODE,
+      ENV.M22_ENV
     )
 
     // Step 6: TrainingJobRegistry
@@ -136,6 +137,7 @@ export async function start(): Promise<void> {
       ENV.RECENCY_RERANK_WEIGHT,
       ENV.RECENCY_ANCHOR_COUNT,
       profilePoolingHolder,
+      ENV.M22_ENV,
       fastify.log,
     )
 

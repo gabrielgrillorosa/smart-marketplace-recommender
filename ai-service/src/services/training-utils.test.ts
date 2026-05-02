@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { buildTrainingDataset, bceLabelsToPairwiseRows, type ClientDTO, type ProductDTO, type TrainingDatasetOptions } from './training-utils.js'
+import { buildM22ManifestFromProducts } from '../ml/m22Manifest.js'
+import {
+  buildTrainingDataset,
+  bceLabelsToPairwiseRows,
+  isM22TrainingDataset,
+  type ClientDTO,
+  type ProductDTO,
+  type TrainingDatasetOptions,
+} from './training-utils.js'
 import type { PurchaseTemporalIndex } from './training-temporal-map.js'
 
 const defaultPooling = { mode: 'mean' as const, halfLifeDays: 30 }
@@ -501,6 +509,57 @@ describe('buildTrainingDataset', () => {
 
     expect(result.inputVectors).toHaveLength(0)
     expect(result.labels).toHaveLength(0)
+  })
+
+  /** M22 T22-9 / M22-07: stacked M22 rows match legacy 768-d baseline when structural path only builds disjoint indices. */
+  it('M22 dataset with manifest stacks sem384+user384 identical to baseline 7-arg path (identity off, fixed seed)', () => {
+    const priceBinEdges = [0, 5, 10, 15, 25, 35, 50, 100]
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients = [defaultClients[0]]
+    const temporal = mockTemporal(clients, clientOrderMap)
+    const opts: TrainingDatasetOptions = { ...defaultOptions, negativeSamplingRatio: 4, seed: 42 }
+
+    const baseline = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      opts,
+      temporal,
+      defaultPooling
+    )
+    expect(isM22TrainingDataset(baseline)).toBe(false)
+    if (isM22TrainingDataset(baseline)) {
+      throw new Error('expected baseline dataset')
+    }
+
+    const manifest = buildM22ManifestFromProducts(defaultProducts, {
+      identityEnabled: false,
+      priceBinEdges,
+    })
+    const productsById = new Map(defaultProducts.map((p) => [p.id, p]))
+    const m22 = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      opts,
+      temporal,
+      defaultPooling,
+      { manifest, productsById }
+    )
+    expect(isM22TrainingDataset(m22)).toBe(true)
+    if (!isM22TrainingDataset(m22)) {
+      throw new Error('expected m22 dataset')
+    }
+
+    expect(m22.labels).toEqual(baseline.labels)
+    expect(m22.rows).toHaveLength(baseline.inputVectors.length)
+    for (let i = 0; i < baseline.inputVectors.length; i++) {
+      const stacked = [...m22.rows[i]!.sem384, ...m22.rows[i]!.user384]
+      expect(stacked).toEqual(baseline.inputVectors[i])
+    }
   })
 })
 

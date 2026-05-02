@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-05-01 — **M16** ✅; **M17** P1 + **ADR-063/064** ✅ (`ai-service` + `frontend`); **M17 P2** (profile pooling / ADR-065) ✅ **`ai-service`** (2026-05-01); **pendente M17:** **P3** (atenção) — [spec M17](../features/m17-phased-recency-ranking-signals/spec.md). **M18** (AD-055) ✅. **M19** (ADR-065 / ADR-066 Pos-Efetivar deltas) ✅ **IMPLEMENTED** (2026-05-01) — [spec](../features/m19-pos-efetivar-showcase-deltas/spec.md). **M21** (ADR-070 + ADR-071 + ADR-072 + **[ADR-073](../features/m21-ranking-evolution-committee-decisions/adr-073-m21-attention-learned-json-pooling.md)** `attention_learned`) — [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [ADR-072](../features/m21-ranking-evolution-committee-decisions/adr-072-m21-profile-pooling-defer-learned-attention-logits.md). Próximo foco: **M17 P3** ou **M20 execute** / **M21 execute** conforme prioridade._
+_Last updated: 2026-05-02 — **M16** ✅; **M17** P1 + **ADR-063/064** ✅ (`ai-service` + `frontend`); **M17 P2** (profile pooling / ADR-065) ✅ **`ai-service`** (2026-05-01); **pendente M17:** **P3** (atenção) — [spec M17](../features/m17-phased-recency-ranking-signals/spec.md). **M18** (AD-055) ✅. **M19** (ADR-065 / ADR-066 Pos-Efetivar deltas) ✅ **IMPLEMENTED** (2026-05-01) — [spec](../features/m19-pos-efetivar-showcase-deltas/spec.md). **M21** (ADR-070 + ADR-071 + ADR-072 + **[ADR-073](../features/m21-ranking-evolution-committee-decisions/adr-073-m21-attention-learned-json-pooling.md)** `attention_learned`) — [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [ADR-072](../features/m21-ranking-evolution-committee-decisions/adr-072-m21-profile-pooling-defer-learned-attention-logits.md). **M22** (torre de item híbrida denso+esparsa, cold start) — **IMPLEMENTED** (`ai-service` core, flags default off, 2026-05-02): [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [spec M22](../features/m22-hybrid-dual-item-tower-cold-start/spec.md). Próximo foco: **M17 P3** ou **M20 execute** / **M21 execute** / validação operador M22 conforme prioridade._
 
 ---
 
@@ -21,6 +21,7 @@ _Last updated: 2026-05-01 — **M16** ✅; **M17** P1 + **ADR-063/064** ✅ (`ai
 | **—** | Concluído | **M19 — Pos-Efetivar deltas (ADR-065 / ADR-066)** | [ADR-065](../features/m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md); [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md); [tasks](../features/m19-pos-efetivar-showcase-deltas/tasks.md) | Verificação E2E `frontend` |
 | **—** | **Planeado** | **M20** — manual retrain + métricas + Pos-Retreino (ADR-067) | [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [ADR-067/068/069](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | **Execute** (T067-1…T067-7) quando priorizado |
 | **—** | **DESIGNED** | **M21** — ranking / perfil / híbrido (ADR-070 + ADR-071) | [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [design](../features/m21-ranking-evolution-committee-decisions/design.md); [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md); [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md) | **Execute** T21-1 → T21-7 quando priorizado |
+| **—** | **IMPLEMENTED** (`ai-service`, 2026-05-02) | **M22** — torre de item híbrida (HF + esparsa) cold start ([ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md)) | [spec M22](../features/m22-hybrid-dual-item-tower-cold-start/spec.md); [design M22](../features/m22-hybrid-dual-item-tower-cold-start/design.md); [tasks](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md) | **Operador:** `M22_*` + treino + `precisionAt5`; rollback no README; não substitui M21 |
 
 Decisão explícita da ordem P1→P2: **[AD-056](#state-ad-056)**.
 
@@ -55,6 +56,16 @@ Decisão explícita da ordem P1→P2: **[AD-056](#state-ad-056)**.
 **Registo completo:** [ADR-072](../features/m21-ranking-evolution-committee-decisions/adr-072-m21-profile-pooling-defer-learned-attention-logits.md). **Modo dedicado implementado:** [ADR-073](../features/m21-ranking-evolution-committee-decisions/adr-073-m21-attention-learned-json-pooling.md) (`attention_learned` + JSON).
 
 **Estado:** Aceite (comité informal ToT + auto-consistência).
+
+---
+
+### ADR-074: Milestone M22 — torre de item híbrida (denso HF + esparsa) para cold start (2026-05-02)
+
+**Decisão:** Abrir milestone **M22** separado de M21: representação de item em **três vias** (HF semântico; prior estrutural esparsa **sem** `product_id`; embedding opcional de **product_id** só memorização), fusão explícita **f(u, e_sem, e_struct, e_id)**, flags e gate `precisionAt5`, sem revogar M17 P3 nem as faixas M21. **Revisão comité 2026-05-02** incorporada na ADR-074.
+
+**Registo completo:** [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md).
+
+**Estado:** Accepted (revisão decomposição A/B/C).
 
 ---
 

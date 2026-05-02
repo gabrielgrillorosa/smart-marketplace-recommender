@@ -1,5 +1,16 @@
 import * as tf from '@tensorflow/tfjs-node'
-import { TrainingStatus, TrainingMetadata, type NeuralHeadKind } from '../types/index.js'
+import type { M22ItemManifest } from '../ml/m22Manifest.js'
+import type {
+  ModelArchitectureKind,
+  NeuralHeadKind,
+  TrainingMetadata,
+  TrainingStatus,
+} from '../types/index.js'
+
+export type SetModelOptions = {
+  m22ItemManifest?: M22ItemManifest | null
+  modelArchitecture?: ModelArchitectureKind
+}
 
 const MS_PER_DAY = 86_400_000
 
@@ -12,9 +23,19 @@ export class ModelStore {
   private model: tf.LayersModel | null = null
   private status: TrainingStatus = { status: 'untrained' }
   private neuralHeadKind: NeuralHeadKind = 'bce_sigmoid'
+  private m22ItemManifest: M22ItemManifest | null = null
+  private modelArchitecture: ModelArchitectureKind = 'baseline'
 
   getModel(): tf.LayersModel | null {
     return this.model
+  }
+
+  getM22ItemManifest(): M22ItemManifest | null {
+    return this.m22ItemManifest
+  }
+
+  getModelArchitecture(): ModelArchitectureKind {
+    return this.modelArchitecture
   }
 
   getNeuralHeadKind(): NeuralHeadKind {
@@ -41,9 +62,15 @@ export class ModelStore {
     return { ...base, ...head, staleDays: null }
   }
 
-  setModel(model: tf.LayersModel, metadata: TrainingMetadata): void {
+  setModel(model: tf.LayersModel, metadata: TrainingMetadata, options?: SetModelOptions): void {
     this.model = model
     this.neuralHeadKind = metadata.neuralHeadKind ?? 'bce_sigmoid'
+    this.modelArchitecture = options?.modelArchitecture ?? metadata.modelArchitecture ?? 'baseline'
+    this.m22ItemManifest = options?.m22ItemManifest ?? null
+    if (this.modelArchitecture === 'm22' && !this.m22ItemManifest) {
+      console.warn('[ModelStore] modelArchitecture=m22 but no m22ItemManifest — forcing baseline metadata')
+      this.modelArchitecture = 'baseline'
+    }
     this.status = {
       status: 'trained',
       trainedAt: metadata.trainedAt,
@@ -66,5 +93,7 @@ export class ModelStore {
   reset(): void {
     this.status = { status: 'untrained' }
     this.neuralHeadKind = 'bce_sigmoid'
+    this.m22ItemManifest = null
+    this.modelArchitecture = 'baseline'
   }
 }

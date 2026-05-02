@@ -43,6 +43,9 @@ export type NeuralLossMode = 'bce' | 'pairwise'
 /** M21 T1 / ADR-071 — persisted neural output contract for inference + eval. */
 export type NeuralHeadKind = 'bce_sigmoid' | 'ranking_linear'
 
+/** M22 — checkpoint architecture marker (manifest sidecar when `m22`). */
+export type ModelArchitectureKind = 'baseline' | 'm22'
+
 export type ModelStatus = 'untrained' | 'training' | 'trained'
 export type TrainingTrigger = 'checkout' | 'manual'
 export type LastTrainingResult = 'promoted' | 'rejected' | 'failed'
@@ -87,6 +90,8 @@ export interface TrainingMetadata {
   precisionAt5?: number
   /** M21 — absent implies legacy `bce_sigmoid` (sigmoid last layer). */
   neuralHeadKind?: NeuralHeadKind
+  /** M22 — persisted checkpoint kind; absent implies baseline 768-MLP. */
+  modelArchitecture?: ModelArchitectureKind
 }
 
 export interface TrainingResult {
@@ -99,6 +104,9 @@ export interface TrainingResult {
   syncedAt: string
   precisionAt5: number
   neuralHeadKind: NeuralHeadKind
+  /** M22 — sidecar JSON next to promoted checkpoint; null when baseline training. */
+  m22ItemManifest?: import('../ml/m22Manifest.js').M22ItemManifest | null
+  modelArchitecture?: ModelArchitectureKind
 }
 
 export interface ClientProfile {

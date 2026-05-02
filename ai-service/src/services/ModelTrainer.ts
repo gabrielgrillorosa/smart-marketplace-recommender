@@ -1,20 +1,29 @@
 import * as tf from '@tensorflow/tfjs-node'
+import type { M22EnvFlags } from '../config/m22Env.js'
 import { ModelStore } from './ModelStore.js'
 import { BoughtSyncEdge, Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { EmbeddingService } from './EmbeddingService.js'
 import type { NeuralLossMode } from '../types/index.js'
 import { TrainingResult } from '../types/index.js'
-import { buildTrainingDataset, seedFromClientIds, bceLabelsToPairwiseRows } from './training-utils.js'
+import {
+  buildTrainingDataset,
+  seedFromClientIds,
+  bceLabelsToPairwiseRows,
+  m22BceLabelsToPairwiseRows,
+  isM22TrainingDataset,
+} from './training-utils.js'
 import {
   fetchTrainingData,
   normalizeOrderDateFromApi,
   type OrderDTO,
 } from './training-data-fetch.js'
-import { buildNeuralModel } from '../ml/neuralModelFactory.js'
-import { computePrecisionAtK } from '../ml/rankingEval.js'
+import { buildNeuralModel, buildM22HybridNeuralModel, m22InputTensorListFromRows } from '../ml/neuralModelFactory.js'
+import { computePrecisionAtK, computePrecisionAtKM22 } from '../ml/rankingEval.js'
 import { neuralLossModeToHeadKind } from '../ml/neuralHead.js'
 import { buildClientPurchaseTemporalMap } from './training-temporal-map.js'
 import type { ProfilePoolingRuntimeHolder } from '../config/profilePoolingRuntimeHolder.js'
+import { DEFAULT_M22_PRICE_BIN_EDGES } from '../ml/itemSparseFeatureExtractor.js'
+import { buildM22ManifestFromProducts } from '../ml/m22Manifest.js'
 
 export { ApiServiceUnavailableError } from './training-data-fetch.js'
 
@@ -61,7 +70,8 @@ export class ModelTrainer {
     private readonly neuralWeight: number,
     private readonly semanticWeight: number,
     private readonly profilePooling: ProfilePoolingRuntimeHolder,
-    private readonly neuralLossMode: NeuralLossMode = 'bce'
+    private readonly neuralLossMode: NeuralLossMode = 'bce',
+    private readonly m22Env: M22EnvFlags
   ) {}
 
   get isTraining(): boolean {
@@ -148,57 +158,118 @@ export class ModelTrainer {
       const temporal = buildClientPurchaseTemporalMap(orders)
       const clientOrderMap = temporal.clientPurchasedProducts
 
-      const { inputVectors, labels } = buildTrainingDataset(
-        clients,
-        clientOrderMap,
-        productEmbeddingMap,
-        products,
-        {
-          negativeSamplingRatio: 4,
-          seed: seedFromClientIds(clients),
-          useClassWeight: true,
-        },
-        temporal,
-        this.profilePooling.get()
-      )
+      const trainM22Structural = this.m22Env.enabled && this.m22Env.structural
+      const m22Manifest = trainM22Structural
+        ? buildM22ManifestFromProducts(products, {
+            identityEnabled: this.m22Env.identity,
+            priceBinEdges: DEFAULT_M22_PRICE_BIN_EDGES,
+          })
+        : null
 
-      if (inputVectors.length === 0) {
-        throw new Error('No training samples')
-      }
+      const productsById = new Map(products.map((p) => [p.id, p]))
 
-      if (inputVectors[0]?.length !== 768) {
-        throw new Error(`Expected input dimension 768, got ${inputVectors[0]?.length ?? 0}`)
+      const dataset =
+        trainM22Structural && m22Manifest
+          ? buildTrainingDataset(
+              clients,
+              clientOrderMap,
+              productEmbeddingMap,
+              products,
+              {
+                negativeSamplingRatio: 4,
+                seed: seedFromClientIds(clients),
+                useClassWeight: true,
+              },
+              temporal,
+              this.profilePooling.get(),
+              { manifest: m22Manifest, productsById }
+            )
+          : buildTrainingDataset(
+              clients,
+              clientOrderMap,
+              productEmbeddingMap,
+              products,
+              {
+                negativeSamplingRatio: 4,
+                seed: seedFromClientIds(clients),
+                useClassWeight: true,
+              },
+              temporal,
+              this.profilePooling.get()
+            )
+
+      const useM22 = isM22TrainingDataset(dataset)
+
+      if (isM22TrainingDataset(dataset)) {
+        if (dataset.rows.length === 0) {
+          throw new Error('No training samples')
+        }
+      } else {
+        if (dataset.inputVectors.length === 0) {
+          throw new Error('No training samples')
+        }
+        if (dataset.inputVectors[0]?.length !== 768) {
+          throw new Error(`Expected input dimension 768, got ${dataset.inputVectors[0]?.length ?? 0}`)
+        }
       }
 
       const EPOCHS = 30
       const BATCH_SIZE = 16
       const neuralHeadKind = neuralLossModeToHeadKind(this.neuralLossMode)
 
-      let xs: tf.Tensor2D
+      let xs: tf.Tensor2D | null = null
       let ys: tf.Tensor2D
       let trainingSamples: number
       let model: tf.LayersModel
+      let m22FitTensors: tf.Tensor[] | null = null
 
-      if (this.neuralLossMode === 'pairwise') {
-        const { rows, pairCount } = bceLabelsToPairwiseRows(inputVectors, labels)
-        if (pairCount === 0) {
-          throw new Error('No pairwise contrastive pairs for training')
+      if (isM22TrainingDataset(dataset)) {
+        if (!m22Manifest) {
+          throw new Error('Internal error: M22 dataset rows without manifest')
         }
-        trainingSamples = rows.length
-        xs = tf.tensor2d(rows, [trainingSamples, 768])
-        // TF.js requires ys.shape[0] === xs.shape[0]; custom loss only reads yPred (yTrue unused).
-        ys = tf.ones([trainingSamples, 1])
-        model = buildNeuralModel('baseline', 'pairwise')
-        model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
+        const { rows, labels } = dataset
+        if (this.neuralLossMode === 'pairwise') {
+          const { rows: pr, pairCount } = m22BceLabelsToPairwiseRows(rows, labels)
+          if (pairCount === 0) {
+            throw new Error('No pairwise contrastive pairs for training')
+          }
+          trainingSamples = pr.length
+          m22FitTensors = m22InputTensorListFromRows(pr)
+          ys = tf.ones([trainingSamples, 1])
+          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'pairwise')
+          model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
+        } else {
+          trainingSamples = rows.length
+          m22FitTensors = m22InputTensorListFromRows(rows)
+          ys = tf.tensor2d(
+            labels.map((l) => [l]),
+            [trainingSamples, 1]
+          )
+          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'bce')
+          model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
+        }
       } else {
-        trainingSamples = inputVectors.length
-        xs = tf.tensor2d(inputVectors, [trainingSamples, 768])
-        ys = tf.tensor2d(
-          labels.map((l) => [l]),
-          [trainingSamples, 1]
-        )
-        model = buildNeuralModel('baseline', 'bce')
-        model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
+        const { inputVectors, labels } = dataset
+        if (this.neuralLossMode === 'pairwise') {
+          const { rows, pairCount } = bceLabelsToPairwiseRows(inputVectors, labels)
+          if (pairCount === 0) {
+            throw new Error('No pairwise contrastive pairs for training')
+          }
+          trainingSamples = rows.length
+          xs = tf.tensor2d(rows, [trainingSamples, 768])
+          ys = tf.ones([trainingSamples, 1])
+          model = buildNeuralModel('baseline', 'pairwise')
+          model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
+        } else {
+          trainingSamples = inputVectors.length
+          xs = tf.tensor2d(inputVectors, [trainingSamples, 768])
+          ys = tf.tensor2d(
+            labels.map((l) => [l]),
+            [trainingSamples, 1]
+          )
+          model = buildNeuralModel('baseline', 'bce')
+          model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
+        }
       }
 
       let finalLoss = 0
@@ -241,24 +312,42 @@ export class ModelTrainer {
         fitArgs.classWeight = { 0: 1.0, 1: 4.0 }
       }
 
-      await model.fit(xs, ys, fitArgs)
-
-      xs.dispose()
+      if (m22FitTensors) {
+        await model.fit(m22FitTensors, ys, fitArgs)
+        m22FitTensors.forEach((t) => t.dispose())
+        m22FitTensors = null
+      } else {
+        await model.fit(xs!, ys, fitArgs)
+        xs?.dispose()
+      }
       ys.dispose()
 
       let precisionAt5 = 0
       try {
-        precisionAt5 = computePrecisionAtK(
-          clients,
-          orders,
-          productEmbeddingMap,
-          model,
-          5,
-          this.profilePooling.get(),
-          neuralHeadKind
-        )
+        if (useM22 && m22Manifest) {
+          precisionAt5 = computePrecisionAtKM22(
+            clients,
+            orders,
+            productEmbeddingMap,
+            model,
+            5,
+            this.profilePooling.get(),
+            neuralHeadKind,
+            { manifest: m22Manifest, productsById }
+          )
+        } else {
+          precisionAt5 = computePrecisionAtK(
+            clients,
+            orders,
+            productEmbeddingMap,
+            model,
+            5,
+            this.profilePooling.get(),
+            neuralHeadKind
+          )
+        }
       } catch (precErr) {
-        console.warn('[ModelTrainer] computePrecisionAtK failed (non-fatal):', precErr)
+        console.warn('[ModelTrainer] precision@5 eval failed (non-fatal):', precErr)
       }
 
       await model.save('file:///tmp/model')
@@ -277,6 +366,8 @@ export class ModelTrainer {
         precisionAt5,
         neuralHeadKind,
         model,
+        m22ItemManifest: useM22 ? m22Manifest : null,
+        modelArchitecture: useM22 ? 'm22' : 'baseline',
       }
     } catch (err) {
       this._isTraining = false

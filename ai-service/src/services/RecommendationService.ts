@@ -8,6 +8,15 @@ import {
   deltaDaysUtc,
 } from '../profile/clientProfileAggregation.js'
 import type { ProfilePoolingRuntimeHolder } from '../config/profilePoolingRuntimeHolder.js'
+import type { M22EnvFlags } from '../config/m22Env.js'
+import type { M22ProductFields } from '../ml/itemSparseFeatureExtractor.js'
+import {
+  buildM22IndexMaps,
+  identityIndexFromId,
+  keysFromProductDTO,
+  structuralIndicesFromInputs,
+} from '../ml/m22Manifest.js'
+import { predictM22HybridScores } from '../ml/neuralModelFactory.js'
 import type {
   CatalogProductRow,
   EligibilityReasonCode,
@@ -163,6 +172,16 @@ function toRecommendationItem(
   return item
 }
 
+function catalogRowToM22Product(row: CatalogProductRow): M22ProductFields {
+  return {
+    id: row.id,
+    name: row.name,
+    category: row.category,
+    price: row.price,
+    sku: row.sku,
+  }
+}
+
 export class RecommendationService {
   constructor(
     private readonly modelStore: ModelStore,
@@ -173,6 +192,7 @@ export class RecommendationService {
     private readonly recencyRerankWeight: number,
     private readonly recencyAnchorCount: number,
     private readonly profilePoolingHolder: ProfilePoolingRuntimeHolder,
+    private readonly m22Env: M22EnvFlags,
     private readonly logger?: FastifyBaseLogger
   ) {}
 
@@ -355,15 +375,49 @@ export class RecommendationService {
     const exposeRecency = this.recencyRerankWeight > 0
 
     const headKind = this.modelStore.getNeuralHeadKind()
-    const neuralScoresList = tf.tidy(() => {
-      const batchMatrix = tf.tensor2d(
-        scorable.map((s) => [...(s.row.embedding as number[]), ...profileVector]),
-        [scorable.length, 768]
+    const useM22Inference =
+      this.m22Env.enabled &&
+      this.m22Env.structural &&
+      this.modelStore.getModelArchitecture() === 'm22' &&
+      this.modelStore.getM22ItemManifest() != null
+
+    if (this.m22Env.enabled && this.m22Env.structural && !useM22Inference) {
+      this.logger?.warn(
+        'M22_ENABLED/M22_STRUCTURAL set but loaded checkpoint is baseline or M22 manifest is missing — using legacy 768-d neural input'
       )
-      const outputTensor = model.predict(batchMatrix) as tf.Tensor
-      const raw = Array.from(outputTensor.dataSync() as Float32Array)
-      return raw.map((r) => toHybridNeuralScalar(r, headKind))
-    })
+    }
+
+    const neuralScoresList = useM22Inference
+      ? (() => {
+          const manifest = this.modelStore.getM22ItemManifest()!
+          const maps = buildM22IndexMaps(manifest)
+          const rows = scorable.map((s) => {
+            const p = catalogRowToM22Product(s.row)
+            const emb = s.row.embedding as number[]
+            const keys = keysFromProductDTO(p, manifest.priceBinEdges)
+            const st = structuralIndicesFromInputs(keys, maps)
+            const cProduct = identityIndexFromId(keys.idKey, maps, manifest.identityEnabled)
+            return {
+              sem384: emb,
+              user384: profileVector,
+              bBrand: st.bBrand,
+              bCategory: st.bCategory,
+              bSubcategory: st.bSubcategory,
+              bPriceBucket: st.bPriceBucket,
+              cProduct,
+            }
+          })
+          return predictM22HybridScores(model, rows, headKind)
+        })()
+      : tf.tidy(() => {
+          const batchMatrix = tf.tensor2d(
+            scorable.map((s) => [...(s.row.embedding as number[]), ...profileVector]),
+            [scorable.length, 768]
+          )
+          const outputTensor = model.predict(batchMatrix) as tf.Tensor
+          const raw = Array.from(outputTensor.dataSync() as Float32Array)
+          return raw.map((r) => toHybridNeuralScalar(r, headKind))
+        })
 
     const wr = this.recencyRerankWeight
     const anchors = anchorEmbeddings

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as tf from '@tensorflow/tfjs-node'
-import { buildNeuralModel } from './neuralModelFactory.js'
+import { buildNeuralModel, buildM22HybridNeuralModel, predictM22HybridScores } from './neuralModelFactory.js'
 
 describe('buildNeuralModel', () => {
   it('ends with sigmoid when loss mode is bce (legacy)', () => {
@@ -41,6 +41,36 @@ describe('buildNeuralModel', () => {
     await model.fit(xs, ys, { epochs: 1, batchSize: 8, verbose: 0 })
     xs.dispose()
     ys.dispose()
+    model.dispose()
+  })
+})
+
+describe('buildM22HybridNeuralModel (M22)', () => {
+  it('predicts a batch with seven inputs (sem, user, four B indices, C index)', async () => {
+    const vocabSizes = {
+      brand: 5,
+      category: 6,
+      subcategory: 4,
+      priceBucket: 3,
+      productId: 10,
+    }
+    const model = buildM22HybridNeuralModel(vocabSizes, 'bce')
+    model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: [] })
+    const rows = [
+      {
+        sem384: Array.from({ length: 384 }, (_, i) => (i === 0 ? 1 : 0)),
+        user384: Array.from({ length: 384 }, (_, i) => (i === 1 ? 1 : 0)),
+        bBrand: 1,
+        bCategory: 2,
+        bSubcategory: 1,
+        bPriceBucket: 2,
+        cProduct: 3,
+      },
+    ]
+    const scores = predictM22HybridScores(model, rows, 'bce_sigmoid')
+    expect(scores).toHaveLength(1)
+    expect(scores[0]).toBeGreaterThanOrEqual(0)
+    expect(scores[0]).toBeLessThanOrEqual(1)
     model.dispose()
   })
 })

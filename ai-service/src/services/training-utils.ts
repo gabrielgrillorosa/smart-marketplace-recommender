@@ -4,6 +4,25 @@ import {
   type ProfilePoolingRuntime,
 } from '../profile/clientProfileAggregation.js'
 import type { PurchaseTemporalIndex } from './training-temporal-map.js'
+import type { M22ItemManifest, M22ScoreRow, M22IndexMaps } from '../ml/m22Manifest.js'
+import {
+  buildM22IndexMaps,
+  identityIndexFromId,
+  keysFromProductDTO,
+  structuralIndicesFromInputs,
+} from '../ml/m22Manifest.js'
+
+export type TrainingDatasetBuildResult =
+  | { inputVectors: number[][]; labels: number[] }
+  | { mode: 'm22'; rows: M22ScoreRow[]; labels: number[] }
+
+export function isM22TrainingDataset(d: TrainingDatasetBuildResult): d is {
+  mode: 'm22'
+  rows: M22ScoreRow[]
+  labels: number[]
+} {
+  return 'mode' in d && (d as { mode?: string }).mode === 'm22'
+}
 
 export interface ClientDTO {
   id: string
@@ -53,8 +72,30 @@ export function buildTrainingDataset(
   options: TrainingDatasetOptions,
   temporal: PurchaseTemporalIndex,
   pooling: ProfilePoolingRuntime
-): { inputVectors: number[][]; labels: number[] } {
-  if (clients.length === 0) return { inputVectors: [], labels: [] }
+): { inputVectors: number[][]; labels: number[] }
+export function buildTrainingDataset(
+  clients: ClientDTO[],
+  clientOrderMap: Map<string, Set<string>>,
+  productEmbeddingMap: Map<string, number[]>,
+  products: ProductDTO[],
+  options: TrainingDatasetOptions,
+  temporal: PurchaseTemporalIndex,
+  pooling: ProfilePoolingRuntime,
+  m22: { manifest: M22ItemManifest; productsById: Map<string, ProductDTO> }
+): { mode: 'm22'; rows: M22ScoreRow[]; labels: number[] }
+export function buildTrainingDataset(
+  clients: ClientDTO[],
+  clientOrderMap: Map<string, Set<string>>,
+  productEmbeddingMap: Map<string, number[]>,
+  products: ProductDTO[],
+  options: TrainingDatasetOptions,
+  temporal: PurchaseTemporalIndex,
+  pooling: ProfilePoolingRuntime,
+  m22?: { manifest: M22ItemManifest; productsById: Map<string, ProductDTO> }
+): TrainingDatasetBuildResult {
+  if (clients.length === 0) {
+    return m22 ? { mode: 'm22', rows: [], labels: [] } : { inputVectors: [], labels: [] }
+  }
 
   const { negativeSamplingRatio, seed, useClassWeight = true } = options
   let rngState = seed ?? Date.now()
@@ -62,7 +103,27 @@ export function buildTrainingDataset(
   const productsWithEmbeddings = products.filter((p) => productEmbeddingMap.has(p.id))
 
   const inputVectors: number[][] = []
+  const m22Rows: M22ScoreRow[] = []
   const labels: number[] = []
+
+  const m22Maps: M22IndexMaps | null = m22 ? buildM22IndexMaps(m22.manifest) : null
+  const priceEdges = m22?.manifest.priceBinEdges ?? []
+
+  const rowForProduct = (product: ProductDTO, sem: number[], userVec: number[]): M22ScoreRow => {
+    if (!m22 || !m22Maps) throw new Error('M22 row builder without manifest')
+    const keys = keysFromProductDTO(product, priceEdges)
+    const s = structuralIndicesFromInputs(keys, m22Maps)
+    const cProduct = identityIndexFromId(keys.idKey, m22Maps, m22.manifest.identityEnabled)
+    return {
+      sem384: sem,
+      user384: userVec,
+      bBrand: s.bBrand,
+      bCategory: s.bCategory,
+      bSubcategory: s.bSubcategory,
+      bPriceBucket: s.bPriceBucket,
+      cProduct,
+    }
+  }
 
   for (const client of clients) {
     const purchasedIds = clientOrderMap.get(client.id) ?? new Set<string>()
@@ -153,26 +214,41 @@ export function buildTrainingDataset(
       }
 
       // Add positive sample
-      inputVectors.push([...posEmb, ...clientProfileVector])
+      if (m22 && m22Maps) {
+        m22Rows.push(rowForProduct(posProduct, posEmb, clientProfileVector))
+      } else {
+        inputVectors.push([...posEmb, ...clientProfileVector])
+      }
       labels.push(1)
 
       if (useClassWeight !== false) {
         // Add negative samples
         for (const negProduct of selectedNegatives) {
           const negEmb = productEmbeddingMap.get(negProduct.id)!
-          inputVectors.push([...negEmb, ...clientProfileVector])
+          if (m22 && m22Maps) {
+            m22Rows.push(rowForProduct(negProduct, negEmb, clientProfileVector))
+          } else {
+            inputVectors.push([...negEmb, ...clientProfileVector])
+          }
           labels.push(0)
         }
       } else {
         // Upsampling: duplicate positive sample negativeSamplingRatio times
         for (let i = 0; i < negativeSamplingRatio; i++) {
-          inputVectors.push([...posEmb, ...clientProfileVector])
+          if (m22 && m22Maps) {
+            m22Rows.push(rowForProduct(posProduct, posEmb, clientProfileVector))
+          } else {
+            inputVectors.push([...posEmb, ...clientProfileVector])
+          }
           labels.push(1)
         }
       }
     }
   }
 
+  if (m22) {
+    return { mode: 'm22', rows: m22Rows, labels }
+  }
   return { inputVectors, labels }
 }
 
@@ -198,6 +274,32 @@ export function bceLabelsToPairwiseRows(
     while (i < labels.length && labels[i] === 0) {
       positives.push(pos)
       negatives.push(inputVectors[i]!)
+      i++
+    }
+  }
+  const pairCount = positives.length
+  if (pairCount === 0) return { rows: [], pairCount: 0 }
+  return { rows: [...positives, ...negatives], pairCount }
+}
+
+/** M21/M22 — pairwise rows from an M22 BCE dataset (same pairing layout as `bceLabelsToPairwiseRows`). */
+export function m22BceLabelsToPairwiseRows(
+  rows: M22ScoreRow[],
+  labels: number[]
+): { rows: M22ScoreRow[]; pairCount: number } {
+  const positives: M22ScoreRow[] = []
+  const negatives: M22ScoreRow[] = []
+  let i = 0
+  while (i < labels.length) {
+    if (labels[i] !== 1) {
+      i++
+      continue
+    }
+    const pos = rows[i]!
+    i++
+    while (i < labels.length && labels[i] === 0) {
+      positives.push(pos)
+      negatives.push(rows[i]!)
       i++
     }
   }
