@@ -163,7 +163,7 @@ describe('startup bootstrap', () => {
     await appHarness.close()
   })
 
-  it('warm boot skips startup recovery when model is already loaded', async () => {
+  it('warm boot with model still schedules recovery (embedding gap-fill; train skipped inside service)', async () => {
     const modelRef: { current: object | null } = { current: {} }
     const startupRecoveryService = {
       isBlockingReadiness: vi.fn(() => false),
@@ -181,7 +181,7 @@ describe('startup bootstrap', () => {
 
     await appHarness.start()
 
-    expect(startupRecoveryService.scheduleRecovery).not.toHaveBeenCalled()
+    expect(startupRecoveryService.scheduleRecovery).toHaveBeenCalledOnce()
 
     const readyResponse = await appHarness.app.inject({
       method: 'GET',

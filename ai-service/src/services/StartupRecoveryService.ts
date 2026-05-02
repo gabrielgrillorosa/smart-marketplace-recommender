@@ -60,12 +60,6 @@ export class StartupRecoveryService {
       return Promise.resolve()
     }
 
-    if (this.options.versionedModelStore.getModel() !== null) {
-      this.state = { phase: 'idle', reason: 'model-present' }
-      this.options.logger?.info('[StartupRecovery] Skipping recovery because model is already loaded')
-      return Promise.resolve()
-    }
-
     if (this.runPromise) {
       return this.runPromise
     }
@@ -98,7 +92,18 @@ export class StartupRecoveryService {
       const missingEmbeddings = await this.options.neo4jRepository.getProductsWithoutEmbedding()
       if (missingEmbeddings.length > 0) {
         this.state = { phase: 'embedding' }
+        this.options.logger?.info(
+          `[StartupRecovery] Filling ${missingEmbeddings.length} product(s) missing embeddings (runs even when a model is already loaded)`
+        )
         await this.options.embeddingService.generateEmbeddings(this.options.neo4jRepository)
+      }
+
+      if (this.options.versionedModelStore.getModel() !== null) {
+        this.options.logger?.info(
+          '[StartupRecovery] Model already loaded — skipped retrain after embedding check'
+        )
+        this.state = { phase: 'idle', reason: 'model-present' }
+        return
       }
 
       const probe = await this.probeTrainingDataAvailability()

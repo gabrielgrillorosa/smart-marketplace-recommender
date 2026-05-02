@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs-node'
+import type { NeuralHeadKind } from '../types/index.js'
 import type { ClientDTO } from '../services/training-utils.js'
 import type { OrderDTO } from '../services/training-data-fetch.js'
 import { buildClientPurchaseTemporalMap } from '../services/training-temporal-map.js'
@@ -7,6 +8,7 @@ import {
   deltaDaysUtc,
   type ProfilePoolingRuntime,
 } from '../profile/clientProfileAggregation.js'
+import { toHybridNeuralScalar } from './neuralHead.js'
 
 /**
  * Per-client temporal split on purchase list; ranks candidates by neural score.
@@ -18,7 +20,8 @@ export function computePrecisionAtK(
   productEmbeddingMap: Map<string, number[]>,
   model: tf.LayersModel,
   K = 5,
-  pooling: ProfilePoolingRuntime = { mode: 'mean', halfLifeDays: 30 }
+  pooling: ProfilePoolingRuntime = { mode: 'mean', halfLifeDays: 30 },
+  neuralHeadKind: NeuralHeadKind = 'bce_sigmoid'
 ): number {
   const temporal = buildClientPurchaseTemporalMap(orders)
 
@@ -73,7 +76,8 @@ export function computePrecisionAtK(
         [candidates.length, 768]
       )
       const output = model.predict(matrix) as tf.Tensor
-      return Array.from(output.dataSync())
+      const raw = Array.from(output.dataSync())
+      return raw.map((r) => toHybridNeuralScalar(r, neuralHeadKind))
     })
 
     const topK = candidates

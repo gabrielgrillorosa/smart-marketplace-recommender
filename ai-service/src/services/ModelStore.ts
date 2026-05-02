@@ -1,5 +1,5 @@
 import * as tf from '@tensorflow/tfjs-node'
-import { TrainingStatus, TrainingMetadata } from '../types/index.js'
+import { TrainingStatus, TrainingMetadata, type NeuralHeadKind } from '../types/index.js'
 
 const MS_PER_DAY = 86_400_000
 
@@ -11,9 +11,14 @@ export type EnrichedTrainingStatus = TrainingStatus & {
 export class ModelStore {
   private model: tf.LayersModel | null = null
   private status: TrainingStatus = { status: 'untrained' }
+  private neuralHeadKind: NeuralHeadKind = 'bce_sigmoid'
 
   getModel(): tf.LayersModel | null {
     return this.model
+  }
+
+  getNeuralHeadKind(): NeuralHeadKind {
+    return this.neuralHeadKind
   }
 
   getStatus(): TrainingStatus {
@@ -28,14 +33,15 @@ export class ModelStore {
       const staleWarning = staleDays >= 7
         ? `Model trained ${staleDays} days ago — consider retraining`
         : undefined
-      return { ...base, staleDays, staleWarning }
+      return { ...base, staleDays, staleWarning, neuralHeadKind: this.neuralHeadKind }
     }
 
-    return { ...base, staleDays: null }
+    return { ...base, staleDays: null, ...(base.status === 'trained' ? { neuralHeadKind: this.neuralHeadKind } : {}) }
   }
 
   setModel(model: tf.LayersModel, metadata: TrainingMetadata): void {
     this.model = model
+    this.neuralHeadKind = metadata.neuralHeadKind ?? 'bce_sigmoid'
     this.status = {
       status: 'trained',
       trainedAt: metadata.trainedAt,
@@ -57,5 +63,6 @@ export class ModelStore {
 
   reset(): void {
     this.status = { status: 'untrained' }
+    this.neuralHeadKind = 'bce_sigmoid'
   }
 }

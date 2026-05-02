@@ -15,6 +15,7 @@ import type {
   RecommendationResult,
 } from '../types/index.js'
 import { MatchReason } from '../types/index.js'
+import { toHybridNeuralScalar } from '../ml/neuralHead.js'
 
 export class ModelNotTrainedError extends Error {
   readonly statusCode = 503
@@ -348,13 +349,15 @@ export class RecommendationService {
     const cappedLimit = Math.min(limit, 50)
     const exposeRecency = this.recencyRerankWeight > 0
 
+    const headKind = this.modelStore.getNeuralHeadKind()
     const neuralScoresList = tf.tidy(() => {
       const batchMatrix = tf.tensor2d(
         scorable.map((s) => [...(s.row.embedding as number[]), ...profileVector]),
         [scorable.length, 768]
       )
       const outputTensor = model.predict(batchMatrix) as tf.Tensor
-      return Array.from(outputTensor.dataSync() as Float32Array)
+      const raw = Array.from(outputTensor.dataSync() as Float32Array)
+      return raw.map((r) => toHybridNeuralScalar(r, headKind))
     })
 
     const wr = this.recencyRerankWeight

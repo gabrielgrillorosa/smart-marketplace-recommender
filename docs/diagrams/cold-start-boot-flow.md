@@ -5,6 +5,8 @@ fully ready recommendation engine. Covers the two phases introduced post-M12:
 **AutoSeed** (data layer warm-up) and **StartupRecovery** (model self-healing), plus the
 **cache-bypass contract** that prevents cold-start cache poisoning in `api-service`.
 
+**StartupRecovery (2026 update):** when `AUTO_HEAL_MODEL=true`, recovery is scheduled **after every successful `listen()`**, even if `loadCurrent()` already loaded a model. It always checks Neo4j for missing product embeddings before deciding whether to **skip retrain** (model present) or **probe + train** (no model).
+
 ---
 
 ## 1 · Full Boot Sequence (happy path)
@@ -39,6 +41,8 @@ flowchart TD
         HEAL_FLAG{"AUTO_HEAL_MODEL\n= true?"}
         HEAL_EMBEDDINGS{"Missing product\nembeddings in Neo4j?"}
         GEN_EMB["🧠 EmbeddingService\ngenerateEmbeddings()\n384d per product"]
+        MODEL_MEM{"Model already loaded\nfrom disk?"}
+        SKIP_TRAIN["⏩ Skip probe + enqueue\n(gap-fill only)"]
         PROBE["📊 probeTrainingData()\nfetch /clients + /products\n+ /orders via api-service\nwith Cache-Control: no-cache"]
         PROBE_CHECK{"clients > 0\nproducts > 0\norders with items?"}
         BLOCKED["⚠️ blocked/no-training-data\n/ready = 503\n(data not available yet)"]
@@ -48,7 +52,7 @@ flowchart TD
         SAVE["💾 VersionedModelStore\nsave + update symlink\n/tmp/model/current"]
         REJECT["⚠️ Model rejected\n(score regression)\nold model stays current"]
         READY["✅ /ready = 200\nembeddingReady=true\nmodelPresent=true\nrecoveryBlocking=false"]
-        SKIP_HEAL["⏩ Skip recovery\n(disabled or model present)"]
+        SKIP_HEAL["⏩ Skip StartupRecovery\n(AUTO_HEAL false)\n/ready follows model+embed only"]
     end
 
     PG -->|service_healthy| API_BOOT
@@ -74,8 +78,11 @@ flowchart TD
     HEAL_FLAG -->|No| SKIP_HEAL
     HEAL_FLAG -->|Yes| HEAL_EMBEDDINGS
     HEAL_EMBEDDINGS -->|Yes| GEN_EMB
-    HEAL_EMBEDDINGS -->|No| PROBE
-    GEN_EMB --> PROBE
+    HEAL_EMBEDDINGS -->|No| MODEL_MEM
+    GEN_EMB --> MODEL_MEM
+    MODEL_MEM -->|Yes| SKIP_TRAIN
+    MODEL_MEM -->|No| PROBE
+    SKIP_TRAIN --> READY
 
     PROBE -->|GET /products?Cache-Control: no-cache| API_READY
     API_READY -.->|"fresh read\n(bypasses Caffeine)"| PROBE
@@ -101,10 +108,10 @@ flowchart TD
     class PG,NEO infra
     class API_BOOT,CACHE,API_READY apiservice
     class AUTOSEED_RUN,AUTOSEED_DONE,AUTOSEED_CHECK,AUTOSEED_SKIP seed
-    class MODEL_CHECK,HEAL_FLAG,HEAL_EMBEDDINGS,PROBE_CHECK,PROMOTE decision
+    class MODEL_CHECK,HEAL_FLAG,HEAL_EMBEDDINGS,MODEL_MEM,PROBE_CHECK,PROMOTE decision
     class READY,SAVE success
     class BLOCKED,REJECT,SKIP_HEAL warning
-    class EMB_LOAD,LISTEN,GEN_EMB,PROBE,ENQUEUE,TRAIN,LOAD_MODEL process
+    class EMB_LOAD,LISTEN,GEN_EMB,PROBE,ENQUEUE,TRAIN,LOAD_MODEL,SKIP_TRAIN process
 ```
 
 ---

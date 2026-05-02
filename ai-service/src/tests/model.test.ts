@@ -134,6 +134,24 @@ describe('ModelStore enriched status includes syncedAt and precisionAt5', () => 
     expect(enriched.syncedAt).toBe(syncedAt)
     expect(enriched.precisionAt5).toBe(0.65)
   })
+
+  it('includes neuralHeadKind when model is trained (M21)', () => {
+    const modelStore = new ModelStore()
+    const trainedAt = new Date().toISOString()
+    const fakeModel = {} as Parameters<typeof modelStore.setModel>[0]
+    modelStore.setModel(fakeModel, {
+      trainedAt,
+      finalLoss: 0.1,
+      finalAccuracy: 0,
+      trainingSamples: 120,
+      durationMs: 1000,
+      syncedAt: trainedAt,
+      precisionAt5: 0.5,
+      neuralHeadKind: 'ranking_linear',
+    })
+    const enriched = modelStore.getEnrichedStatus()
+    expect(enriched.neuralHeadKind).toBe('ranking_linear')
+  })
 })
 
 describe('GET /api/v1/model/status governance metadata (M13)', () => {

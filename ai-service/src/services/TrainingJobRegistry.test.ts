@@ -21,6 +21,7 @@ const makeTrainer = (opts: { isTraining?: boolean; shouldFail?: boolean } = {}) 
         durationMs: 1000,
         syncedAt: new Date().toISOString(),
         precisionAt5: 0.6,
+        neuralHeadKind: 'bce_sigmoid' as const,
         model: {} as import('@tensorflow/tfjs-node').LayersModel,
       }
     }),

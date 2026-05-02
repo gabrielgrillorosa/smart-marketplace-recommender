@@ -44,8 +44,7 @@ export async function listenAndScheduleRecovery(
   await fastify.listen({ port: options.port, host: options.host })
   options.logger?.info(`AI Service listening on port ${options.port}`)
 
-  const modelPresent = options.versionedModelStore.getModel() !== null
-  if (!modelPresent && options.autoHealModel) {
+  if (options.autoHealModel) {
     void options.startupRecoveryService.scheduleRecovery()
   }
 }

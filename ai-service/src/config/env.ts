@@ -1,5 +1,6 @@
 import { parseRecencyAnchorCount, parseRecencyRerankWeight } from './recencyRerankEnv.js'
 import { parseProfilePoolingHalfLifeDays, parseProfilePoolingMode } from './profilePoolingEnv.js'
+import { parseNeuralLossMode } from './neuralLossEnv.js'
 
 const missingVars: string[] = []
 
@@ -82,6 +83,9 @@ console.info(
   `[ai-service] Profile pooling: PROFILE_POOLING_MODE=${PROFILE_POOLING_MODE}, PROFILE_POOLING_HALF_LIFE_DAYS=${PROFILE_POOLING_HALF_LIFE_DAYS}`
 )
 
+const NEURAL_LOSS_MODE = parseNeuralLossMode(process.env.NEURAL_LOSS_MODE)
+console.info(`[ai-service] NEURAL_LOSS_MODE=${NEURAL_LOSS_MODE}`)
+
 const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost'
 const POSTGRES_PORT = parseInt(process.env.POSTGRES_PORT ?? '5432', 10)
 const POSTGRES_DB = process.env.POSTGRES_DB ?? 'marketplace'
@@ -113,4 +117,5 @@ export const ENV = Object.freeze({
   RECENCY_ANCHOR_COUNT,
   PROFILE_POOLING_MODE,
   PROFILE_POOLING_HALF_LIFE_DAYS,
+  NEURAL_LOSS_MODE,
 })

@@ -173,6 +173,9 @@ export interface ClientProfileViewModel {
   warnings: string[];
 }
 
+/** M21 — cabeça neural do checkpoint ativo (alinhado com `neural-head.json` / `GET /model/status`). */
+export type NeuralHeadKind = 'bce_sigmoid' | 'ranking_linear';
+
 export interface ModelStatusResponse {
   status?: string;
   trainedAt?: string;
@@ -180,6 +183,12 @@ export interface ModelStatusResponse {
   finalAccuracy?: number;
   trainingSamples?: number;
   precisionAt5?: number;
+  /** Cabeça do modelo em produção; distingue BCE de pairwise sem interpretar só pela loss. */
+  neuralHeadKind?: NeuralHeadKind;
+  syncedAt?: string;
+  durationMs?: number;
+  epochsConfigured?: number;
+  epochsEffective?: number;
   currentVersion?: string | null;
   lastTrainingResult?: 'promoted' | 'rejected' | 'failed' | null;
   lastTrainingTriggeredBy?: 'checkout' | 'manual' | null;

@@ -531,7 +531,10 @@ describe('RecommendationService.recommendFromVector', () => {
       getProductsInCountryCatalog: vi.fn().mockResolvedValue([]),
       getConfirmedPurchaseLastDates: vi.fn().mockResolvedValue(new Map()),
     }
-    const mockStore = { getModel: vi.fn().mockReturnValue(mockModel) }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+    }
     const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
     const vec = Array.from({ length: 384 }, () => 0.01)
     const r = await svc.recommendFromVector('c1', 10, vec)
@@ -548,7 +551,10 @@ describe('RecommendationService.recommendFromVector', () => {
       getProductsInCountryCatalog: vi.fn().mockResolvedValue([]),
       getConfirmedPurchaseLastDates: vi.fn().mockResolvedValue(new Map()),
     }
-    const mockStore = { getModel: vi.fn().mockReturnValue(mockModel) }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+    }
     const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
     const vec = Array.from({ length: 384 }, () => 0.01)
     const reason = 'No new products available for this client in their country'
@@ -566,7 +572,10 @@ describe('RecommendationService.recommendFromVector', () => {
       getProductsInCountryCatalog: vi.fn(),
       getConfirmedPurchaseLastDates: vi.fn(),
     }
-    const mockStore = { getModel: vi.fn().mockReturnValue(mockModel) }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+    }
     const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
     await expect(svc.recommendFromVector('unknown', 10, [])).rejects.toThrow(ClientNotFoundError)
   })
@@ -626,7 +635,10 @@ describe('M17 recency re-rank (recommendFromVector)', () => {
       getRecentConfirmedPurchaseAnchorEmbeddings: getAnchors,
     }
     const mockModel = { predict: vi.fn().mockReturnValue(mockPredictTensor()) }
-    const mockStore = { getModel: vi.fn().mockReturnValue(mockModel) }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+    }
     const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
     await svc.recommendFromVector('c1', 10, profile)
     expect(getAnchors).not.toHaveBeenCalled()
@@ -641,7 +653,10 @@ describe('M17 recency re-rank (recommendFromVector)', () => {
       getRecentConfirmedPurchaseAnchorEmbeddings: getAnchors,
     }
     const mockModel = { predict: vi.fn().mockReturnValue(mockPredictTensor()) }
-    const mockStore = { getModel: vi.fn().mockReturnValue(mockModel) }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'bce_sigmoid' as const),
+    }
     const svcOff = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
     const svcOn = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0.5, 1, 'mean', 30)
 
@@ -666,5 +681,44 @@ describe('M17 recency re-rank (recommendFromVector)', () => {
     expect(on[0].recencySimilarity).toBeCloseTo(1, 5)
     expect(on[0].rankScore).toBeGreaterThan(on[1].rankScore ?? 0)
     expect(getAnchors).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('M21 neural head at inference', () => {
+  const D = 384
+  const axisUnit = (axis: number): number[] => {
+    const v = new Array<number>(D).fill(0)
+    v[axis] = 1
+    return v
+  }
+
+  it('applies sigmoid to logits when store reports ranking_linear', async () => {
+    const profile = axisUnit(0)
+    const row = {
+      id: 'p1',
+      name: 'P',
+      category: 'c',
+      price: 1,
+      sku: 'sku1',
+      embedding: axisUnit(1),
+    }
+    const mockRepo = {
+      getClientWithCountry: vi.fn().mockResolvedValue({ id: 'c1', country: 'BR' }),
+      getProductsInCountryCatalog: vi.fn().mockResolvedValue([row]),
+      getConfirmedPurchaseLastDates: vi.fn().mockResolvedValue(new Map()),
+    }
+    const mockModel = {
+      predict: vi.fn().mockReturnValue({
+        dataSync: () => new Float32Array([0]),
+      }),
+    }
+    const mockStore = {
+      getModel: vi.fn().mockReturnValue(mockModel),
+      getNeuralHeadKind: vi.fn(() => 'ranking_linear' as const),
+    }
+    const svc = new RecommendationService(mockStore as never, mockRepo as never, 0.6, 0.4, 30, 0, 1, 'mean', 30)
+    const env = await svc.recommendFromVector('c1', 5, profile)
+    const n = env.recommendations[0]?.neuralScore
+    expect(n).toBeCloseTo(0.5, 5)
   })
 })

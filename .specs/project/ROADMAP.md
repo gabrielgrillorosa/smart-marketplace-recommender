@@ -15,6 +15,7 @@
 | **P2**  | **M18** — catálogo simplificado / contrato AD-055 — ✅ entregue | [STATE § AD-055](STATE.md#state-ad-055); [spec M18](../features/m18-catalog-simplified-ad055/spec.md) | Verificação `docker compose`; seguir **M17 P2/P3** |
 | **—**   | **M19** — Pos-Efetivar deltas & baseline (ADR-065) — ✅ **IMPLEMENTED** (2026-05-01) | [ADR-065](../features/m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md); [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md); [tasks](../features/m19-pos-efetivar-showcase-deltas/tasks.md) | Verificação `npm run test:e2e` no `frontend` |
 | **—**   | **M20** — Retreino manual, métricas, showcase «Pos-Retreino» (ADR-067) — **DESIGNED** (2026-05-01) | [ADR-067](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | **Execute** T067-1 → T067-7 (gates por serviço) |
+| **—**   | **M21** — Evolução ranking/perfil/híbrido (ADR-070 + ADR-071) — **DESIGNED** (complex, 2026-05-01) | [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md); [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md); [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [design](../features/m21-ranking-evolution-committee-decisions/design.md); [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md) | **Execute** T21-1 → T21-7 (`ai-service`; ordem T1→…→T3) |
 
 
 **M18:** implementação + E2E `m18-catalog-ad055.spec.ts` — estado em [STATE § AD-055](STATE.md#state-ad-055).
@@ -22,6 +23,8 @@
 **M19:** baseline cart-aware para deltas da coluna **Pós efetivar**; motor único `buildRecommendationDeltaMap`; PE-04 opção B — ✅ [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md) (2026-05-01).
 
 **M20 (ADR-067):** retreino só manual por defeito; métricas completas no job/`model/status`; UI **Pos-Retreino** vs **Com IA** + acção **Fixar novo normal** — **DESIGNED** ([design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md), [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md), [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md)).
+
+**M21 (ADR-070, ADR-071):** entregas incrementais **T1 → A → T2 → R → T4 → T3** (pairwise, atenção leve no perfil, negativos duros, fusão dinâmica, temperatura, loss combinada) sem substituir **M17 P3**; defaults legacy por env; gate **`precisionAt5`**. **DESIGNED** (complex; [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md), [design](../features/m21-ranking-evolution-committee-decisions/design.md), [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md)).
 
 **Tech Debt:** ADR-053 — Migrate seed from `ai-service` to `api-service` (standalone spike / future debt item, ~4 days)
 
@@ -86,6 +89,16 @@
 **Target:** `ai-service` + `api-service` + `frontend` + env/docker; testes Vitest/JUnit/E2E actualizados; ADR-065 convive como modo cart-aware quando flag/modo o exigir.
 
 **Specification:** [.specs/features/m20-manual-retrain-metrics-pos-retreino/spec.md](../features/m20-manual-retrain-metrics-pos-retreino/spec.md) (**PR-067-01**…). **Design:** [.specs/features/m20-manual-retrain-metrics-pos-retreino/design.md](../features/m20-manual-retrain-metrics-pos-retreino/design.md) (UI complexo; 2026-05-01). **Tasks:** [.specs/features/m20-manual-retrain-metrics-pos-retreino/tasks.md](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) (**T067-1**…**T067-7**). **ADR:** [ADR-067](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md), [ADR-068](../features/m20-manual-retrain-metrics-pos-retreino/adr-068-post-retrain-baseline-snapshot-in-analysis-slice.md), [ADR-069](../features/m20-manual-retrain-metrics-pos-retreino/adr-069-reiniciar-vs-limpar-showcase-copy.md).
+
+---
+
+## M21 — Evolução ranking, perfil & fusão híbrida (ADR-070 + ADR-071) — **DESIGNED** (complex, 2026-05-01)
+
+**Goal:** Entregar melhorias incrementais de treino e inferência (**pairwise loss**, **atenção leve no perfil**, **negativos mais duros**, **reponderação híbrida dinâmica**, **temperatura**, **loss combinada**) sem obrigar **M17 P3** (atenção pesada no MLP); cada técnica activável por env com defaults que reproduzem o sistema pré-M21.
+
+**Target:** Principalmente `ai-service` (`ModelTrainer`, dataset, `RecommendationService`, offline eval); gate **`precisionAt5`** alinhado a protocolo de retreino (M20); documentação operador.
+
+**Specification:** [.specs/features/m21-ranking-evolution-committee-decisions/spec.md](../features/m21-ranking-evolution-committee-decisions/spec.md) (**M21-01**…**M21-16**). **Design (complex):** [.specs/features/m21-ranking-evolution-committee-decisions/design.md](../features/m21-ranking-evolution-committee-decisions/design.md). **Tasks:** [.specs/features/m21-ranking-evolution-committee-decisions/tasks.md](../features/m21-ranking-evolution-committee-decisions/tasks.md) (**T21-1**…**T21-7**). **ADRs:** [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md), [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md).
 
 ---
 

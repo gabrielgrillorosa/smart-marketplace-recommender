@@ -18,7 +18,7 @@ Dois padrões de localização coexistem:
 1. **Co-localizado** — test ao lado do source: `src/services/TrainingJobRegistry.test.ts`, `src/routes/adminRoutes.test.ts`
 2. **Pasta dedicada** — `src/tests/` para testes de rotas/services: `recommend.test.ts`, `rag.test.ts`, `search.test.ts`, `model.test.ts`
 
-Total: 8 arquivos de teste, 42 testes (M7 count).
+Contagem exacta: correr `npm test` (Vitest imprime ficheiros e testes no fim). **`npm test` sozinho não corre o compilador TypeScript** — erros de tipo só aparecem em `npm run build` (igual ao passo Docker `RUN npm run build`).
 
 ## Padrão de mocking
 
@@ -59,6 +59,7 @@ const service = new RecommendationService(mockModelStore, mockRepo as any, 0.6, 
 
 | Gate | Quando usar | Comando |
 |---|---|---|
-| Quick | Após mudanças em service/repository | `npm test` |
-| Full | Após feature completa | `npm run lint && npm test` |
-| Build | Fase completa | `npm run lint && npm run build && npm test` |
+| Quick | Iteração rápida (só lógica coberta por Vitest) | `npm test` |
+| Full | Antes de PR / merge | `npm run lint && npm test` |
+| **Build** | **Obrigatório antes de considerar feature fechada** (Docker = `tsc`) | `npm run build` |
+| **DoD recomendado** | Build + testes + lint numa linha | **`npm run verify`** (`build` → `test` → `lint`) |

@@ -6,9 +6,18 @@ import {
   LastDecision,
   LastTrainingResult,
   ModelHistoryEntry,
+  TrainingMetadata,
   TrainingResult,
   TrainingTrigger,
+  type NeuralHeadKind,
 } from '../types/index.js'
+import { NEURAL_HEAD_MANIFEST_FILENAME, parseNeuralHeadManifestJson } from './neuralHeadManifest.js'
+import {
+  TRAINING_METADATA_FILENAME,
+  modelFilenameToCheckpointIso,
+  parsePersistedTrainingMetadataJson,
+  type PersistedTrainingMetadata,
+} from './trainingMetadata.js'
 
 export interface FsPort {
   symlink(target: string, linkPath: string): Promise<void>
@@ -60,7 +69,14 @@ export class VersionedModelStore extends ModelStore {
     const filename = `model-${timestamp}.json`
     const filePath = path.join(MODEL_DIR, filename)
 
-    await model.save(`file://${filePath.replace(/\.json$/, '')}`)
+    const modelDir = filePath.replace(/\.json$/, '')
+    await model.save(`file://${modelDir}`)
+    await fs.mkdir(modelDir, { recursive: true })
+    await fs.writeFile(
+      path.join(modelDir, NEURAL_HEAD_MANIFEST_FILENAME),
+      JSON.stringify({ head: result.neuralHeadKind }, null, 2),
+      'utf8'
+    )
 
     const tolerance = this._getPromotionTolerance()
     const candidatePrecisionAt5 = result.precisionAt5 ?? 0
@@ -89,15 +105,33 @@ export class VersionedModelStore extends ModelStore {
       this.lastTrainingResult = 'promoted'
       this.lastDecision = null
 
+      const trainedAt = result.syncedAt ?? new Date().toISOString()
       super.setModel(model, {
-        trainedAt: result.syncedAt ?? new Date().toISOString(),
+        trainedAt,
         finalLoss: result.finalLoss,
         finalAccuracy: result.finalAccuracy,
         trainingSamples: result.trainingSamples,
         durationMs: result.durationMs,
         syncedAt: result.syncedAt,
         precisionAt5: candidatePrecisionAt5,
+        neuralHeadKind: result.neuralHeadKind,
       })
+
+      const persisted: PersistedTrainingMetadata = {
+        trainedAt,
+        finalLoss: result.finalLoss,
+        finalAccuracy: result.finalAccuracy,
+        trainingSamples: result.trainingSamples,
+        durationMs: result.durationMs,
+        syncedAt: result.syncedAt,
+        precisionAt5: candidatePrecisionAt5,
+        neuralHeadKind: result.neuralHeadKind,
+      }
+      await fs.writeFile(
+        path.join(modelDir, TRAINING_METADATA_FILENAME),
+        `${JSON.stringify(persisted, null, 2)}\n`,
+        'utf8'
+      )
     } else {
       this.lastTrainingResult = 'rejected'
       this.lastDecision = {
@@ -129,14 +163,11 @@ export class VersionedModelStore extends ModelStore {
         }
         const mostRecent = files[0]
         const modelPath = path.join(MODEL_DIR, mostRecent.replace(/\.json$/, ''))
+        const neuralHeadKind = await this._loadNeuralHeadKindFromDisk(modelPath)
         const loadedModel = await tf.loadLayersModel(`file://${modelPath}/model.json`)
-        super.setModel(loadedModel, {
-          trainedAt: new Date().toISOString(),
-          finalLoss: 0,
-          finalAccuracy: 0,
-          trainingSamples: 0,
-          durationMs: 0,
-        })
+        const diskMeta = await this._readPersistedTrainingMetadata(modelPath)
+        const inferredTs = modelFilenameToCheckpointIso(mostRecent) ?? new Date().toISOString()
+        super.setModel(loadedModel, this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs))
         this.currentVersion = mostRecent
         console.info(`[VersionedModelStore] Loaded most recent model: ${mostRecent}`)
       } catch {
@@ -147,16 +178,14 @@ export class VersionedModelStore extends ModelStore {
 
     try {
       const target = await this.fsPort.readlink(CURRENT_LINK)
-      const modelPath = path.join(MODEL_DIR, path.basename(target).replace(/\.json$/, ''))
+      const basename = path.basename(target)
+      const modelPath = path.join(MODEL_DIR, basename.replace(/\.json$/, ''))
+      const neuralHeadKind = await this._loadNeuralHeadKindFromDisk(modelPath)
       const loadedModel = await tf.loadLayersModel(`file://${modelPath}/model.json`)
-      super.setModel(loadedModel, {
-        trainedAt: new Date().toISOString(),
-        finalLoss: 0,
-        finalAccuracy: 0,
-        trainingSamples: 0,
-        durationMs: 0,
-      })
-      this.currentVersion = path.basename(target)
+      const diskMeta = await this._readPersistedTrainingMetadata(modelPath)
+      const inferredTs = modelFilenameToCheckpointIso(basename) ?? new Date().toISOString()
+      super.setModel(loadedModel, this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs))
+      this.currentVersion = basename
       console.info(`[VersionedModelStore] Loaded current model from symlink: ${target}`)
     } catch (err) {
       console.warn('[VersionedModelStore] Failed to load current model:', err)
@@ -216,6 +245,59 @@ export class VersionedModelStore extends ModelStore {
       lastTrainingTriggeredBy: this.lastTrainingTriggeredBy,
       lastOrderId: this.lastOrderId,
       lastDecision: this.lastDecision,
+    }
+  }
+
+  private async _readPersistedTrainingMetadata(modelDir: string): Promise<PersistedTrainingMetadata | null> {
+    try {
+      const text = await fs.readFile(path.join(modelDir, TRAINING_METADATA_FILENAME), 'utf8')
+      return parsePersistedTrainingMetadataJson(text)
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? (e as NodeJS.ErrnoException).code : undefined
+      if (code === 'ENOENT') return null
+      console.warn('[VersionedModelStore] Failed to read training-metadata.json:', e)
+      return null
+    }
+  }
+
+  private _metadataForLoadedCheckpoint(
+    disk: PersistedTrainingMetadata | null,
+    neuralHeadKind: NeuralHeadKind,
+    inferredCheckpointIso: string
+  ): TrainingMetadata {
+    if (disk) {
+      return {
+        trainedAt: disk.trainedAt,
+        finalLoss: disk.finalLoss,
+        finalAccuracy: disk.finalAccuracy,
+        trainingSamples: disk.trainingSamples,
+        durationMs: disk.durationMs,
+        syncedAt: disk.syncedAt,
+        precisionAt5: disk.precisionAt5,
+        neuralHeadKind: disk.neuralHeadKind ?? neuralHeadKind,
+      }
+    }
+    return {
+      trainedAt: inferredCheckpointIso,
+      finalLoss: 0,
+      finalAccuracy: 0,
+      trainingSamples: 0,
+      durationMs: 0,
+      neuralHeadKind,
+    }
+  }
+
+  private async _loadNeuralHeadKindFromDisk(modelDir: string): Promise<NeuralHeadKind> {
+    const manifestPath = path.join(modelDir, NEURAL_HEAD_MANIFEST_FILENAME)
+    try {
+      const text = await fs.readFile(manifestPath, 'utf8')
+      return parseNeuralHeadManifestJson(text)
+    } catch (e) {
+      const code =
+        e && typeof e === 'object' && 'code' in e ? (e as NodeJS.ErrnoException).code : undefined
+      if (code === 'ENOENT') return 'bce_sigmoid'
+      throw e
     }
   }
 

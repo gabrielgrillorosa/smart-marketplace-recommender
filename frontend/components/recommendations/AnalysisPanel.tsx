@@ -7,6 +7,7 @@ import { useSelectedClientProfile } from '@/lib/hooks/useSelectedClientProfile';
 import { useAppStore } from '@/store';
 import { ClientProfileCard } from '@/components/client/ClientProfileCard';
 import { ModelStatusPanel } from '@/components/retrain/ModelStatusPanel';
+import { TrainingMetricsSummary } from '@/components/retrain/TrainingMetricsSummary';
 import { RecommendationColumn } from '@/components/analysis/RecommendationColumn';
 import { PostCheckoutOutcomeNotice } from '@/components/analysis/PostCheckoutOutcomeNotice';
 import { seededShuffle } from '@/lib/utils/shuffle';
@@ -347,7 +348,10 @@ export function AnalysisPanel() {
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {clientSection}
-        <ModelStatusPanel modelStatusHook={modelStatus} />
+        <div className="space-y-4">
+          <ModelStatusPanel modelStatusHook={modelStatus} />
+          <TrainingMetricsSummary status={modelStatus.modelStatus} defaultOpen />
+        </div>
       </div>
 
       <div className="border-t border-gray-200 pt-6 space-y-3">

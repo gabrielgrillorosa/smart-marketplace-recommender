@@ -64,7 +64,8 @@ const start = async () => {
       {
         mode: ENV.PROFILE_POOLING_MODE,
         halfLifeDays: ENV.PROFILE_POOLING_HALF_LIFE_DAYS,
-      }
+      },
+      ENV.NEURAL_LOSS_MODE
     )
 
     // Step 6: TrainingJobRegistry
@@ -167,7 +168,9 @@ const start = async () => {
     })
     await autoSeedService.runIfNeeded()
 
-    // Step 10: Start accepting traffic and schedule self-healing only after listen()
+    // Step 10: Start accepting traffic and schedule self-healing only after listen().
+    // When AUTO_HEAL_MODEL: always run StartupRecovery (gap-fill embeddings in Neo4j even if a model
+    // is already on disk; enqueue train only when no model is loaded).
     await listenAndScheduleRecovery(fastify, {
       autoHealModel: ENV.AUTO_HEAL_MODEL,
       embeddingService,

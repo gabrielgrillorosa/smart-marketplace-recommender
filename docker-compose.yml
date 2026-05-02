@@ -90,6 +90,8 @@ services:
       API_SERVICE_URL: http://api-service:8080
       NEURAL_WEIGHT: ${NEURAL_WEIGHT:-0.6}
       SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
+      # M21 T1 — bce = legacy sigmoid + BCE; pairwise = linear head + ranking loss (see ai-service/README.md)
+      NEURAL_LOSS_MODE: ${NEURAL_LOSS_MODE:-bce}
       RECENCY_RERANK_WEIGHT: ${RECENCY_RERANK_WEIGHT:-0}
       RECENCY_ANCHOR_COUNT: ${RECENCY_ANCHOR_COUNT:-1}
       PROFILE_POOLING_MODE: ${PROFILE_POOLING_MODE:-mean}

@@ -180,6 +180,36 @@ export function buildTrainingDataset(
   return { inputVectors, labels }
 }
 
+/**
+ * M21 — Builds a **pairwise** batch `[2P, D]` from a BCE dataset produced by `buildTrainingDataset`
+ * when `useClassWeight !== false`: each positive row is immediately followed by its sampled negatives.
+ * Rows `0..P-1` are positives; `P..2P-1` are the paired negatives (same order).
+ */
+export function bceLabelsToPairwiseRows(
+  inputVectors: number[][],
+  labels: number[]
+): { rows: number[][]; pairCount: number } {
+  const positives: number[][] = []
+  const negatives: number[][] = []
+  let i = 0
+  while (i < labels.length) {
+    if (labels[i] !== 1) {
+      i++
+      continue
+    }
+    const pos = inputVectors[i]!
+    i++
+    while (i < labels.length && labels[i] === 0) {
+      positives.push(pos)
+      negatives.push(inputVectors[i]!)
+      i++
+    }
+  }
+  const pairCount = positives.length
+  if (pairCount === 0) return { rows: [], pairCount: 0 }
+  return { rows: [...positives, ...negatives], pairCount }
+}
+
 function seededSample<T>(arr: T[], n: number, seed: number): T[] {
   if (n >= arr.length) return [...arr]
   const result: T[] = []

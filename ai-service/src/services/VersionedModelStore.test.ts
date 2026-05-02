@@ -11,6 +11,7 @@ const makeResult = (overrides: Partial<TrainingResult> = {}): TrainingResult => 
   durationMs: 1000,
   syncedAt: new Date().toISOString(),
   precisionAt5: 0.6,
+  neuralHeadKind: 'bce_sigmoid',
   ...overrides,
 })
 

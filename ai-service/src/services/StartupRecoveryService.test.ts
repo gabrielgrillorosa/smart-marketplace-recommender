@@ -122,15 +122,29 @@ describe('StartupRecoveryService', () => {
     await runPromise
   })
 
-  it('skips recovery with non-blocking state when model is already present', async () => {
-    const deps = makeDeps({ modelPresent: true })
+  it('when model is already present: checks Neo4j for missing embeddings; skips train if none missing', async () => {
+    const deps = makeDeps({ modelPresent: true, missingEmbeddingsCount: 0 })
 
     await deps.service.scheduleRecovery()
 
     expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present' })
     expect(deps.service.isBlockingReadiness()).toBe(false)
-    expect(deps.neo4jRepository.getProductsWithoutEmbedding).not.toHaveBeenCalled()
+    expect(deps.neo4jRepository.getProductsWithoutEmbedding).toHaveBeenCalled()
+    expect(deps.embeddingService.generateEmbeddings).not.toHaveBeenCalled()
     expect(deps.trainingJobRegistry.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('when model is already present: fills missing embeddings then skips retrain', async () => {
+    const deps = makeDeps({ modelPresent: true, missingEmbeddingsCount: 3 })
+
+    await deps.service.scheduleRecovery()
+
+    expect(deps.neo4jRepository.getProductsWithoutEmbedding).toHaveBeenCalled()
+    expect(deps.embeddingService.generateEmbeddings).toHaveBeenCalledOnce()
+    expect(deps.trainingJobRegistry.enqueue).not.toHaveBeenCalled()
+    expect(deps.trainingJobRegistry.waitFor).not.toHaveBeenCalled()
+    expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present' })
+    expect(deps.service.isBlockingReadiness()).toBe(false)
   })
 
   it('runs embedding generation when Neo4j has products without embedding', async () => {

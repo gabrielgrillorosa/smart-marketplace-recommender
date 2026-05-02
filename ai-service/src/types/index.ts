@@ -37,6 +37,12 @@ export interface RAGResponse {
 
 // M4 — Neural Recommendation Model types
 
+/** M21 T1 — training-time loss branch (`NEURAL_LOSS_MODE`). */
+export type NeuralLossMode = 'bce' | 'pairwise'
+
+/** M21 T1 / ADR-071 — persisted neural output contract for inference + eval. */
+export type NeuralHeadKind = 'bce_sigmoid' | 'ranking_linear'
+
 export type ModelStatus = 'untrained' | 'training' | 'trained'
 export type TrainingTrigger = 'checkout' | 'manual'
 export type LastTrainingResult = 'promoted' | 'rejected' | 'failed'
@@ -67,6 +73,8 @@ export interface TrainingStatus {
   lastTrainingTriggeredBy?: TrainingTrigger | null
   lastOrderId?: string | null
   lastDecision?: LastDecision | null
+  /** M21 — active inference head for the loaded model (`neural-head.json` or legacy default). */
+  neuralHeadKind?: NeuralHeadKind
 }
 
 export interface TrainingMetadata {
@@ -77,6 +85,8 @@ export interface TrainingMetadata {
   durationMs: number
   syncedAt?: string
   precisionAt5?: number
+  /** M21 — absent implies legacy `bce_sigmoid` (sigmoid last layer). */
+  neuralHeadKind?: NeuralHeadKind
 }
 
 export interface TrainingResult {
@@ -88,6 +98,7 @@ export interface TrainingResult {
   durationMs: number
   syncedAt: string
   precisionAt5: number
+  neuralHeadKind: NeuralHeadKind
 }
 
 export interface ClientProfile {

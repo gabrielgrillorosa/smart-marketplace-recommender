@@ -1,18 +1,32 @@
 import * as cron from 'node-cron'
 import { TrainingJobRegistry } from './TrainingJobRegistry.js'
 
+export type CronSchedulerOptions = string | { enabled?: boolean; schedule?: string }
+
 export class CronScheduler {
   private task: cron.ScheduledTask | null = null
   private readonly schedule: string
+  private readonly cronDisabled: boolean
 
   constructor(
     private readonly registry: TrainingJobRegistry,
-    schedule: string = '0 2 * * *',
+    arg: CronSchedulerOptions = '0 2 * * *'
   ) {
-    this.schedule = schedule
+    if (typeof arg === 'object' && arg !== null) {
+      this.cronDisabled = arg.enabled === false
+      this.schedule = arg.schedule ?? '0 2 * * *'
+    } else {
+      this.cronDisabled = false
+      this.schedule = arg
+    }
   }
 
   start(): void {
+    if (this.cronDisabled) {
+      console.info('[CronScheduler] Daily training cron disabled (ENABLE_DAILY_TRAIN=false)')
+      return
+    }
+
     this.task = cron.schedule(this.schedule, () => {
       setImmediate(() => {
         try {

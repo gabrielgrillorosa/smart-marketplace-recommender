@@ -134,12 +134,12 @@ The system is ready when `docker compose ps` shows all services as `healthy`.
 
 **The system is fully self-sufficient on any clean startup:**
 - On first boot (empty volumes), `ai-service` automatically seeds PostgreSQL and Neo4j, then generates embeddings and trains the model — no manual seed command required.
-- On subsequent boots (volumes present), seeding is skipped and the existing model is reloaded in seconds.
+- On subsequent boots (volumes present), seeding is skipped and the existing model is reloaded in seconds. When `AUTO_HEAL_MODEL=true`, **StartupRecovery still runs after `listen()`**: it fills **any missing Neo4j product embeddings** even if a model file is already on disk, then **skips retrain** if that model loaded successfully — preventing “model volume + empty embedding graph” drift.
 
 ```bash
 # Track cold-start progress
 docker compose logs -f ai-service
-# Look for: [AutoSeed] complete → generateEmbeddings → training complete → /ready = 200
+# Look for: [AutoSeed] complete → [StartupRecovery] Filling N product(s) missing embeddings (optional) → training or “skipped retrain” → /ready = 200
 ```
 
 ```bash
@@ -169,15 +169,17 @@ flowchart TD
     SEED_CHECK -->|"Yes — cold start"| AUTOSEED["🌱 AutoSeedService.runIfNeeded()\nPostgreSQL + Neo4j seeded\n~5s for 52 products"]
     SEED_CHECK -->|"No — data present"| LOAD["📂 loadCurrent()"]
     AUTOSEED --> LOAD
-    LOAD --> HAS_MODEL{"Model loaded?"}
-    HAS_MODEL -->|Yes| READY_OK["✅ /ready = 200"]
-    HAS_MODEL -->|No| LISTEN["🌐 fastify.listen()"]
+    LOAD --> LISTEN["🌐 fastify.listen()"]
     LISTEN --> FLAG{"AUTO_HEAL_MODEL=true?"}
-    FLAG -->|No| UNREADY["⏸️ keep /ready = 503\n(no recovery in tests)"]
-    FLAG -->|Yes| MISS["🔎 check missing embeddings"]
-    MISS -->|Missing| GEN["🧠 generateEmbeddings()"]
-    MISS -->|None missing| PROBE["📊 probe training data\n(Cache-Control: no-cache →\nbypasses api-service cache)"]
-    GEN --> PROBE
+    FLAG -->|No| HEAL_OFF["⏸️ StartupRecovery not scheduled\n/ready = embedReady ∧ modelPresent\n(operator handles cold path manually)"]
+    FLAG -->|Yes| MISS["🔎 Neo4j: products\nwithout embedding?"]
+    MISS -->|Some missing| GEN["🧠 generateEmbeddings()\nblocks /ready during run"]
+    MISS -->|None missing| GATE["➡️"]
+    GEN --> GATE
+    GATE --> HAS_MODEL{"Model already loaded\nfrom disk?"}
+    HAS_MODEL -->|Yes| SKIP_TRAIN["✅ Skip probe + retrain\nembedding gap-fill only"]
+    HAS_MODEL -->|No| PROBE["📊 probe training data\n(Cache-Control: no-cache →\nbypasses api-service cache)"]
+    SKIP_TRAIN --> READY_OK["✅ /ready = 200\nwhen embedding warm +\nrecovery not blocking"]
     PROBE --> DATA{"Trainable data available?"}
     DATA -->|No| BLOCKED["⚠️ blocked/no-training-data\n/health=200 /ready=503"]
     DATA -->|Yes| JOB["⚙️ reuse active job or enqueue"]
@@ -193,11 +195,11 @@ flowchart TD
     classDef warning fill:#FFD1A9,stroke:#333,stroke-width:2px,color:#5A2D00
     classDef failure fill:#FFB6C1,stroke:#333,stroke-width:2px,color:#5A0015
 
-    class BOOT,LOAD_EMB,LOAD,LISTEN,MISS,GEN,PROBE,JOB,WAIT process
+    class BOOT,LOAD_EMB,LOAD,LISTEN,GEN,GATE,PROBE,JOB,WAIT,SKIP_TRAIN process
     class AUTOSEED seed
-    class SEED_CHECK,HAS_MODEL,FLAG,DATA,MODEL_OK decision
+    class SEED_CHECK,FLAG,DATA,HAS_MODEL,MODEL_OK decision
     class READY_OK success
-    class UNREADY,BLOCKED warning
+    class HEAL_OFF,BLOCKED warning
     class FAIL failure
 ```
 
@@ -530,6 +532,8 @@ Successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` retur
 
 See [`.env.example`](.env.example): **`RECENCY_RERANK_WEIGHT`**, **`RECENCY_ANCHOR_COUNT`**, **`PROFILE_POOLING_MODE`**, **`PROFILE_POOLING_HALF_LIFE_DAYS`**.
 
+**M21 (ai-service):** optional **`NEURAL_LOSS_MODE`** (`bce` default, `pairwise` for ranking-style training). Training mode is read at **service startup**; **inference** uses the **`neural-head.json`** sidecar next to the saved model (see [`ai-service/README.md`](ai-service/README.md) — diagram and test checklist).
+
 ---
 
 ## RAG Pipeline
@@ -771,7 +775,7 @@ flowchart TD
 ```
 
 - **Promotion gate:** A new model only becomes `current` if its `precisionAt5` is ≥ the previous model's. Regressions are saved to history but never deployed.
-- **Startup recovery (M12):** after startup, if model is missing and `AUTO_HEAL_MODEL=true`, `StartupRecoveryService` runs in background, generates only missing embeddings, probes trainable data, and reuses or enqueues training via `TrainingJobRegistry.waitFor()`.
+- **Startup recovery (M12):** after `listen()`, whenever `AUTO_HEAL_MODEL=true`, `StartupRecoveryService` runs in the background: it **always** checks Neo4j for products **without** `embedding` and calls `generateEmbeddings` if needed (even when a model is already on disk — fixes mixed-volume drift). **Retrain** (probe → `TrainingJobRegistry.enqueue` / `waitFor`) runs **only** when no model was loaded from `loadCurrent()`.
 - **Readiness contract:** `/health` stays liveness-only (`200`), while `/ready` is `200` only when `embeddingService.isReady && modelStore.getModel() !== null && !startupRecoveryService.isBlockingReadiness()`.
 - **Blocked semantics:** if seed/training data is missing, service remains alive with `/ready=503` and explicit blocked reason in logs (no crash, no tight retry loop).
 - **Docker persistence:** The `ai-model-data` volume preserves trained models across container restarts and `docker compose down`.
@@ -991,6 +995,8 @@ graph TB
 Full OpenAPI documentation: `http://localhost:8080/swagger-ui.html`
 
 ### ai-service (:3001)
+
+Training can use **`NEURAL_LOSS_MODE=pairwise`** (linear head + pairwise loss); default **`bce`** matches legacy BCE + sigmoid. After save, **`neural-head.json`** drives how raw neural outputs map to hybrid scores on **`/recommend`**. Details: [`ai-service/README.md`](ai-service/README.md).
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildTrainingDataset, type ClientDTO, type ProductDTO, type TrainingDatasetOptions } from './training-utils.js'
+import { buildTrainingDataset, bceLabelsToPairwiseRows, type ClientDTO, type ProductDTO, type TrainingDatasetOptions } from './training-utils.js'
 import type { PurchaseTemporalIndex } from './training-temporal-map.js'
 
 const defaultPooling = { mode: 'mean' as const, halfLifeDays: 30 }
@@ -501,5 +501,34 @@ describe('buildTrainingDataset', () => {
 
     expect(result.inputVectors).toHaveLength(0)
     expect(result.labels).toHaveLength(0)
+  })
+})
+
+describe('bceLabelsToPairwiseRows (M21 pairwise)', () => {
+  it('stacks positives then negatives with stable pair count (seed=42)', () => {
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients = [defaultClients[0]]
+
+    const { inputVectors, labels } = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        ...defaultOptions,
+        negativeSamplingRatio: 4,
+        seed: 42,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
+
+    const { rows, pairCount } = bceLabelsToPairwiseRows(inputVectors, labels)
+    expect(pairCount).toBeGreaterThan(0)
+    expect(rows).toHaveLength(pairCount * 2)
+    const dim = inputVectors[0]?.length ?? 0
+    expect(rows[0]?.length).toBe(dim)
+    expect(rows[pairCount]?.length).toBe(dim)
   })
 })
