@@ -16,12 +16,28 @@ export class EmbeddingService {
   constructor(private readonly modelName: string) {}
 
   async init(): Promise<void> {
-    this.embeddings = new HuggingFaceTransformersEmbeddings({
-      model: this.modelName,
-    })
-    // warm-up: triggers model download if not cached
-    await this.embeddings.embedQuery('')
-    this.modelReady = true
+    const delaysMs = [2000, 8000, 20000]
+    let lastErr: unknown
+    for (let attempt = 0; attempt <= delaysMs.length; attempt++) {
+      try {
+        this.embeddings = new HuggingFaceTransformersEmbeddings({
+          model: this.modelName,
+        })
+        await this.embeddings.embedQuery('')
+        this.modelReady = true
+        return
+      } catch (err) {
+        lastErr = err
+        const wait = delaysMs[attempt]
+        if (wait === undefined) break
+        console.warn(
+          `[EmbeddingService] Warm-up attempt ${attempt + 1} failed; retry in ${wait}ms:`,
+          err instanceof Error ? err.message : err
+        )
+        await new Promise((r) => setTimeout(r, wait))
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
   }
 
   get isReady(): boolean {

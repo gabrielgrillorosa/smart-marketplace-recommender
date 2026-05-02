@@ -1,3 +1,6 @@
+import { parseRecencyAnchorCount, parseRecencyRerankWeight } from './recencyRerankEnv.js'
+import { parseProfilePoolingHalfLifeDays, parseProfilePoolingMode } from './profilePoolingEnv.js'
+
 const missingVars: string[] = []
 
 function requireEnv(name: string): string {
@@ -52,6 +55,33 @@ function parseBooleanFlag(rawValue: string | undefined, varName: string, default
 const AUTO_HEAL_MODEL = parseBooleanFlag(process.env.AUTO_HEAL_MODEL, 'AUTO_HEAL_MODEL', true)
 const AUTO_SEED_ON_BOOT = parseBooleanFlag(process.env.AUTO_SEED_ON_BOOT, 'AUTO_SEED_ON_BOOT', true)
 
+/** M16 — suppression window for confirmed purchases (Neo4j BOUGHT.order_date, non-demo). */
+function parseRecentPurchaseWindowDays(raw: string | undefined): number {
+  const n = parseInt(raw ?? '7', 10)
+  if (!Number.isFinite(n) || n < 1) {
+    console.warn('[ai-service] RECENT_PURCHASE_WINDOW_DAYS invalid or < 1 — using default 7')
+    return 7
+  }
+  return n
+}
+
+const RECENT_PURCHASE_WINDOW_DAYS = parseRecentPurchaseWindowDays(process.env.RECENT_PURCHASE_WINDOW_DAYS)
+console.info(`[ai-service] RECENT_PURCHASE_WINDOW_DAYS=${RECENT_PURCHASE_WINDOW_DAYS}`)
+
+const RECENCY_RERANK_WEIGHT = parseRecencyRerankWeight(process.env.RECENCY_RERANK_WEIGHT)
+const RECENCY_ANCHOR_COUNT = parseRecencyAnchorCount(process.env.RECENCY_ANCHOR_COUNT)
+console.info(
+  `[ai-service] Recency re-rank: RECENCY_RERANK_WEIGHT=${RECENCY_RERANK_WEIGHT}, RECENCY_ANCHOR_COUNT=${RECENCY_ANCHOR_COUNT}`
+)
+
+const PROFILE_POOLING_MODE = parseProfilePoolingMode(process.env.PROFILE_POOLING_MODE)
+const PROFILE_POOLING_HALF_LIFE_DAYS = parseProfilePoolingHalfLifeDays(
+  process.env.PROFILE_POOLING_HALF_LIFE_DAYS
+)
+console.info(
+  `[ai-service] Profile pooling: PROFILE_POOLING_MODE=${PROFILE_POOLING_MODE}, PROFILE_POOLING_HALF_LIFE_DAYS=${PROFILE_POOLING_HALF_LIFE_DAYS}`
+)
+
 const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost'
 const POSTGRES_PORT = parseInt(process.env.POSTGRES_PORT ?? '5432', 10)
 const POSTGRES_DB = process.env.POSTGRES_DB ?? 'marketplace'
@@ -78,4 +108,9 @@ export const ENV = Object.freeze({
   POSTGRES_USER,
   POSTGRES_PASSWORD,
   ADMIN_API_KEY: process.env.ADMIN_API_KEY as string | undefined,
+  RECENT_PURCHASE_WINDOW_DAYS,
+  RECENCY_RERANK_WEIGHT,
+  RECENCY_ANCHOR_COUNT,
+  PROFILE_POOLING_MODE,
+  PROFILE_POOLING_HALF_LIFE_DAYS,
 })

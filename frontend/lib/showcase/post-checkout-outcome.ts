@@ -2,9 +2,36 @@ import type { ModelPanelState } from '@/lib/hooks/useModelStatus';
 import type { ModelStatusResponse } from '@/lib/types';
 
 export type PostCheckoutOutcomeNotice =
-  | { kind: 'rejected'; title: string; description: string }
-  | { kind: 'failed'; title: string; description: string }
-  | { kind: 'unknown'; title: string; description: string };
+  | {
+      kind: 'rejected';
+      title: string;
+      description: string;
+      attributionMode?: 'model' | 'filters' | 'both';
+      modelSection?: string;
+      filterSection?: string;
+    }
+  | {
+      kind: 'failed';
+      title: string;
+      description: string;
+      attributionMode?: 'model' | 'filters' | 'both';
+      modelSection?: string;
+      filterSection?: string;
+    }
+  | {
+      kind: 'unknown';
+      title: string;
+      description: string;
+      attributionMode?: 'model' | 'filters' | 'both';
+      modelSection?: string;
+      filterSection?: string;
+    };
+
+const FILTER_COPY =
+  'Compras recentes, país e ausência de embedding são filtros de elegibilidade no catálogo — não confundir com rejeição do modelo neural.';
+
+const MODEL_COPY =
+  'Movimentos no ranking após treino vêm da combinação neural + semântica já adotada; não há boost manual por categoria ou recência no score final.';
 
 function describeRejectedOutcome(
   modelStatus: ModelStatusResponse | null
@@ -18,6 +45,9 @@ function describeRejectedOutcome(
     kind: 'rejected',
     title: 'Modelo atual mantido após o checkout',
     description,
+    attributionMode: 'both',
+    modelSection: MODEL_COPY,
+    filterSection: FILTER_COPY,
   };
 }
 
@@ -27,6 +57,9 @@ function describeFailedOutcome(): PostCheckoutOutcomeNotice {
     title: 'Nenhum novo snapshot pós-checkout aplicado',
     description:
       'O retreinamento pós-checkout falhou; nenhum novo snapshot foi promovido e Pos-Efetivar continua exibindo as recomendações do modelo anterior.',
+    attributionMode: 'both',
+    modelSection: MODEL_COPY,
+    filterSection: FILTER_COPY,
   };
 }
 
@@ -36,6 +69,9 @@ function describeUnknownOutcome(): PostCheckoutOutcomeNotice {
     title: 'Resultado do retreinamento ainda não confirmado',
     description:
       'A captura pós-checkout ainda não foi confirmada dentro do tempo esperado. Use o refresh manual para reconsultar o status sem assumir sucesso ou falha.',
+    attributionMode: 'both',
+    modelSection: MODEL_COPY,
+    filterSection: FILTER_COPY,
   };
 }
 

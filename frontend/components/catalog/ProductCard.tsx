@@ -5,6 +5,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { CategoryIcon } from './CategoryIcon';
 import { ScoreBadge, type ScoreBadgeProps } from './ScoreBadge';
+import { EligibilityBadge } from './EligibilityBadge';
+import type { EligibilityBadge as EligibilityBadgeModel } from '@/lib/catalog/eligibility';
 
 const FLAG_EMOJI: Record<string, string> = {
   BR: '🇧🇷',
@@ -18,6 +20,10 @@ interface ProductCardProps {
   product: Product;
   onClick?: () => void;
   scoreBadge?: ScoreBadgeProps;
+  /** M16 — when set, score badge must stay off (mutually exclusive). */
+  eligibilityBadge?: EligibilityBadgeModel | null;
+  /** M16 — ranking mode ineligible styling (badge area only). */
+  ineligibleRanking?: boolean;
   isInCart?: boolean;
   isCartActionLoading?: boolean;
   onAddToCart?: () => void;
@@ -30,6 +36,8 @@ export function ProductCard({
   product,
   onClick,
   scoreBadge,
+  eligibilityBadge,
+  ineligibleRanking,
   isInCart,
   isCartActionLoading,
   onAddToCart,
@@ -37,7 +45,11 @@ export function ProductCard({
   showCartAction,
   cartActionDisabledReason,
 }: ProductCardProps) {
-  const hasTopBadge = Boolean(scoreBadge) || product.similarityScore !== undefined || isInCart;
+  const hasTopBadge =
+    Boolean(scoreBadge) ||
+    Boolean(eligibilityBadge) ||
+    product.similarityScore !== undefined ||
+    isInCart;
   const disabledReasonId = cartActionDisabledReason ? `catalog-add-cart-reason-${product.id}` : undefined;
   const disabledReasonClass = cartActionDisabledReason?.includes('Indisponível')
     ? 'text-amber-700'
@@ -46,6 +58,8 @@ export function ProductCard({
   return (
     <Card
       data-testid={`catalog-product-card-${product.id}`}
+      data-ineligible={ineligibleRanking ? 'true' : undefined}
+      aria-label={eligibilityBadge ? `${product.name} — ${eligibilityBadge.label}` : undefined}
       className="cursor-pointer transition-shadow hover:shadow-md"
       onClick={onClick}
     >
@@ -55,7 +69,16 @@ export function ProductCard({
             <CategoryIcon category={product.category} />
           </span>
           {hasTopBadge && (
-            <div className="ml-auto flex flex-col items-end gap-1">
+            <div
+              className={`ml-auto flex flex-col items-end gap-1 ${
+                ineligibleRanking && eligibilityBadge
+                  ? 'motion-safe:transition-opacity motion-safe:duration-200 motion-safe:ease-out opacity-60 ring-1 ring-amber-200 rounded-md p-1'
+                  : ''
+              }`}
+            >
+              {eligibilityBadge ? (
+                <EligibilityBadge badge={eligibilityBadge} />
+              ) : null}
               {scoreBadge && (
                 <span className="group" data-testid={`catalog-score-${product.id}`}>
                   <ScoreBadge {...scoreBadge} />

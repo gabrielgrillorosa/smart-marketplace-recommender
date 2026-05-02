@@ -13,7 +13,6 @@ import { TrainingJobRegistry } from './services/TrainingJobRegistry.js'
 import { CronScheduler } from './services/CronScheduler.js'
 import { StartupRecoveryService } from './services/StartupRecoveryService.js'
 import { RecommendationService } from './services/RecommendationService.js'
-import { DemoBuyService } from './services/DemoBuyService.js'
 import { AutoSeedService } from './services/AutoSeedService.js'
 import { embeddingsRoutes } from './routes/embeddings.js'
 import { searchRoutes } from './routes/search.js'
@@ -21,7 +20,6 @@ import { ragRoutes } from './routes/rag.js'
 import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
-import { demoBuyRoutes } from './routes/demoBuyRoutes.js'
 import { ordersRoutes } from './routes/orders.js'
 import { listenAndScheduleRecovery, registerStartupProbes } from './startup/bootstrap.js'
 
@@ -63,6 +61,10 @@ const start = async () => {
       ENV.API_SERVICE_URL,
       ENV.NEURAL_WEIGHT,
       ENV.SEMANTIC_WEIGHT,
+      {
+        mode: ENV.PROFILE_POOLING_MODE,
+        halfLifeDays: ENV.PROFILE_POOLING_HALF_LIFE_DAYS,
+      }
     )
 
     // Step 6: TrainingJobRegistry
@@ -89,10 +91,13 @@ const start = async () => {
       repo,
       ENV.NEURAL_WEIGHT,
       ENV.SEMANTIC_WEIGHT,
+      ENV.RECENT_PURCHASE_WINDOW_DAYS,
+      ENV.RECENCY_RERANK_WEIGHT,
+      ENV.RECENCY_ANCHOR_COUNT,
+      ENV.PROFILE_POOLING_MODE,
+      ENV.PROFILE_POOLING_HALF_LIFE_DAYS,
       fastify.log,
     )
-
-    const demoBuyService = new DemoBuyService(repo, recommendationService)
 
     const searchService = new SearchService(embeddingService, repo)
     const ragService = new RAGService(embeddingService, repo, ENV.OPENROUTER_API_KEY, ENV.LLM_MODEL, ENV.OPENROUTER_BASE_URL)
@@ -142,11 +147,6 @@ const start = async () => {
       prefix: '/api/v1',
       repo,
       registry: trainingJobRegistry,
-    })
-
-    await fastify.register(demoBuyRoutes, {
-      prefix: '/api/v1',
-      demoBuyService,
     })
 
     // Step 9.5: Auto-seed PG + Neo4j on cold start (idempotent — skips when data already present).

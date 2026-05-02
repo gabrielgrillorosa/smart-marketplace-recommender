@@ -10,6 +10,7 @@
     "seed": "ts-node src/seed/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "benchmark:neural-arch": "npm run build && node dist/scripts/neural-arch-benchmark-cli.js",
     "lint": "eslint 'src/**/*.ts'"
   },
   "dependencies": {

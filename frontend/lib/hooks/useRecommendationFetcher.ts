@@ -2,14 +2,8 @@ import { useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/store';
 import { apiFetch } from '@/lib/fetch-wrapper';
-import type { RecommendationResult } from '@/lib/types';
+import { adaptRecommendations } from '@/lib/adapters/recommend';
 import { buildCoverageMeta, type RankingWindow } from '@/lib/showcase/ranking-window';
-
-interface RecommendResponse {
-  recommendations?: RecommendationResult[];
-  results?: RecommendationResult[];
-  isFallback?: boolean;
-}
 
 export function useRecommendationFetcher() {
   const loadingRef = useRef(false);
@@ -38,21 +32,22 @@ export function useRecommendationFetcher() {
     setLoading(true);
 
     try {
-      const data = await apiFetch<RecommendResponse>('/api/proxy/recommend', {
+      const data = await apiFetch<unknown>('/api/proxy/recommend', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clientId, limit: options.window.requestedLimit }),
       });
 
-      const recs = data.recommendations ?? data.results ?? [];
+      const { results: recs, isFallback, rankingConfig } = adaptRecommendations(data);
       setRecommendations(
         recs,
-        data.isFallback ?? false,
+        isFallback,
         buildCoverageMeta({
           window: options.window,
           requestKey: options.requestKey,
           receivedCount: recs.length,
-        })
+        }),
+        rankingConfig ?? null
       );
       setOrdered(true);
 

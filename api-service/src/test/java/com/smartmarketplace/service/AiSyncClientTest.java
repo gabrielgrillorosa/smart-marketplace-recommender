@@ -64,11 +64,13 @@ class AiSyncClientTest {
             UUID clientId = UUID.randomUUID();
             List<UUID> productIds = List.of(UUID.randomUUID(), UUID.randomUUID());
 
-            client.notifyCheckoutCompleted(orderId, clientId, productIds);
+            LocalDateTime orderDate = LocalDateTime.of(2025, 3, 10, 14, 30, 0);
+            client.notifyCheckoutCompleted(orderId, clientId, productIds, orderDate);
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(pathRef.get()).isEqualTo("/api/v1/orders/" + orderId + "/sync-and-train");
             assertThat(bodyRef.get()).contains("\"clientId\":\"" + clientId + "\"");
+            assertThat(bodyRef.get()).contains("\"orderDate\":\"2025-03-10T14:30:00\"");
             assertThat(bodyRef.get()).contains(productIds.get(0).toString());
             assertThat(bodyRef.get()).contains(productIds.get(1).toString());
         } finally {

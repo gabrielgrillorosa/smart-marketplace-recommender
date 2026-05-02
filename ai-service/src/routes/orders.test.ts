@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../tests/helpers/buildApp.js'
 import { Neo4jUnavailableError } from '../repositories/Neo4jRepository.js'
 
+const sampleOrderDate = '2024-01-15T12:00:00.000Z'
+const sampleOrderDateIso = new Date(sampleOrderDate).toISOString()
+
 describe('ordersRoutes', () => {
   it('POST /orders/:orderId/sync-and-train syncs BOUGHT edges and enqueues checkout training', async () => {
     const repo = {
@@ -30,13 +33,24 @@ describe('ordersRoutes', () => {
       payload: {
         clientId: 'client-001',
         productIds: ['prod-001', 'prod-002'],
+        orderDate: sampleOrderDate,
       },
     })
 
     expect(response.statusCode).toBe(202)
     expect(repo.syncBoughtRelationships).toHaveBeenCalledWith([
-      { clientId: 'client-001', productId: 'prod-001' },
-      { clientId: 'client-001', productId: 'prod-002' },
+      {
+        clientId: 'client-001',
+        productId: 'prod-001',
+        orderId: 'order-123',
+        orderDate: sampleOrderDateIso,
+      },
+      {
+        clientId: 'client-001',
+        productId: 'prod-002',
+        orderId: 'order-123',
+        orderDate: sampleOrderDateIso,
+      },
     ])
     expect(registry.enqueue).toHaveBeenCalledWith({
       triggeredBy: 'checkout',
@@ -72,12 +86,45 @@ describe('ordersRoutes', () => {
       payload: {
         clientId: 'client-001',
         productIds: [],
+        orderDate: sampleOrderDate,
       },
     })
 
     expect(response.statusCode).toBe(400)
     expect(repo.syncBoughtRelationships).not.toHaveBeenCalled()
     expect(registry.enqueue).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when orderDate is missing', async () => {
+    const repo = { syncBoughtRelationships: vi.fn() }
+    const registry = {
+      enqueue: vi.fn(),
+      getActiveJobId: vi.fn(),
+      getJob: vi.fn(),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: repo,
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      trainingJobRegistry: registry as never,
+      recommendationService: {},
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/orders/order-123/sync-and-train',
+      payload: {
+        clientId: 'client-001',
+        productIds: ['prod-001'],
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(repo.syncBoughtRelationships).not.toHaveBeenCalled()
   })
 
   it('returns 503 when Neo4j sync fails', async () => {
@@ -107,6 +154,7 @@ describe('ordersRoutes', () => {
       payload: {
         clientId: 'client-001',
         productIds: ['prod-001'],
+        orderDate: sampleOrderDate,
       },
     })
 
@@ -145,6 +193,7 @@ describe('ordersRoutes', () => {
       payload: {
         clientId: 'client-001',
         productIds: ['prod-001'],
+        orderDate: sampleOrderDate,
       },
     })
 

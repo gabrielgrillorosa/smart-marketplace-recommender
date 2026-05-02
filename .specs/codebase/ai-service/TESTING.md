@@ -29,7 +29,7 @@ const mockRepo = {
   getPurchasedProductIds: vi.fn(),
   // ...
 }
-const service = new RecommendationService(mockModelStore, mockRepo as any, 0.6, 0.4)
+const service = new RecommendationService(mockModelStore, mockRepo as any, 0.6, 0.4, 7, 0, 1)
 ```
 
 ## Coverage Matrix por camada

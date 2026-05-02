@@ -2,7 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-21-blue)](https://openjdk.org/projects/jdk/21/) [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.3-green)](https://spring.io/projects/spring-boot) [![Node.js](https://img.shields.io/badge/Node.js-22-brightgreen)](https://nodejs.org/) [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue)](https://www.typescriptlang.org/) [![TensorFlow.js](https://img.shields.io/badge/TensorFlow.js-4.x-orange)](https://www.tensorflow.org/js) [![Neo4j](https://img.shields.io/badge/Neo4j-5-lightblue)](https://neo4j.com/) [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
 
-A **production-grade hybrid AI recommendation system** for B2B marketplaces — combining a TensorFlow.js neural network with semantic embedding search and an LLM-based RAG pipeline. Fully Dockerized, zero-cost to run, and designed to demonstrate the complete machine learning lifecycle: dataset construction, training, inference, live demo buying, and visible retraining with before/after comparison.
+A **production-grade hybrid AI recommendation system** for B2B marketplaces — combining a TensorFlow.js neural network with semantic embedding search and an LLM-based RAG pipeline. Fully Dockerized, zero-cost to run, and designed to demonstrate the complete machine learning lifecycle: dataset construction, training, inference, cart-driven profile updates, and visible retraining with before/after comparison.
 
 ---
 
@@ -12,6 +12,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [System Architecture](#system-architecture)
 - [Quickstart](#quickstart)
 - [Neural Network Architecture](#neural-network-architecture)
+- [Neural architecture benchmark (CLI)](#neural-architecture-benchmark-cli)
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
 - [RAG Pipeline](#rag-pipeline)
@@ -273,6 +274,72 @@ This reduces recommendation latency from ~500ms–2s (serial) to ~20–50ms (bat
 ### Atomic Model Swap (ADR-006)
 
 `ModelStore` is the single source of truth for the trained model in memory. Training completes fully before `setModel()` is called — a single synchronous JavaScript reference assignment that is atomic in the Node.js event loop. In-flight `/recommend` requests hold the old model reference for their duration via closure; the next request picks up the new model. Zero-downtime model replacement with no mutex needed.
+
+---
+
+## Neural architecture benchmark (CLI)
+
+Offline script in **`ai-service`** to compare alternative **dense** heads (extra hidden layers / widths) against the **production baseline** (`Dense[64,L2] → Dropout → Dense[1]`, ADR-028) using the **same** training data pipeline as `ModelTrainer`: HTTP fetch from `api-service`, embeddings from Neo4j, `buildTrainingDataset()` with the same negative sampling and seeds.
+
+**What it does not do:** start the Fastify server, call `POST /model/train`, or overwrite the deployed model under `/tmp/model`. Each candidate architecture is trained in memory, evaluated, and disposed.
+
+### Prerequisites
+
+- **`api-service`** reachable (default local: `http://127.0.0.1:8080`).
+- **Neo4j** reachable with product embeddings (default local: `bolt://127.0.0.1:7687`; compose defaults often use user `neo4j` / password `password123` — match your `.env`).
+- Environment variables: **`API_SERVICE_URL`**, **`NEO4J_URI`**, **`NEO4J_USER`**, **`NEO4J_PASSWORD`**.
+
+### How to run
+
+From `smart-marketplace-recommender/ai-service`:
+
+```bash
+export API_SERVICE_URL=http://127.0.0.1:8080
+export NEO4J_URI=bolt://127.0.0.1:7687
+export NEO4J_USER=neo4j
+export NEO4J_PASSWORD=password123   # or value from your .env
+
+npm run benchmark:neural-arch
+```
+
+The npm script runs **`npm run build`** then **`node dist/scripts/neural-arch-benchmark-cli.js`** so Node resolves compiled `.js` imports correctly (running the `.ts` entry with `ts-node` alone can fail on `*.js` import paths).
+
+**Optional flags** (after `--`):
+
+| Flag | Description |
+|------|-------------|
+| `--out <path>` | Write the full JSON report to a file (parent directories are created). |
+| `--profiles <list>` | Comma-separated subset: `baseline`, `deep64_32`, `deep128_64`. Default: all three. |
+| `--val-fraction <n>` | Fraction in `(0,1)` for stratified train/validation split on labeled rows. Default: `0.2`. |
+
+Example with artifact file and two profiles only:
+
+```bash
+npm run benchmark:neural-arch -- --out ./.benchmarks/nn-arch.json --profiles baseline,deep128_64
+```
+
+### Architectures compared
+
+| Profile | Stack (before sigmoid) | Role |
+|---------|------------------------|------|
+| `baseline` | 64 → Dropout(0.2) → 1 | Current production head (`buildNeuralModel('baseline')` in `ModelTrainer`). |
+| `deep64_32` | 64 → Dropout → 32 → Dropout → 1 | One extra narrow hidden layer. |
+| `deep128_64` | 128 → Dropout(0.25) → 64 → Dropout → 1 | Wider + deeper (watch **params : samples** ratio vs ADR-028). |
+
+Implementation: `ai-service/src/ml/neuralModelFactory.ts`. Orchestration and metrics: `ai-service/src/benchmark/neuralArchBenchmark.ts` (`runNeuralArchBenchmark`). Entrypoint: `ai-service/src/scripts/neural-arch-benchmark-cli.ts`.
+
+### Report shape (JSON)
+
+Top-level fields include **`generatedAt`**, **`gitCommit`** (if `git rev-parse` works from `cwd` or `../..`), **`apiServiceUrl`**, **`dataCounts`** (clients / products / orders), **`hyperparams`** (epochs, batch size, class weights, val fraction), and **`runs`**: one object per profile.
+
+Per run, useful fields for decisions:
+
+- **`trainableParams`**, **`trainingSamples`**, **`paramSampleRatio`** — capacity vs dataset size (contrast with ADR-028).
+- **`finalValLoss`**, **`finalValAccuracy`**, **`trainValLossGap`** — training uses the same `classWeight` as production; **early stopping monitors `val_loss`** (unlike the HTTP trainer, which still keys off training loss).
+- **`valMetrics`**: **`aucRoc`**, **`aucPr`**, **`brier`**, **`accuracyAt05`** on the held-out stratified validation rows (binary `(client, product)` labels).
+- **`precisionAt5`**: same **ranking** protocol as training-time evaluation (temporal split on purchase list per client, top-5 among non-train products).
+
+**How to read results:** strong **`valMetrics`** but lower **`precisionAt5`** on deeper models often means the pointwise classifier improved while **list-wise ranking** that matters for `/recommend` did not — keep the baseline until an ADR records a deliberate switch and hybrid weights are revisited (see ADR-016).
 
 ---
 
@@ -664,11 +731,9 @@ const scores = tf.tidy(() => {
 })
 ```
 
-### Unified Neo4j Transaction for Demo Buy (ADR-021)
+### Profile vector and Neo4j reads (supersedes demo-buy ADR-021)
 
-`POST /demo-buy` must create the `BOUGHT` edge **and** read all embeddings for profile recalculation in one step. Using two separate sessions creates a timing gap where the new edge may not be visible to the subsequent read — a race condition.
-
-The solution: a single `session.executeWrite()` transaction that writes the edge and returns the embeddings in the same commit scope. The Neo4j driver provides automatic retry on deadlock.
+The product path uses **confirmed purchases** (and optionally **cart items**) to build the client profile vector; `RecommendationService` scores the catalog via a single internal path (`recommendFromVector`). The legacy **`POST /api/v1/demo-buy`** API and its Neo4j write helpers were **removed** from this codebase — any old `BOUGHT {is_demo: true}` edges are ignored by read queries (`coalesce(r.is_demo, false) = false`) until operators delete them; see `scripts/neo4j-delete-demo-bought-edges.cypher` and `.specs/project/STATE.md`.
 
 ### Neo4j Driver Singleton
 
@@ -755,7 +820,7 @@ TypeScript enforces that:
 
 Capture triggers:
 - `initial` → captured when recommendations first load after client selection
-- `demo` → captured after any `POST /demo-buy` (detected via `demoSlice` store subscription)
+- `demo` → captured when the cart / analysis flow updates the “with cart” snapshot (see frontend `analysisSlice`; no `demo-buy` HTTP call)
 - `retrained` → captured when `useRetrainJob.status === 'done'`
 
 ### FLIP Animation — Catalog Reorder (ADR-017)
@@ -767,16 +832,15 @@ When clicking "✨ Sort by AI", product cards animate to their new ranked positi
 
 Cards use only GPU-composited properties (`transform`, `opacity`) — zero layout thrashing during animation.
 
-### Live Demo Buy: Incremental Profile Update
+### Cart-driven profile: incremental recommendations
 
-Clicking "🛒 Demo Buy" on a product card:
+Adding items to the cart and refreshing recommendations:
 
-1. Calls `POST /api/v1/demo-buy` on `ai-service`
-2. The AI service executes a **unified Neo4j write+read transaction** (ADR-021): creates `(:Client)-[:BOUGHT {is_demo: true}]->(:Product)` and returns all purchased embeddings in the same commit
-3. Recalculates `clientProfileVector` via mean-pooling increment (~180–350ms total)
-4. Returns fresh recommendations with the updated profile
-5. Frontend animates the catalog reorder via FLIP
-6. "↩ Undo" calls `DELETE /api/v1/demo-buy` to remove `is_demo: true` edges and restore the original profile
+1. The app calls `POST /api/v1/recommend/from-cart` on `ai-service` with `clientId` and `productIds` (cart contents)
+2. The service loads **non-demo** purchase embeddings from Neo4j, merges **cart product** embeddings, mean-pools them into `clientProfileVector`, then runs the same scoring path as `POST /api/v1/recommend`
+3. Checkout persists real `BOUGHT` edges via the `api-service` → sync path (no `is_demo` flag on that flow)
+
+The old **demo-buy** HTTP surface was removed; optional cleanup of legacy `is_demo` edges is documented under **Ops** in `.specs/project/STATE.md`.
 
 ### Progress Bar — GPU-Composited (ADR-024)
 
@@ -851,6 +915,7 @@ Full OpenAPI documentation: `http://localhost:8080/swagger-ui.html`
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `/api/v1/recommend` | POST | — | Hybrid recommendation for a client |
+| `/api/v1/recommend/from-cart` | POST | — | Same scoring with profile = purchases + cart `productIds` |
 | `/api/v1/search/semantic` | POST | — | Semantic product search via vector similarity |
 | `/api/v1/rag/query` | POST | — | LLM-grounded natural language product query |
 | `/api/v1/model/train` | POST | `X-Admin-Key` | Trigger async neural model training → 202 + jobId |
@@ -858,8 +923,6 @@ Full OpenAPI documentation: `http://localhost:8080/swagger-ui.html`
 | `/api/v1/model/status` | GET | — | Model health, metrics, version history |
 | `/api/v1/embeddings/generate` | POST | `X-Admin-Key` | Generate embeddings for all products |
 | `/api/v1/embeddings/sync-product` | POST | — | Internal: sync single product to Neo4j + generate embedding |
-| `/api/v1/demo-buy` | POST | — | Create demo purchase edge + recalculate profile |
-| `/api/v1/demo-buy` | DELETE | — | Remove demo purchases + restore original profile |
 
 ### api-service (:8080)
 
@@ -902,6 +965,11 @@ curl -X POST http://localhost:3001/api/v1/model/train \
 # Poll training progress
 curl http://localhost:3001/api/v1/model/train/status/abc-123
 # → { "status": "running", "epoch": 15, "totalEpochs": 30, "loss": 0.18, "eta": "8s" }
+
+# Offline neural architecture benchmark (from repo: smart-marketplace-recommender/ai-service)
+# Requires API + Neo4j with embeddings; see "Neural architecture benchmark (CLI)" in TOC
+export API_SERVICE_URL=http://127.0.0.1:8080 NEO4J_URI=bolt://127.0.0.1:7687 NEO4J_USER=neo4j NEO4J_PASSWORD=password123
+npm run benchmark:neural-arch -- --out ./.benchmarks/nn-arch.json
 ```
 
 ---
@@ -988,8 +1056,8 @@ All architectural decisions are documented in `.specs/features/` with context, a
 | ADR-017 | UX Refactor | FLIP animation without flushSync — prevPositionsRef + two useLayoutEffect cycles |
 | ADR-018 | UX Refactor | RAG Drawer always-mounted — chat history survives open/close |
 | ADR-019 | UX Refactor | Zustand slices with domain hooks — replaces React Contexts |
-| ADR-021 | Demo Buy | Unified Neo4j write+read transaction — eliminates race condition |
-| ADR-022 | Demo Buy | Delete via path params for demo-buy undo |
+| ADR-021 | Demo Buy (historical) | Unified Neo4j write+read for demo-buy — **API removed**; pattern superseded by cart + `recommend/from-cart` |
+| ADR-022 | Demo Buy (historical) | DELETE path params — **API removed** |
 | ADR-023 | Deep Retrain | AnalysisPanel always-mounted — metrics survive tab navigation |
 | ADR-024 | Deep Retrain | Progress bar scaleX — GPU-composited, no layout thrashing |
 | ADR-025 | Deep Retrain | jobIdRef pattern — prevents stale closure in setInterval polling |

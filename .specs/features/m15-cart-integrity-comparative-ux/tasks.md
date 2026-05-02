@@ -7,7 +7,13 @@
 - `.specs/codebase/api-service/TESTING.md`
 - `.specs/codebase/frontend/TESTING.md`
 
-**Status**: Draft
+**Status**: Implemented — reconciliado em 2026-04-29
+
+## Execution Outcome
+
+- T1..T10 foram entregues entre `api-service` e `frontend`: `ProductAvailabilityPolicy`, bloqueio proativo por país, reconciliação frontend/backend, enriquecimento transitório do `ClientProfileCard` e copy final de `ModelStatusPanel` / `PostCheckoutOutcomeNotice`.
+- A evidência principal está em `ProductAvailabilityPolicyTest`, `CartApplicationServiceTest`, `CartControllerIT` e `frontend/e2e/tests/m15-cart-integrity-comparative-ux.spec.ts`.
+- Os checklists abaixo foram preservados como plano histórico de execução; o fechamento formal passou a ser rastreado por este status, pelo `spec.md` reconciliado e pelo `ROADMAP.md`.
 
 ---
 

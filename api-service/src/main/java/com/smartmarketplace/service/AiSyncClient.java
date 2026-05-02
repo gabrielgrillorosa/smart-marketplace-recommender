@@ -13,7 +13,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -64,8 +67,10 @@ public class AiSyncClient {
                 .start(runnable);
     }
 
-    public void notifyCheckoutCompleted(UUID orderId, UUID clientId, List<UUID> productIds) {
-        CheckoutSyncRequest payload = new CheckoutSyncRequest(clientId, productIds);
+    public void notifyCheckoutCompleted(UUID orderId, UUID clientId, List<UUID> productIds, LocalDateTime orderDate) {
+        Objects.requireNonNull(orderDate, "orderDate");
+        String orderDateIso = DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(orderDate);
+        CheckoutSyncRequest payload = new CheckoutSyncRequest(clientId, productIds, orderDateIso);
 
         Runnable runnable = () -> {
             try {
@@ -124,5 +129,5 @@ public class AiSyncClient {
                 .replace("\t", "\\t");
     }
 
-    private record CheckoutSyncRequest(UUID clientId, List<UUID> productIds) {}
+    private record CheckoutSyncRequest(UUID clientId, List<UUID> productIds, String orderDate) {}
 }

@@ -28,6 +28,18 @@ export function PostCheckoutOutcomeNotice({
         <div>
           <p className="text-sm font-semibold">{outcome.title}</p>
           <p className="mt-1 text-xs">{outcome.description}</p>
+          {outcome.filterSection ? (
+            <div className="mt-3 rounded-md border border-gray-200 bg-white/60 p-2 text-xs text-gray-800">
+              <p className="font-semibold text-gray-700">Filtros aplicados / elegibilidade</p>
+              <p className="mt-1">{outcome.filterSection}</p>
+            </div>
+          ) : null}
+          {outcome.modelSection ? (
+            <div className="mt-2 rounded-md border border-blue-100 bg-blue-50/80 p-2 text-xs text-blue-950">
+              <p className="font-semibold text-blue-800">O que mudou no modelo</p>
+              <p className="mt-1">{outcome.modelSection}</p>
+            </div>
+          ) : null}
         </div>
 
         {outcome.kind === 'unknown' && onRefresh ? (

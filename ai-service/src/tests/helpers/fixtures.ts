@@ -18,6 +18,9 @@ export const fixtureRecommendResponse = {
       neuralScore: 0.9,
       semanticScore: 0.75,
       matchReason: 'neural',
+      eligible: true,
+      eligibilityReason: 'eligible',
+      suppressionUntil: null,
     } as RecommendationResult,
     {
       id: 'prod-002',
@@ -29,6 +32,9 @@ export const fixtureRecommendResponse = {
       neuralScore: 0.6,
       semanticScore: 0.9,
       matchReason: 'semantic',
+      eligible: true,
+      eligibilityReason: 'eligible',
+      suppressionUntil: null,
     } as RecommendationResult,
   ],
 }

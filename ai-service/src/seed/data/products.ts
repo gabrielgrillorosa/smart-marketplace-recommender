@@ -13,8 +13,10 @@ const AMBEV = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 const NESTLE = 'b2c3d4e5-f6a7-8901-bcde-f01234567891';
 const UNILEVER = 'c3d4e5f6-a7b8-9012-cdef-012345678912';
 
+import { m16DensityProducts } from './m16DensityProducts.js';
+
+/** Core showcase SKUs + M16 density pack (~40 extra) — total length logged by `runSeed`. */
 export const products: Product[] = [
-  // ── Beverages (11) ─────────────────────────────────────────────────────────
   {
     id: '11111111-0001-4000-8000-000000000001',
     sku: 'BEV-001',
@@ -543,6 +545,7 @@ export const products: Product[] = [
     supplier_id: NESTLE,
     available_in: ['BR', 'MX'],
   },
+  ...(m16DensityProducts as Product[]),
 ];
 
 // Validate all descriptions are at least 30 chars (spec requirement M1-17)

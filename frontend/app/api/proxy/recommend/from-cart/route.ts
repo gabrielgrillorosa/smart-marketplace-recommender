@@ -18,8 +18,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(data, { status: response.status });
     }
 
-    const { results, isFallback } = adaptRecommendations(data);
-    return NextResponse.json({ results, isFallback }, { status: response.status });
+    const parsed = adaptRecommendations(data);
+    return NextResponse.json(
+      {
+        results: parsed.results,
+        isFallback: parsed.isFallback,
+        ...(parsed.rankingConfig ? { rankingConfig: parsed.rankingConfig } : {}),
+      },
+      { status: response.status }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upstream error';
     return NextResponse.json({ error: message }, { status: 502 });

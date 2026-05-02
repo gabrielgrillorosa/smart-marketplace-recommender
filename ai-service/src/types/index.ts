@@ -106,7 +106,34 @@ export interface CandidateProduct {
   embedding: number[]
 }
 
+/** Full country catalog row for M16 eligibility + vitrine (embedding optional). */
+export interface CatalogProductRow {
+  id: string
+  name: string
+  category: string
+  price: number
+  sku: string
+  embedding: number[] | null
+}
+
 export type MatchReason = 'neural' | 'semantic' | 'hybrid'
+
+export type EligibilityReasonCode =
+  | 'eligible'
+  | 'recently_purchased'
+  | 'no_embedding'
+  | 'in_cart'
+
+/** M17 ADR-063 — effective hybrid / recency weights for this response (single source of truth for UI). */
+export interface RankingConfig {
+  neuralWeight: number
+  semanticWeight: number
+  recencyRerankWeight: number
+  /** M17 P2 — profile pooling mode (`mean` | `exp`). */
+  profilePoolingMode?: 'mean' | 'exp'
+  /** M17 P2 — half-life in days when mode is `exp`. */
+  profilePoolingHalfLifeDays?: number
+}
 
 export interface RecommendationResult {
   id: string
@@ -114,10 +141,23 @@ export interface RecommendationResult {
   category: string
   price: number
   sku: string
-  finalScore: number
-  neuralScore: number
-  semanticScore: number
-  matchReason: MatchReason
+  finalScore: number | null
+  neuralScore: number | null
+  semanticScore: number | null
+  matchReason: MatchReason | null
+  /** M17 P1 — max cosine to recent-purchase anchor embeddings; present when `RECENCY_RERANK_WEIGHT` > 0. */
+  recencySimilarity?: number | null
+  /** M17 P1 — sort key for ranked block: `finalScore + weight * recencySimilarity`; present when recency re-rank is active. */
+  rankScore?: number | null
+  /** ADR-063 — `neuralWeight × neuralScore` for scored eligible rows. */
+  hybridNeuralTerm?: number
+  /** ADR-063 — `semanticWeight × semanticScore`. */
+  hybridSemanticTerm?: number
+  /** ADR-063 — `recencyRerankWeight × recencySimilarity`. */
+  recencyBoostTerm?: number
+  eligible: boolean
+  eligibilityReason: EligibilityReasonCode
+  suppressionUntil: string | null
 }
 
 // M7 — Production Readiness types

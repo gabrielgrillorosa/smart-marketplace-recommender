@@ -67,6 +67,9 @@ services:
     build:
       context: ./ai-service
       dockerfile: Dockerfile
+      # Must match runtime EMBEDDING_MODEL in .env — else the service may try to download a second model at start.
+      args:
+        EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
     image: smart-marketplace/ai-service:latest
     container_name: ai-service
     env_file:
@@ -87,12 +90,20 @@ services:
       API_SERVICE_URL: http://api-service:8080
       NEURAL_WEIGHT: ${NEURAL_WEIGHT:-0.6}
       SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
+      RECENCY_RERANK_WEIGHT: ${RECENCY_RERANK_WEIGHT:-0}
+      RECENCY_ANCHOR_COUNT: ${RECENCY_ANCHOR_COUNT:-1}
+      PROFILE_POOLING_MODE: ${PROFILE_POOLING_MODE:-mean}
+      PROFILE_POOLING_HALF_LIFE_DAYS: ${PROFILE_POOLING_HALF_LIFE_DAYS:-30}
       AUTO_SEED_ON_BOOT: ${AUTO_SEED_ON_BOOT:-true}
     ports:
       - "${AI_SERVICE_PORT:-3001}:3001"
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
       - ai-model-data:/tmp/model
-      - ai-hf-cache:/root/.cache/huggingface
+      # HF embeddings cache is baked into the image at build time (see ai-service/Dockerfile).
+      # A named volume here hid that cache and forced a runtime download (often fails with EHOSTUNREACH).
     depends_on:
       neo4j:
         condition: service_healthy
@@ -139,4 +150,3 @@ volumes:
   neo4j_data:
   neo4j_logs:
   ai-model-data:
-  ai-hf-cache:

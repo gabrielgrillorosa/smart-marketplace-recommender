@@ -32,13 +32,15 @@ export const useAppStore = create<CombinedStore>()(
       ...createCartSlice(set, get, api),
       setSelectedClient: (client) => {
         const prevClient = get().selectedClient;
-        set({ selectedClient: client });
         const prevId = prevClient?.id;
         const newId = client?.id;
-        if (prevId && prevId !== newId) {
-          get().clearRecommendations();
-          get().resetAnalysis();
-          get().clearCartStateForClient(prevId);
+        set({ selectedClient: client });
+        if (prevId !== newId) {
+          if (prevId && prevId !== newId) {
+            get().clearRecommendations();
+            get().resetAnalysis();
+            get().clearCartStateForClient(prevId);
+          }
         }
       },
     }),

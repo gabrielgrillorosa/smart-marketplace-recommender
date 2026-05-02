@@ -14,8 +14,12 @@ interface ScoreTooltipProps {
 }
 
 export function ScoreTooltip({ result, children }: ScoreTooltipProps) {
-  const neural = result.neuralScore !== undefined ? result.neuralScore.toFixed(2) : 'N/A';
-  const semantic = result.semanticScore !== undefined ? result.semanticScore.toFixed(2) : 'N/A';
+  const neural =
+    result.neuralScore !== undefined && result.neuralScore !== null ? result.neuralScore.toFixed(2) : 'N/A';
+  const semantic =
+    result.semanticScore !== undefined && result.semanticScore !== null
+      ? result.semanticScore.toFixed(2)
+      : 'N/A';
 
   return (
     <TooltipProvider>

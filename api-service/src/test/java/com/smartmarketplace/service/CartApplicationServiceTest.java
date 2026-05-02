@@ -19,6 +19,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -198,15 +199,16 @@ class CartApplicationServiceTest {
 
         when(clientRepository.existsById(clientId)).thenReturn(true);
         when(cartRepository.findByClientIdWithItems(clientId)).thenReturn(Optional.of(cart));
+        LocalDateTime orderPlacedAt = LocalDateTime.of(2025, 6, 1, 12, 0);
         when(orderApplicationService.createOrder(any())).thenReturn(
-                new OrderDTO(orderId, null, null, List.of(new OrderItemDTO(productId, "Any", 2, null)))
+                new OrderDTO(orderId, orderPlacedAt, null, List.of(new OrderItemDTO(productId, "Any", 2, null)))
         );
 
         var response = cartApplicationService.checkout(clientId);
 
         verify(orderApplicationService).createOrder(any());
         verify(cartRepository).delete(cart);
-        verify(aiSyncClient).notifyCheckoutCompleted(eq(orderId), eq(clientId), eq(List.of(productId)));
+        verify(aiSyncClient).notifyCheckoutCompleted(eq(orderId), eq(clientId), eq(List.of(productId)), eq(orderPlacedAt));
         assertThat(response.orderId()).isEqualTo(orderId);
         assertThat(response.expectedTrainingTriggered()).isTrue();
     }
@@ -231,7 +233,7 @@ class CartApplicationServiceTest {
                 .hasMessage("Product Organic Snack Bar is not available in country BR");
 
         verify(cartRepository, never()).delete(cart);
-        verify(aiSyncClient, never()).notifyCheckoutCompleted(any(), any(), any());
+        verify(aiSyncClient, never()).notifyCheckoutCompleted(any(), any(), any(), any());
     }
 
     private static Client buildClient(UUID clientId) {

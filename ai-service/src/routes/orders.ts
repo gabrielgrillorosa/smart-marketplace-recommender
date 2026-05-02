@@ -11,6 +11,15 @@ interface OrdersRoutesOptions extends FastifyPluginOptions {
 interface SyncAndTrainBody {
   clientId?: string
   productIds?: string[]
+  /** ISO-8601 instant or local datetime (required for checkout BOUGHT sync) */
+  orderDate?: string
+}
+
+function isValidOrderDateString(s: string): boolean {
+  const trimmed = s.trim()
+  if (!trimmed) return false
+  const ms = Date.parse(trimmed)
+  return !Number.isNaN(ms)
 }
 
 export async function ordersRoutes(
@@ -23,13 +32,16 @@ export async function ordersRoutes(
     '/orders/:orderId/sync-and-train',
     async (request, reply) => {
       const { orderId } = request.params
-      const { clientId, productIds } = request.body ?? {}
+      const { clientId, productIds, orderDate } = request.body ?? {}
 
       if (!orderId || orderId.trim() === '') {
         return reply.code(400).send({ error: 'orderId is required' })
       }
       if (!clientId || clientId.trim() === '') {
         return reply.code(400).send({ error: 'clientId is required' })
+      }
+      if (typeof orderDate !== 'string' || !isValidOrderDateString(orderDate)) {
+        return reply.code(400).send({ error: 'orderDate is required and must be a non-empty ISO-8601 datetime string' })
       }
       if (!Array.isArray(productIds) || productIds.length === 0) {
         return reply.code(400).send({ error: 'productIds must be a non-empty array of strings' })
@@ -38,8 +50,14 @@ export async function ordersRoutes(
         return reply.code(400).send({ error: 'productIds must be a non-empty array of strings' })
       }
 
+      const orderDateIso = new Date(orderDate.trim()).toISOString()
       const uniqueProductIds = Array.from(new Set(productIds.map((id) => id.trim())))
-      const edges = uniqueProductIds.map((productId) => ({ clientId, productId }))
+      const edges = uniqueProductIds.map((productId) => ({
+        clientId: clientId.trim(),
+        productId,
+        orderId: orderId.trim(),
+        orderDate: orderDateIso,
+      }))
 
       try {
         const synced = await repo.syncBoughtRelationships(edges)

@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest'
 import { buildTrainingDataset, type ClientDTO, type ProductDTO, type TrainingDatasetOptions } from './training-utils.js'
+import type { PurchaseTemporalIndex } from './training-temporal-map.js'
+
+const defaultPooling = { mode: 'mean' as const, halfLifeDays: 30 }
+
+const emptyTemporal: PurchaseTemporalIndex = {
+  clientPurchasedProducts: new Map(),
+  tRefIsoByClient: new Map(),
+  lastPurchaseIsoByClientProduct: new Map(),
+}
+
+/** Aligns fake order dates so P2 temporal path yields the same mean profile as legacy for tests. */
+function mockTemporal(
+  clients: ClientDTO[],
+  clientOrderMap: Map<string, Set<string>>,
+  iso = '2026-01-15T12:00:00.000Z'
+): PurchaseTemporalIndex {
+  const clientPurchasedProducts = new Map(clientOrderMap)
+  const tRefIsoByClient = new Map<string, string>()
+  const lastPurchaseIsoByClientProduct = new Map<string, string>()
+  for (const c of clients) {
+    tRefIsoByClient.set(c.id, iso)
+    const ids = clientOrderMap.get(c.id)
+    if (!ids) continue
+    for (const pid of ids) {
+      lastPurchaseIsoByClientProduct.set(`${c.id}::${pid}`, iso)
+    }
+  }
+  return { clientPurchasedProducts, tRefIsoByClient, lastPurchaseIsoByClientProduct }
+}
 
 function makeEmbedding(value: number, dims = 384): number[] {
   return new Array<number>(dims).fill(value)
@@ -35,7 +64,15 @@ describe('buildTrainingDataset', () => {
   it('returns empty arrays when clients is empty', () => {
     const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
     const clientOrderMap = new Map<string, Set<string>>()
-    const result = buildTrainingDataset([], clientOrderMap, productEmbeddingMap, defaultProducts, defaultOptions)
+    const result = buildTrainingDataset(
+      [],
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      defaultOptions,
+      emptyTemporal,
+      defaultPooling
+    )
     expect(result.inputVectors).toHaveLength(0)
     expect(result.labels).toHaveLength(0)
   })
@@ -60,7 +97,15 @@ describe('buildTrainingDataset', () => {
     ])
 
     expect(() =>
-      buildTrainingDataset(defaultClients.slice(0, 1), clientOrderMap, embeddingMap, products, defaultOptions)
+      buildTrainingDataset(
+        defaultClients.slice(0, 1),
+        clientOrderMap,
+        embeddingMap,
+        products,
+        defaultOptions,
+        mockTemporal(defaultClients.slice(0, 1), clientOrderMap),
+        defaultPooling
+      )
     ).not.toThrow()
   })
 
@@ -74,10 +119,18 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients = [defaultClients[0]]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      ...defaultOptions,
-      negativeSamplingRatio: 4,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        ...defaultOptions,
+        negativeSamplingRatio: 4,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     const positiveCount = result.labels.filter((l) => l === 1).length
     const negativeCount = result.labels.filter((l) => l === 0).length
@@ -95,10 +148,18 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients = [defaultClients[0]]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      ...defaultOptions,
-      negativeSamplingRatio: 4,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        ...defaultOptions,
+        negativeSamplingRatio: 4,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     // The negative samples are indices 1..4 (after positive at 0)
     const negativeIndices = result.labels
@@ -119,17 +180,33 @@ describe('buildTrainingDataset', () => {
       ['c2', new Set(['p3'])],
     ])
 
-    const result1 = buildTrainingDataset(defaultClients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      negativeSamplingRatio: 4,
-      seed: 12345,
-      useClassWeight: true,
-    })
+    const result1 = buildTrainingDataset(
+      defaultClients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        negativeSamplingRatio: 4,
+        seed: 12345,
+        useClassWeight: true,
+      },
+      mockTemporal(defaultClients, clientOrderMap),
+      defaultPooling
+    )
 
-    const result2 = buildTrainingDataset(defaultClients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      negativeSamplingRatio: 4,
-      seed: 12345,
-      useClassWeight: true,
-    })
+    const result2 = buildTrainingDataset(
+      defaultClients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        negativeSamplingRatio: 4,
+        seed: 12345,
+        useClassWeight: true,
+      },
+      mockTemporal(defaultClients, clientOrderMap),
+      defaultPooling
+    )
 
     expect(result1.labels).toEqual(result2.labels)
     expect(result1.inputVectors).toEqual(result2.inputVectors)
@@ -140,14 +217,30 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients = [defaultClients[0]]
 
-    const result1 = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      negativeSamplingRatio: 4,
-      seed: 1,
-    })
-    const result2 = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      negativeSamplingRatio: 4,
-      seed: 99999,
-    })
+    const result1 = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        negativeSamplingRatio: 4,
+        seed: 1,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
+    const result2 = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        negativeSamplingRatio: 4,
+        seed: 99999,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     // With 5 products and N=4, same positives but potentially different negative ordering
     // Labels should be same structure (1, 0, 0, 0, 0) but vectors may differ
@@ -167,11 +260,19 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients = [defaultClients[0]]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, {
-      negativeSamplingRatio: 4,
-      seed: 42,
-      useClassWeight: false,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      {
+        negativeSamplingRatio: 4,
+        seed: 42,
+        useClassWeight: false,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     // With useClassWeight=false: 1 positive + 4 duplicated positives = 5 samples, all labeled 1
     expect(result.labels.every((l) => l === 1)).toBe(true)
@@ -183,7 +284,15 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1', 'p2'])]])
     const clients = [defaultClients[0]]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, productEmbeddingMap, defaultProducts, defaultOptions)
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      productEmbeddingMap,
+      defaultProducts,
+      defaultOptions,
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     expect(result.inputVectors.length).toBeGreaterThan(0)
     result.inputVectors.forEach((v) => {
@@ -209,11 +318,19 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients: ClientDTO[] = [{ id: 'c1', name: 'Client 1', segment: 'B2B', countryCode: 'BR' }]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
-      negativeSamplingRatio: 4,
-      seed: 42,
-      useClassWeight: true,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      embeddingMap,
+      products,
+      {
+        negativeSamplingRatio: 4,
+        seed: 42,
+        useClassWeight: true,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     // Only p1 is positive — so we have 1 positive vector
     const positiveCount = result.labels.filter((l) => l === 1).length
@@ -246,11 +363,19 @@ describe('buildTrainingDataset', () => {
     const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
     const clients: ClientDTO[] = [{ id: 'c1', name: 'Client 1', segment: 'B2B', countryCode: 'BR' }]
 
-    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
-      negativeSamplingRatio: 4,
-      seed: 42,
-      useClassWeight: true,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      embeddingMap,
+      products,
+      {
+        negativeSamplingRatio: 4,
+        seed: 42,
+        useClassWeight: true,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     // p2 has same category as p1 but no supplierName — should NOT be excluded from negativePool
     // negativePool = [p2, p3, p4, p5] = 4 products
@@ -290,11 +415,19 @@ describe('buildTrainingDataset', () => {
     const originalEnv = process.env.SOFT_NEGATIVE_SIM_THRESHOLD
     process.env.SOFT_NEGATIVE_SIM_THRESHOLD = '0.65'
 
-    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
-      negativeSamplingRatio: 4,
-      seed: 42,
-      useClassWeight: true,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      embeddingMap,
+      products,
+      {
+        negativeSamplingRatio: 4,
+        seed: 42,
+        useClassWeight: true,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     process.env.SOFT_NEGATIVE_SIM_THRESHOLD = originalEnv
 
@@ -331,11 +464,19 @@ describe('buildTrainingDataset', () => {
     const originalEnv = process.env.SOFT_NEGATIVE_SIM_THRESHOLD
     process.env.SOFT_NEGATIVE_SIM_THRESHOLD = '1.0'
 
-    const result = buildTrainingDataset(clients, clientOrderMap, embeddingMap, products, {
-      negativeSamplingRatio: 4,
-      seed: 42,
-      useClassWeight: true,
-    })
+    const result = buildTrainingDataset(
+      clients,
+      clientOrderMap,
+      embeddingMap,
+      products,
+      {
+        negativeSamplingRatio: 4,
+        seed: 42,
+        useClassWeight: true,
+      },
+      mockTemporal(clients, clientOrderMap),
+      defaultPooling
+    )
 
     process.env.SOFT_NEGATIVE_SIM_THRESHOLD = originalEnv
 
@@ -353,7 +494,9 @@ describe('buildTrainingDataset', () => {
       emptyOrderMap,
       productEmbeddingMap,
       defaultProducts,
-      defaultOptions
+      defaultOptions,
+      mockTemporal([defaultClients[0]], emptyOrderMap),
+      defaultPooling
     )
 
     expect(result.inputVectors).toHaveLength(0)

@@ -291,10 +291,16 @@ test.describe('M13 — Cart, Checkout & Async Retrain', () => {
 
     if (promoted) {
       const postCheckoutColumn = page.getByTestId('analysis-column-post-checkout');
+      // M19 / PE-06 / ADR-065: Pos-Efetivar deltas require cart-aware baseline; copy + pills
+      // regress when the post-checkout column loses its diff map after checkout.
+      await expect(postCheckoutColumn).toContainText('Pós efetivar', { timeout: 5000 });
       await expect(postCheckoutColumn.locator('li').first()).toBeVisible({ timeout: 30000 });
       await expect(
         postCheckoutColumn.locator(`[data-testid^="analysis-column-post-checkout-delta-"]`).first()
       ).toBeVisible({ timeout: 30000 });
+      await expect(postCheckoutColumn.getByTestId('analysis-column-post-checkout-empty-delta-notice')).toHaveCount(
+        0
+      );
       return;
     }
 

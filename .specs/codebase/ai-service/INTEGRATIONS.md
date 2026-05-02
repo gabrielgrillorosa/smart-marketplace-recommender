@@ -20,6 +20,8 @@ Operações principais:
 - `getCandidateProducts(country, excludeIds)` — produtos disponíveis no país do cliente, não comprados
 - `syncBoughtRelationships()` — usado por ModelTrainer para atualizar edges BOUGHT
 
+Recomendações híbridas expostas em `POST /api/v1/recommend` e `POST /api/v1/recommend/from-cart` (vetor de perfil = compras confirmadas ± itens do carrinho). A API legada `demo-buy` foi removida do código; arestas `BOUGHT {is_demo: true}` antigas podem permanecer no Neo4j até limpeza manual — ver `scripts/neo4j-delete-demo-bought-edges.cypher` e `.specs/project/STATE.md` (secção Ops).
+
 ## @xenova/transformers (Embeddings locais)
 
 **Propósito:** Geração de embeddings semânticos sem API key

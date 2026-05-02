@@ -20,4 +20,14 @@ export const suppliers: Supplier[] = [
     name: 'Unilever Europe',
     country_code: 'NL',
   },
+  {
+    id: 'd4e5f6a7-b8c9-0123-def0-456789abcdef',
+    name: 'PepsiCo Americas Wholesale',
+    country_code: 'BR',
+  },
+  {
+    id: 'e5f6a7b8-c9d0-1234-ef01-567890abcdef',
+    name: 'Coca-Cola FEMSA Logistics',
+    country_code: 'MX',
+  },
 ];

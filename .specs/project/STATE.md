@@ -1,18 +1,91 @@
 # Project State
 
-_Last updated: 2026-04-28 — Session: (1) M15 `tasks.md` criado em draft (10 tarefas cobrindo `api-service` country guard + 3 helpers/wirings frontend + E2E acceptance); (2) AutoSeed + cache bypass entregues fora do roadmap — ai-service agora zero-touch cold start, ADR-052 + ADR-053 adicionados ao M12, README e ROADMAP atualizados._
+_Last updated: 2026-05-01 — **M16** ✅; **M17** P1 + **ADR-063/064** ✅ (`ai-service` + `frontend`); **M17 P2** (profile pooling / ADR-065) ✅ **`ai-service`** (2026-05-01); **pendente M17:** **P3** (atenção) — [spec M17](../features/m17-phased-recency-ranking-signals/spec.md). **M18** (AD-055) ✅. **M19** (ADR-065 / ADR-066 Pos-Efetivar deltas) ✅ **IMPLEMENTED** (2026-05-01) — [spec](../features/m19-pos-efetivar-showcase-deltas/spec.md). Próximo foco: **M17 P3** ou baseline métrica com `PROFILE_POOLING_MODE=exp` em staging._
 
 ---
 
 ## Current Focus
 
-**Status:** `tasks.md` do `M15 — Cart Integrity & Comparative UX` em draft — 10 tarefas em 4 fases: (1) backend country guard `T1 -> T2 -> T3` com `./mvnw verify`; (2) helpers puros frontend `T4 [P]`, `T5 [P]`, `T6 [P]`; (3) wiring sequencial `T7`, `T8`, `T9`; (4) `T10` acceptance Playwright + `npm run lint && npm run build && npm run test:e2e`. Proximo passo: revisar/aprovar `tasks.md` e iniciar `execute task` do `T1` (`ProductAvailabilityPolicy` + `CartItemUnavailableException`).
+**Current planning:** **M17** — Fase 1 + transparência de score **entregues**; **M17 P2** (pooling perfil treino+inferência / ADR-065) **entregue no `ai-service`** (2026-05-01). **Seguinte:** **M17 P3** (atenção temporal) conforme [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md). **M18 — Catálogo simplificado (AD-055)** ✅ **COMPLETE** (2026-04-30) — [spec M18](../features/m18-catalog-simplified-ad055/spec.md). E2E [`m18-catalog-ad055.spec.ts`](../../frontend/e2e/tests/m18-catalog-ad055.spec.ts).
+
+**M17 — P1 + ADR-063/064 IMPLEMENTED** — [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md) (re-rank, `rankScore` / `recencySimilarity`); [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md) + [ADR-064](../features/m17-phased-recency-ranking-signals/adr-064-rankingconfig-zustand-recommendation-slice.md) (`rankingConfig`, modal). Operador: [ai-service/README.md](../../ai-service/README.md). **M16 — ✅ COMPLETE** (2026-04-30).
+
+### Fila de planeamento (ordem para `plan feature` → `ROADMAP` + `.specs/features/`)
+
+| # | Prioridade | O quê | Onde está o detalhe | Próximo passo **tlc-spec-driven** |
+|---|------------|--------|---------------------|-----------------------------------|
+| **P1** | Concluído | **M17** — Fase 1 + ADR-063/064 | [spec M17](../features/m17-phased-recency-ranking-signals/spec.md); [tasks](../features/m17-phased-recency-ranking-signals/tasks.md) | Baseline métrica / staging se necessário |
+| **P2** | Concluído (2026-05-01) | **M17 Fase 2** — pooling perfil treino+inferência | [spec M17 P2](../features/m17-phased-recency-ranking-signals/spec.md); [ADR-065](../features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md) | Baseline offline `precisionAt5` com `PROFILE_POOLING_MODE=exp` em staging quando priorizado |
+| **P3** | Próximo (M17) | **M17 Fase 3** — atenção temporal | [spec M17 P3](../features/m17-phased-recency-ranking-signals/spec.md); PRS-14–15 | `plan` → design dedicado → `execute` |
+| **—** | Concluído | **M18 — Catálogo / contrato — AD-055** | [AD-055](#state-ad-055); [spec M18](../features/m18-catalog-simplified-ad055/spec.md) | Verificação em `docker compose` / staging |
+| **—** | Concluído | **M19 — Pos-Efetivar deltas (ADR-065 / ADR-066)** | [ADR-065](../features/m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md); [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md); [tasks](../features/m19-pos-efetivar-showcase-deltas/tasks.md) | Verificação E2E `frontend` |
+| **—** | **Planeado** | **M20** — manual retrain + métricas + Pos-Retreino (ADR-067) | [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [ADR-067/068/069](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | **Execute** (T067-1…T067-7) quando priorizado |
+
+Decisão explícita da ordem P1→P2: **[AD-056](#state-ad-056)**.
+
+**Ao retomar:** **M17** — trabalhar **P2** ou **P3**; **M18** ✅ fechado; **M19** ✅ fechado (2026-05-01); débito técnico opcional: **AD-053** / [ADR-053](../features/m12-self-healing-model-startup/adr-053-tech-debt-migrate-seed-to-api-service.md).
 
 **Previous:** Comite aprovou redesenho arquitetural do MVP em torno de `Cart` no `api-service` + `Order` como unico ground truth (AD-043)
 
 ---
 
 ## Decisions
+
+### AD-054: Comite — Showcase didatico `neural-first` com suppression temporal de compras recentes, seed denso por categoria e explicabilidade de elegibilidade (2026-04-29)
+
+**Decision:** O projeto adota explicitamente a direcao **`neural-first`** para o eixo didatico de recomendacao. Regra final: (1) **nenhum boost matematico de negocio** sera adicionado ao `finalScore` para forcar categoria/marca; a emergencia de afinidade por categoria deve continuar vindo do vetor de perfil + rede neural + similaridade semantica ja existentes. (2) Regras deterministicas sao permitidas **somente na camada de elegibilidade/candidate pool**, nunca na de ranking: pais, disponibilidade, itens no carrinho e agora **compras recentes**. (3) A exclusao atual "comprou uma vez -> some para sempre" deixa de ser a politica-alvo do produto; o caminho aprovado e **suppression temporal por janela** (`RECENT_PURCHASE_WINDOW_DAYS`, default inicial sugerido `7`) com o produto permanecendo visivel no catalogo, marcado como `comprado recentemente / fora do ranking nesta janela`, com motivo e data de retorno. (4) O catalogo passa a ser tratado como **vitrine completa**, enquanto `Ranking IA` vira uma lente sobre a vitrine: produtos inelegiveis nao somem silenciosamente, apenas ficam fora do ranking principal e precisam ser explicados visualmente. (5) Para que o aprendizado de categoria emerja da rede sem truques de score, o seed sintetico deve ser ampliado: **piso aceitavel ~85 SKUs / alvo preferido ~125 SKUs**, com 20-25 produtos nas categorias centrais (`beverages`, `food`), mais suppliers, mais clientes, mais pedidos, viés por `segment x category`, maior taxa de recompra e descricoes mais diversas. (6) O proximo milestone candidato fica registrado como **M16 — Neural-First Didactic Ranking & Catalog Density**, cobrindo cooldown de compras recentes, painel de "compras recentes", badges de supressao, separacao `Vitrine x Ranking IA`, bloco "o que mudou no modelo" e refresh do seed/dataset.
+
+**Reason:** O uso do sistema mudou: agora o objetivo principal e **didatico**, e o avaliador nao consegue lembrar quais produtos ja comprou. No estado atual, a regra de exclusao por comprado e silenciosa e permanente, o que faz itens "sumirem" sem explicacao e produz a impressao de bug. Pior: com o seed atual (~52 produtos, 5 categorias), o pool por categoria/pais se esgota rapido demais; por exemplo, apos poucas compras em `beverages`, restam candidatos insuficientes para o ranking neural mostrar aprendizado visivel da categoria. O Comite (Professor Doutor em Engenharia de IA Aplicada, Professor Doutor em Deep Learning, Principal AI Architect, Staff Design/UX React/Next.js, Staff Product Engineer) convergiu que isso nao se resolve com boost manual no score — isso mascararia o comportamento da rede. A solucao correta e separar **eligibility** de **ranking**, como fazem os grandes players e a literatura de two-stage recommenders: filtros duros antes, modelo neural ordenando apenas o conjunto elegivel. A referencia de mercado para repeat purchase/replenishment (Amazon `Buy It Again`, Instacart recommendations/replacements) reforca a separacao entre descoberta, recompra e regras de recencia.
+
+**Trade-off:** (1) A UI fica mais complexa, porque itens fora do ranking deixam de "sumir" e passam a carregar estados explicitos (`comprado recentemente`, `demo`, `fora do pais`, etc). Isso e desejado didaticamente, mas aumenta superficie visual e de testes. (2) A janela de cooldown nao e "aprendida"; e uma regra operacional/contratual da camada de elegibilidade. O comite considera isso aceitavel porque **nao mexe no score** e precisa ser mostrado como filtro, nao como inteligencia. (3) Expandir o seed aumenta tempo de cold start, custo de embeddings e tempo de treino, alem de exigir re-baseline de metrica (`precisionAt5`) e possivel recalibracao de `SOFT_NEGATIVE_SIM_THRESHOLD` / `negativeSamplingRatio`. (4) A superficie de recompra/replenishment fica **deferida**; neste milestone a prioridade e preservar a pureza neural do ranking principal e tornar as ausencias explicaveis, nao construir ainda uma lane separada de "Buy Again / Repor mix".
+
+**Impact:** **`ai-service`**: `getCandidateProducts` deixa de tratar historico comprado como exclusao vitalicia e passa a trabalhar com janela de compras recentes; respostas de recomendacao devem expor metadados de itens suprimidos/reasons quando necessario; `RecommendationService` continua sem boost manual por categoria/supplier. **Seed/data**: ampliar `products.ts`, `suppliers.ts`, `clients.ts` e `orders.ts` para suportar densidade real de categoria, suppliers adicionais, pedidos com vies por segmento e repeticao suficiente para a rede aprender afinidade de categoria sem artificios. **Frontend**: introduzir painel `Compras recentes`, badges de elegibilidade (`comprado recentemente`, `fora do ranking nesta janela`, `demo`, `fora do pais`), separacao clara entre `Modo Vitrine` e `Modo Ranking IA`, e bloco explicativo "o que mudou no modelo" para atribuir o uplift ao comportamento neural e nao a regras escondidas. **Roadmap**: reservar o nome `M16` para esse eixo didatico neural-first; o debito de ADR-053 (migrar seed do `ai-service` para o `api-service`) deixa de usar `M16` como candidato padrao e passa a ser tratado como spike/debito independente quando priorizado.
+
+**Coverage after AD-054:** `M16` com `spec.md` (38× `NFD-*`), `design.md`, `tasks.md`, ADRs 055–061, implementação no monorepo, E2E `m16-catalog-modes` e critérios de fecho aceites pelo dono do repositório (incl. métricas / T15).
+
+**Status:** Approved by Committee ✓ + Specified ✓ + Designed ✓ + **Executed / COMPLETE** ✓ (2026-04-30).
+
+---
+
+<a id="state-ad-055"></a>
+
+### AD-055: Direcção de produto — catálogo, API e IA sem toggle Vitrine/Ranking (2026-04-30)
+
+**Natureza:** registo explícito do pedido de evolução de UX/contrato para **planeamento** de features (delta em relação ao M16 entregue e ao AD-054). **Não** revoga automaticamente AD-054 nem os ADRs M16 até passar por actualização de `spec.md` / comité se necessário.
+
+**Pedido do produto (verbatim resumido):**
+
+1. **Remover** a caixa / painel **«Compras recentes»** (lista separada no topo com produtos recém-comprados e texto tipo «Retorno ao ranking: …»).
+2. **Backend:** produtos **não disponíveis no país** e demais inelegíveis **que não sejam** bloqueio por compra recente **não devem ser retornados** na API ao cliente (deixam de aparecer no payload em vez de virem como linhas com `eligible: false` e motivo).
+3. **Excepção:** apenas produtos inelegíveis **por compra recente** (`recently_purchased` / janela de supressão) devem continuar a ser **mostrados no ecrã**, integrados no fluxo do catálogo (não como painel isolado).
+4. **Remover** o toggle **«Modo Vitrine» / «Modo Ranking IA»** — deixa de haver dois modos globais alternados por botão dedicado.
+5. **Comportamento único:** quando o utilizador clicar em **«Ordenar por IA»**, o sistema deve **já** aplicar a ordenação por IA **e** colocar os produtos só inelegíveis por compra recente **no final** da lista principal, agrupados sob o cabeçalho visual **—— Fora do ranking nesta janela ——** (comportamento tipo «fora do ranking nesta janela» sem caixa separada de «compras recentes»).
+
+**Implicações técnicas (para tasks futuras):**
+
+| Área | Acção provável |
+|------|----------------|
+| `ai-service` / `RecommendationService` | Resposta `POST /recommend` (e/ou `eligibilityOnly`): omitir do JSON candidatos com `eligibilityReason` ∈ {`no_embedding`, fora do país / catálogo país, `in_cart`, …} — **manter** apenas inelegíveis `recently_purchased` para render no rodapé. Alinhar com revisão do [ADR-055](../features/m16-neural-first-didactic-ranking-catalog-density/adr-055-eligibility-enriched-recommendation-contract.md) (contrato «merged»). |
+| Frontend | Remover `RecentPurchasesPanel` (ou equivalente); remover estado/toggle **vitrine vs ranking** ([ADR-056](../features/m16-neural-first-didactic-ranking-catalog-density/adr-056-view-mode-zustand-flag-catalog-view-mode-hook.md)); `CatalogPanel`: ao activar «Ordenar por IA», ordenar elegíveis e anexar secção com copy fixa **—— Fora do ranking nesta janela ——**. |
+| Pré-fetch elegibilidade ([ADR-058](../features/m16-neural-first-didactic-ranking-catalog-density/adr-058-early-eligibility-prefetch-on-client-select.md)) | Reavaliar: se o backend deixar de devolver «inelegíveis silenciosos», o prefetch pode limitar-se a metadados necessários para **recent** ou ser substituído pela resposta única pós-«Ordenar por IA». |
+| E2E | Substituir / alinhar com `m18-catalog-ad055.spec.ts` (legado `m16-catalog-modes.spec.ts` removido na entrega M18). |
+| `NFD-01..38` | Rever requisitos que mandam painel «Compras recentes» e separação explícita Vitrine/Ranking. |
+
+**Status:** **IMPLEMENTED** ✓ (2026-04-30) — milestone **[M18](../features/m18-catalog-simplified-ad055/spec.md)** no [ROADMAP](ROADMAP.md); `ai-service` omite inelegíveis excepto compra recente na serialização HTTP; frontend sem painel «Compras recentes» nem toggle vitrine↔IA; E2E [`m18-catalog-ad055.spec.ts`](../../frontend/e2e/tests/m18-catalog-ad055.spec.ts). ADRs [055](../features/m16-neural-first-didactic-ranking-catalog-density/adr-055-eligibility-enriched-recommendation-contract.md) / [056](../features/m16-neural-first-didactic-ranking-catalog-density/adr-056-view-mode-zustand-flag-catalog-view-mode-hook.md) / [058](../features/m16-neural-first-didactic-ranking-catalog-density/adr-058-early-eligibility-prefetch-on-client-select.md) actualizados no âmbito da entrega.
+
+---
+
+<a id="state-ad-056"></a>
+
+### AD-056: Fila de planeamento pós-M16 — M4 (ADR-062) antes de AD-055 catálogo (2026-04-30)
+
+**Decision:** Após o fecho de **M16**, o planeamento de features segue esta ordem: **(P1)** materializar no roadmap e em `spec` o eixo **M4 / `ai-service`** de sinais de recência em fases, conforme **[ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md)** (*Accepted*); **[ADR-016](../features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md)** (*Proposed*) permanece referência para trabalho futuro de calibração do híbrido, não bloqueia P1. **(P2)** em seguida, materializar **[AD-055](#state-ad-055)** (catálogo simplificado / contrato de payload e UX sem toggle vitrine↔IA).
+
+**Reason:** Separa **política de implementação** de ranking e treino (`ai-service`) da **mudança de produto** em catálogo e contrato HTTP (AD-055), reduzindo conflito de escopo e permitindo `plan feature` / milestones claros no `ROADMAP.md`.
+
+**Status:** **Recorded** — usar a tabela em *Current Focus* + *Todos* `[ ]` como checklist até ambos os planos estarem no `ROADMAP.md` e em `.specs/features/`.
+
+---
 
 ### AD-053: AutoSeed — Débito técnico: migrar seed para `api-service` (2026-04-28)
 
@@ -602,6 +675,12 @@ _Last updated: 2026-04-28 — Session: (1) M15 `tasks.md` criado em draft (10 ta
 
 ## Todos
 
+- [x] **Pos-Comite 2026-04-29 (AD-054) — `specify feature` (M16):** `spec.md` criado em `.specs/features/m16-neural-first-didactic-ranking-catalog-density/spec.md` com 38 requisitos (`NFD-01..NFD-38`) cobrindo cooldown de compras recentes, painel `Compras recentes`, badges de elegibilidade, separacao `Vitrine x Ranking IA`, bloco "o que mudou no modelo" e seed/dataset mais denso por categoria.
+- [x] **Pos-Comite 2026-04-29 (AD-054) — `design feature` (M16):** `design.md` aprovado; desenho técnico e ADRs 055–061 executados no código.
+- [x] **Pos-Comite 2026-04-29 (AD-054) — Re-baseline do dataset/metricas:** aceite como concluído para fecho M16 (T15 / `precisionAt5` e auxiliares conforme processo acordado no repositório).
+- [x] **Pos-Comite 2026-04-29 (AD-054) — `execute` / fecho M16:** código + testes (`tasks.md` T1–T15); ADR-061 no caminho checkout→Neo4j.
+- [x] **`plan feature` P1 — M4 recência (ADR-062):** milestone **M17** no `ROADMAP.md` + pasta `.specs/features/m17-phased-recency-ranking-signals/spec.md`. **P1 + ADR-063/064** entregues ([tasks M17](../features/m17-phased-recency-ranking-signals/tasks.md)). **Seguinte no milestone:** **M17 P2** / **P3** — ver fila [AD-056](#state-ad-056) e [spec M17](../features/m17-phased-recency-ranking-signals/spec.md).
+- [x] **`plan feature` P2 — AD-055 catálogo / payload:** milestone **M18** no `ROADMAP.md` + pasta `.specs/features/m18-catalog-simplified-ad055/spec.md`. **`specify feature` ✅** — requisitos `CSL-01..CSL-11`, reconciliação `NFD-*`. **`design.md` ✅** — [design](../features/m18-catalog-simplified-ad055/design.md). **`tasks.md` ✅** — [tasks](../features/m18-catalog-simplified-ad055/tasks.md) (T1…T9). **`execute` ✅** — T1…T9; E2E `m18-catalog-ad055.spec.ts`; ADR-055/056/058. Ver [AD-055](#state-ad-055) e [AD-056](#state-ad-056).
 - [x] **Pos-Comite 2026-04-28 (AD-043/044/045) — `plan features`:** roadmap reorganizado em torno do fluxo `Carrinho -> Pedido -> Treino` + ancora visual `ModelStatusPanel`. Proximos milestones: **M13 — Cart, Checkout & Async Retrain Capture** | **M14 — Catalog Score Visibility & Cart-Aware Showcase** | **M15 — Cart Integrity & Comparative UX**. `ROADMAP.md` atualizado e features marcadas como `PLANNED`.
 - [x] **Pos-Comite (AD-043/044/045) — `specify feature` (M13):** "Cart, Checkout & Async Retrain Capture". 68 reqs (CART-01..CART-68). Frequencia de retrain decidida como `every_checkout` no MVP. `spec.md` criado em `.specs/features/m13-cart-checkout-async-retrain/spec.md`.
 - [x] **Pos-Comite (AD-043/044/045/046) — `task feature` (M13):** `tasks.md` do M13 foi realinhado ao design final (arquitetura + UI). Plano agora contem 20 tarefas com `CartSummaryBar`, semantica real de `TabNav`, acessibilidade/motion, queue semantics + `afterCommit`, gates `build` ao fim de cada fase e E2E final `m13-cart-async-retrain`.
@@ -609,10 +688,10 @@ _Last updated: 2026-04-28 — Session: (1) M15 `tasks.md` criado em draft (10 ta
 - [x] **Pos-Comite (AD-043/042) — `specify feature` (M14):** "Catalog Score Visibility & Cart-Aware Showcase". `spec.md` criado em `.specs/features/m14-catalog-score-visibility-cart-aware-showcase/spec.md` com 43 requisitos (`SHOW-01..SHOW-43`) cobrindo scores em toda a grade relevante, timeline `Com Carrinho` reativa, deltas comparativos, migracao de vocabulário do fluxo principal e cap/modo diagnostico explicito.
 - [x] **Pos-Comite (AD-043/041/042/044/045) — `specify feature` (M15):** "Cart Integrity & Comparative UX". `spec.md` criado em `.specs/features/m15-cart-integrity-comparative-ux/spec.md` com 30 requisitos (`INTEG-01..INTEG-30`) cobrindo validacao por pais no carrinho, enriquecimento real do `ClientProfileCard` e polish final dos estados `promoted/rejected/failed/unknown`.
 - [ ] **Pos-Comite (AD-043) — Migracao de dados:** definir e executar script para limpar/ignorar edges `BOUGHT {is_demo: true}` legadas no Neo4j antes do go-live da nova arquitetura. Documentar no `STATE.md` quando concluido.
-- [ ] **Pos-Comite (AD-043) — Renomear vocabulario no frontend:** `Demo Comprar` -> `Adicionar ao Carrinho`, `Limpar Demo` -> `Esvaziar Carrinho`, `Com Demo` -> `Com Carrinho`, `demoSlice` -> `cartSlice`. Tratar como sub-task de `M14`.
-- [ ] **Pos-Comite (AD-044) — Renomear `RetrainPanel -> ModelStatusPanel`** + atualizar imports, testes E2E (`m9b-deep-retrain.spec.ts` -> `m13-cart-async-retrain.spec.ts`) e referencias em design.md M9-B (ADR-023/024/025 mantem-se validos com componente renomeado). Tratar como sub-task de `M13`.
-- [ ] **Pos-Comite (AD-045) — Renomear `useRetrainJob -> useModelStatus`** + trocar fonte de verdade de `jobId` para `version`; manter `epoch`/`samples`/`loss` derivados de `lastTrainingProgress` no payload de `/model/status`. Tratar como sub-task de `M13`.
-- [ ] **Pos-Comite (AD-044) — Botao "Retreinar Modelo" no modo `Avancado`/`modo demo`:** mover botao para `<Collapsible>` colapsavel; adicionar badge "modo demo" para deixar claro que e fora do fluxo de producao; manter como ferramenta de instrutor/diagnostico. Tratar como sub-task de `M13`.
+- [x] **Resolvido — Renomear vocabulario no frontend:** `Demo Comprar` -> `Adicionar ao Carrinho`, `Limpar Demo` -> `Esvaziar Carrinho`, `Com Demo` -> `Com Carrinho`, `demoSlice` -> `cartSlice`. O fluxo principal foi migrado e os restos legados de frontend ligados a `demo` foram removidos na reconciliacao de 2026-04-29.
+- [x] **Resolvido — `RetrainPanel -> ModelStatusPanel`:** imports, testes E2E e referencias principais foram migrados para a ancora visual final do fluxo pos-checkout.
+- [x] **Resolvido — `useRetrainJob -> useModelStatus`:** fonte de verdade trocada de `jobId` para `version`, preservando polling e integracao com `/model/status`.
+- [x] **Resolvido — Botao "Retreinar Modelo" no modo `Avancado`/`modo demo`:** retrain manual permanece como affordance secundaria de diagnostico dentro do `ModelStatusPanel`, fora do fluxo principal de carrinho/checkout.
 - [x] **Resolvido — Frequencia de retrain pos-checkout (gray area):** decisao final registrada no `spec.md` do M13 como `every_checkout`; `POST /carts/{clientId}/checkout` retorna `expectedTrainingTriggered: true` para carrinho nao-vazio no MVP.
 - [ ] **Pos-Comite (AD-043) — Avaliar elevar `allPurchased.length < 2` para `< 3`** em `computePrecisionAtK` para reduzir variancia em clientes com 1 pedido isolado (sugestao do Professor Doutor em Deep Learning, originalmente sob AD-037). Tratar como sub-task do `specify feature` de `M13`.
 - [ ] **Pos-Comite (AD-043) — Documentar no README** a nova arquitetura `Carrinho -> Pedido -> Treino`, removendo a nota sobre `precisionAt5_full`/`EVAL_INCLUDE_DEMOS` (AD-037/AD-038 estao superseded) e explicando que `precisionAt5` agora reflete apenas pedidos confirmados.
@@ -711,6 +790,12 @@ _Last updated: 2026-04-28 — Session: (1) M15 `tasks.md` criado em draft (10 ta
 - **Cron diário de retreinamento automático (GAP-01):** O modelo neural fica desatualizado silenciosamente após novos pedidos serem criados. O `staleDays` e `staleWarning` foram implementados no M6 como observabilidade passiva — o sistema avisa que está velho, mas nenhum mecanismo reage automaticamente. Retreinar a cada compra é incorreto (custo computacional, catastrophic forgetting, race conditions); o padrão correto para sistemas B2B é retreinamento em batch diário. Solução: cron interno no `ai-service` (ex: `node-cron`) disparando `modelTrainer.train()` em background todo dia às 02h. Pré-condição: implementar o padrão 202 + async (Comitê Achado #6) para que o cron não bloqueie o event loop. Os dois itens se encaixam: o cron precisa do treino assíncrono; o treino assíncrono precisa de um disparador que não seja manual. Severidade: Média-Alta para produção. Pré-requisito: Comitê Achado #6 (202 + polling).
 
 - **Sincronização automática de produtos novos com Neo4j + embeddings (GAP-02):** Produto cadastrado via `POST /products` no `api-service` é salvo apenas no PostgreSQL. O Neo4j não recebe o nó novo e nenhum embedding é gerado, tornando o produto invisível para busca semântica, RAG e recomendações até que o operador chame manualmente `POST /embeddings/generate`. Diferente do GAP de `:BOUGHT` (resolvido no M6-45), este gap não foi documentado em nenhum ADR, spec ou task. Solução A (simples): `api-service` chama `POST /aiservice/api/v1/embeddings/generate` após salvar produto — síncrono mas frágil se o ai-service estiver fora. Solução B (robusta): cron no ai-service que roda `generateEmbeddings()` periodicamente (só processa produtos com `embedding IS NULL` — já idempotente). Solução C (event-driven): evento `product.created` via Kafka — convergente com D-03. Severidade: Alta para funcionalidade de IA. Pré-requisito: nenhum.
+
+### Ops — Neo4j: arestas `BOUGHT {is_demo: true}` legadas (2026-04-30)
+
+**Contexto:** O `ai-service` deixou de expor `POST/DELETE /api/v1/demo-buy` e os mutadores Neo4j associados. Leituras de perfil, datas de compra confirmada e treino **continuam** a filtrar `coalesce(r.is_demo, false) = false`, por isso dados demo antigos não entram no ranking nem no tensor — mas podem permanecer no grafo.
+
+**Limpeza opcional (após backup):** executar o script Cypher em `scripts/neo4j-delete-demo-bought-edges.cypher` na raiz do repositório `smart-marketplace-recommender` (revisar o `MATCH` de contagem comentado no ficheiro antes do `DELETE`).
 
 ---
 

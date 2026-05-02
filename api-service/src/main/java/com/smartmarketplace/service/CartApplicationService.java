@@ -21,6 +21,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -137,7 +138,11 @@ public class CartApplicationService {
         var order = orderApplicationService.createOrder(new CreateOrderRequest(clientId, orderItems));
         cartRepository.delete(cart);
 
-        Runnable notifyCheckoutSync = () -> aiSyncClient.notifyCheckoutCompleted(order.id(), clientId, productIds);
+        Runnable notifyCheckoutSync = () -> aiSyncClient.notifyCheckoutCompleted(
+                order.id(),
+                clientId,
+                productIds,
+                Objects.requireNonNull(order.orderDate(), "orderDate"));
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override

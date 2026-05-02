@@ -91,7 +91,7 @@ flowchart TD
 | Catalog ordered mode can reuse stale data for the same client. | `useRecommendationFetcher.ts` short-circuits on `cachedForClientId === clientId` and just toggles `ordered`. | Replace client-only cache key with a request key that includes coverage mode and catalog session signature. |
 | Showcase columns do not explain what moved. | `RecommendationColumn.tsx` renders only rank, name, and score badge. | Add delta metadata per row and a second text line with category/supplier context. |
 | Product detail lacks score context. | `ProductDetailModal.tsx` shows category and supplier only. | Surface the same ordered-mode score summary inside the modal without changing the dialog pattern. |
-| Legacy `Demo` semantics still leak into tests and store composition. | `frontend/e2e/tests/m11-ai-learning-showcase.spec.ts`, `frontend/e2e/tests/m9a-demo-buy.spec.ts`, `frontend/store/index.ts`. | Keep legacy demo flows explicitly isolated as advanced/legacy and migrate the principal E2E journey to cart vocabulary. |
+| Legacy `Demo` semantics still need isolation from the principal path. | Frontend leftovers were limited to historical test/doc references and no longer drive `frontend/store/index.ts` or the active E2E acceptance path. | Keep any remaining legacy demo flow outside the principal journey and let `m13-cart-async-retrain.spec.ts` define acceptance for the cart-first showcase. |
 
 ---
 
@@ -189,12 +189,10 @@ flowchart TD
 - **Purpose**: Finish the principal-flow migration from demo language to cart language without deleting legacy instructor-only paths.
 - **Location**:
   - `frontend/e2e/tests/m13-cart-async-retrain.spec.ts`
-  - `frontend/e2e/tests/m11-ai-learning-showcase.spec.ts`
-  - `frontend/e2e/tests/m9a-demo-buy.spec.ts`
   - `frontend/store/index.ts`
 - **Interfaces**:
   - Principal-flow selectors use `cart-*`, `main-tab-*`, `model-status-*`, `pos-efetivar`.
-- **Dependencies**: current Playwright suite, legacy demo slice.
+- **Dependencies**: current Playwright suite and the cart-first store composition.
 - **Reuses**: existing `data-testid` conventions already present in M13.
 - **Notes**:
   - Principal-flow E2E coverage moves to cart semantics only.

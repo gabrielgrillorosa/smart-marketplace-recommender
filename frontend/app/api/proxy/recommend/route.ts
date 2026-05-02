@@ -15,8 +15,12 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(body),
       }
     );
-    const { results, isFallback } = adaptRecommendations(data);
-    return NextResponse.json({ results, isFallback });
+    const parsed = adaptRecommendations(data);
+    return NextResponse.json({
+      results: parsed.results,
+      isFallback: parsed.isFallback,
+      ...(parsed.rankingConfig ? { rankingConfig: parsed.rankingConfig } : {}),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Upstream error';
     return NextResponse.json({ error: message }, { status: 502 });

@@ -9,6 +9,15 @@ export interface ScoreBadgeProps {
   semanticScore: number;
 }
 
+/** M17 ADR-063 — score breakdown for catalog cards + product detail modal. */
+export type ProductDetailScoreSummary = ScoreBadgeProps & {
+  rankScore?: number | null;
+  recencySimilarity?: number | null;
+  hybridNeuralTerm?: number;
+  hybridSemanticTerm?: number;
+  recencyBoostTerm?: number;
+};
+
 function colorClass(score: number): string {
   if (score >= 0.7) return 'bg-green-100 text-green-800 border-green-200';
   if (score >= 0.4) return 'bg-yellow-100 text-yellow-800 border-yellow-200';

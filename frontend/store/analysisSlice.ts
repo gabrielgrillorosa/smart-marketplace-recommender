@@ -16,12 +16,15 @@ export type AnalysisState =
 
 export interface AnalysisSlice {
   analysis: AnalysisState;
+  cartSnapshotStale: boolean;
   awaitingRetrainSince: number | null;
   lastObservedVersion: string | null;
   awaitingForOrderId: string | null;
   captureInitial: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   captureCartAware: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   clearCartAware: (clientId: string) => void;
+  markCartSnapshotStale: (clientId: string) => void;
+  clearCartSnapshotStale: (clientId?: string) => void;
   captureRetrained: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   startAwaitingRetrain: (orderId: string | null, observedVersion: string | null) => void;
   clearAwaitingRetrain: () => void;
@@ -34,6 +37,7 @@ export interface AnalysisSlice {
 
 export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   analysis: { phase: 'empty' },
+  cartSnapshotStale: false,
   awaitingRetrainSince: null,
   lastObservedVersion: null,
   awaitingForOrderId: null,
@@ -47,6 +51,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
         clientId,
         initial: { recommendations: recs, capturedAt: new Date().toISOString(), window },
       },
+      cartSnapshotStale: false,
     });
   },
 
@@ -98,6 +103,9 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   clearCartAware: (clientId) => {
     const current = get().analysis;
     if (current.phase === 'empty' || current.clientId !== clientId) return;
+    // M19 / ADR-048: never drop the cart snapshot in postCheckout — Pos-Efetivar
+    // needs the pre-checkout cart-aware baseline for buildRecommendationDeltaMap.
+    if (current.phase === 'postCheckout') return;
     if (current.phase === 'initial') return;
 
     if (current.phase === 'cart') {
@@ -107,19 +115,21 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
           clientId,
           initial: current.initial,
         },
+        cartSnapshotStale: false,
       });
-      return;
     }
+  },
 
-    set({
-      analysis: {
-        phase: 'postCheckout',
-        clientId,
-        initial: current.initial,
-        cart: null,
-        postCheckout: current.postCheckout,
-      },
-    });
+  markCartSnapshotStale: (clientId) => {
+    const current = get().analysis;
+    if (current.phase === 'empty' || current.clientId !== clientId) return;
+    set({ cartSnapshotStale: true });
+  },
+
+  clearCartSnapshotStale: (clientId) => {
+    const current = get().analysis;
+    if (clientId && current.phase !== 'empty' && current.clientId !== clientId) return;
+    set({ cartSnapshotStale: false });
   },
 
   captureRetrained: (clientId, recs, window) => {
@@ -160,6 +170,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   resetAnalysis: () => {
     set({
       analysis: { phase: 'empty' },
+      cartSnapshotStale: false,
       awaitingRetrainSince: null,
       lastObservedVersion: null,
       awaitingForOrderId: null,
@@ -167,6 +178,9 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   },
 
   resetAnalysisSnapshots: () => {
-    set({ analysis: { phase: 'empty' } });
+    set({
+      analysis: { phase: 'empty' },
+      cartSnapshotStale: false,
+    });
   },
 });

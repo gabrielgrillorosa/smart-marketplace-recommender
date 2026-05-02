@@ -1,3 +1,10 @@
+import {
+  aggregateClientProfileEmbeddings,
+  deltaDaysUtc,
+  type ProfilePoolingRuntime,
+} from '../profile/clientProfileAggregation.js'
+import type { PurchaseTemporalIndex } from './training-temporal-map.js'
+
 export interface ClientDTO {
   id: string
   name: string
@@ -43,7 +50,9 @@ export function buildTrainingDataset(
   clientOrderMap: Map<string, Set<string>>,
   productEmbeddingMap: Map<string, number[]>,
   products: ProductDTO[],
-  options: TrainingDatasetOptions
+  options: TrainingDatasetOptions,
+  temporal: PurchaseTemporalIndex,
+  pooling: ProfilePoolingRuntime
 ): { inputVectors: number[][]; labels: number[] } {
   if (clients.length === 0) return { inputVectors: [], labels: [] }
 
@@ -57,15 +66,27 @@ export function buildTrainingDataset(
 
   for (const client of clients) {
     const purchasedIds = clientOrderMap.get(client.id) ?? new Set<string>()
+    const tRefIso = temporal.tRefIsoByClient.get(client.id)
+    if (!tRefIso) continue
+    const tRef = new Date(tRefIso)
 
-    const purchasedEmbeddings: number[][] = []
+    const entries: { embedding: number[]; deltaDays: number }[] = []
     for (const pid of purchasedIds) {
       const emb = productEmbeddingMap.get(pid)
-      if (emb) purchasedEmbeddings.push(emb)
+      const iso = temporal.lastPurchaseIsoByClientProduct.get(`${client.id}::${pid}`)
+      if (!emb || !iso) continue
+      entries.push({
+        embedding: emb,
+        deltaDays: deltaDaysUtc(tRef, iso),
+      })
     }
-    if (purchasedEmbeddings.length === 0) continue
+    if (entries.length === 0) continue
 
-    const clientProfileVector = meanPooling(purchasedEmbeddings)
+    const clientProfileVector = aggregateClientProfileEmbeddings(
+      entries,
+      pooling.mode,
+      pooling.halfLifeDays
+    )
 
     const positiveProducts = productsWithEmbeddings.filter((p) => purchasedIds.has(p.id))
 
@@ -159,15 +180,6 @@ export function buildTrainingDataset(
   return { inputVectors, labels }
 }
 
-function meanPooling(embeddings: number[][]): number[] {
-  const dims = embeddings[0].length
-  const mean = new Array<number>(dims).fill(0)
-  for (const emb of embeddings) {
-    for (let i = 0; i < dims; i++) mean[i] += emb[i]
-  }
-  return mean.map((v) => v / embeddings.length)
-}
-
 function seededSample<T>(arr: T[], n: number, seed: number): T[] {
   if (n >= arr.length) return [...arr]
   const result: T[] = []
@@ -182,4 +194,16 @@ function seededSample<T>(arr: T[], n: number, seed: number): T[] {
   }
 
   return result
+}
+
+/** Deterministic seed from client ids (same as production training). */
+export function seedFromClientIds(clients: ClientDTO[]): number {
+  let seed = 0
+  for (const client of clients) {
+    const prefix = client.id.slice(0, 8)
+    for (let i = 0; i < prefix.length; i++) {
+      seed += prefix.charCodeAt(i)
+    }
+  }
+  return seed
 }

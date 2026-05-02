@@ -24,15 +24,15 @@ export function RecommendationCard({ result, rank, showScore = true }: Recommend
       <CardContent className="flex-1 p-0">
         <p className="text-sm font-medium text-gray-900 line-clamp-2">{result.product.name}</p>
         <p className="text-xs text-gray-500">{result.product.category}</p>
-        {showScore && (
+        {showScore && result.finalScore != null && (
           <div className="mt-1 flex items-center gap-2">
             <ScoreTooltip result={result}>
               <span className="cursor-help text-sm font-bold text-blue-600">
                 {result.finalScore.toFixed(2)}
               </span>
             </ScoreTooltip>
-            <Badge variant={REASON_VARIANT[result.matchReason] ?? 'secondary'} className="text-xs">
-              {result.matchReason}
+            <Badge variant={REASON_VARIANT[result.matchReason ?? 'hybrid'] ?? 'secondary'} className="text-xs">
+              {result.matchReason ?? 'hybrid'}
             </Badge>
           </div>
         )}

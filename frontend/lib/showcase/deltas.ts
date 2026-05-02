@@ -1,6 +1,12 @@
 import type { RecommendationResult } from '@/lib/types';
 import { hasSameRankingWindow, type RankingWindow } from './ranking-window';
 
+/** PE-04 (M19 / ADR-066): when M17 sends rankScore, Δ aligns with visible grid order. */
+export function scoreForRecommendationDelta(r: RecommendationResult): number | null {
+  if (r.finalScore == null) return null;
+  return r.rankScore ?? r.finalScore;
+}
+
 interface DeltaSnapshot {
   recommendations: RecommendationResult[];
   window: RankingWindow;
@@ -46,7 +52,7 @@ export function buildRecommendationDeltaMap(
       recommendation.product.id,
       {
         previousRank: index + 1,
-        previousScore: recommendation.finalScore,
+        previousScore: scoreForRecommendationDelta(recommendation),
       },
     ])
   );
@@ -65,7 +71,21 @@ export function buildRecommendationDeltaMap(
         ];
       }
 
-      const scoreDelta = recommendation.finalScore - previousEntry.previousScore;
+      const currentScore = scoreForRecommendationDelta(recommendation);
+      if (currentScore == null) {
+        return [
+          recommendation.product.id,
+          {
+            kind: 'unchanged',
+            previousRank: previousEntry.previousRank,
+            currentRank,
+            scoreDelta: 0,
+          },
+        ];
+      }
+
+      const scoreDelta =
+        previousEntry.previousScore == null ? 0 : currentScore - previousEntry.previousScore;
       if (previousEntry.previousRank === currentRank) {
         return [
           recommendation.product.id,

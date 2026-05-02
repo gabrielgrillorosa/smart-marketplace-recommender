@@ -18,8 +18,11 @@ export interface RecommendationColumnProps {
   emptyMessage?: string;
   colorScheme: ColorScheme;
   capturedAt?: string;
+  stale?: boolean;
   hideScore?: boolean;
   deltaByProductId?: Record<string, RecommendationDelta>;
+  /** M19 PE-03: when the list renders but the delta map is empty for a known reason */
+  deltaEmptyDegraded?: 'no_baseline' | 'window_mismatch';
 }
 
 const headerColorMap: Record<ColorScheme, string> = {
@@ -45,12 +48,17 @@ export function RecommendationColumn({
   emptyMessage = 'Aguardando dados...',
   colorScheme,
   capturedAt,
+  stale = false,
   hideScore = false,
   deltaByProductId = {},
+  deltaEmptyDegraded,
 }: RecommendationColumnProps) {
   // Derive visibility directly from props — CSS transition handles the fade-in.
   // Using requestAnimationFrame + cleanup was cancelling the animation on re-renders.
   const hasItems = recommendations !== null && recommendations.length > 0;
+  const deltaKeys = Object.keys(deltaByProductId);
+  const showEmptyDeltaNotice =
+    hasItems && deltaKeys.length === 0 && deltaEmptyDegraded !== undefined;
   // Show items as soon as they are available, even if `loading` is still true.
   // This prevents stale loading flags (e.g. from cancelled effects) from hiding data
   // that is already ready to render.
@@ -81,7 +89,7 @@ export function RecommendationColumn({
       </div>
 
       {/* Body */}
-      <div className="flex-1 bg-white p-2">
+      <div className={cn('flex-1 bg-white p-2', stale && 'bg-emerald-50/40')}>
         {showSkeletons ? (
           <ul aria-label={`Recomendações ${title} carregando`} className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -96,50 +104,68 @@ export function RecommendationColumn({
             <p className="text-xs">{emptyMessage}</p>
           </div>
         ) : (
-          <ul
-            role="list"
-            aria-label={`Recomendações ${title}`}
-            className="space-y-1.5 motion-safe:transition-opacity motion-safe:duration-300 motion-safe:ease-out opacity-100"
-          >
-            {recommendations!.map((rec, index) => (
-              <li
-                key={rec.product.id}
-                data-testid={columnTestId ? `${columnTestId}-item-${rec.product.id}` : undefined}
-                className="flex min-h-[44px] items-start gap-2 rounded border border-gray-100 bg-gray-50 px-2 py-1.5"
+          <>
+            {showEmptyDeltaNotice ? (
+              <div
+                role="status"
+                className="mb-2 rounded border border-amber-100 bg-amber-50/80 px-2 py-1.5 text-[11px] leading-snug text-amber-900"
+                data-testid={
+                  columnTestId ? `${columnTestId}-empty-delta-notice` : undefined
+                }
               >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600">
-                  {index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start gap-2">
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">
-                      {rec.product.name}
-                    </span>
-                    {!hideScore && (
-                      <ScoreBadge
-                        finalScore={rec.finalScore}
-                        neuralScore={rec.neuralScore ?? 0}
-                        semanticScore={rec.semanticScore ?? 0}
-                      />
-                    )}
+                {deltaEmptyDegraded === 'no_baseline'
+                  ? 'Baseline «Com Carrinho» indisponível para comparar.'
+                  : 'Janela de ranking diferente entre capturas — recapture com a mesma janela.'}
+              </div>
+            ) : null}
+            <ul
+              role="list"
+              aria-label={`Recomendações ${title}`}
+              className={cn(
+                'space-y-1.5 motion-safe:transition-opacity motion-safe:duration-300 motion-safe:ease-out opacity-100',
+                stale && 'opacity-70'
+              )}
+            >
+              {recommendations!.map((rec, index) => (
+                <li
+                  key={rec.product.id}
+                  data-testid={columnTestId ? `${columnTestId}-item-${rec.product.id}` : undefined}
+                  className="flex min-h-[44px] items-start gap-2 rounded border border-gray-100 bg-gray-50 px-2 py-1.5"
+                >
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-bold text-gray-600">
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-gray-800">
+                        {rec.product.name}
+                      </span>
+                      {!hideScore && rec.finalScore != null && (
+                        <ScoreBadge
+                          finalScore={rec.finalScore}
+                          neuralScore={rec.neuralScore ?? 0}
+                          semanticScore={rec.semanticScore ?? 0}
+                        />
+                      )}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <span className="truncate text-[11px] text-gray-500">
+                        {rec.product.supplier} · {rec.product.category}
+                      </span>
+                      {deltaByProductId[rec.product.id] && (
+                        <RecommendationDeltaBadge
+                          delta={deltaByProductId[rec.product.id]}
+                          dataTestId={
+                            columnTestId ? `${columnTestId}-delta-${rec.product.id}` : undefined
+                          }
+                        />
+                      )}
+                    </div>
                   </div>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <span className="truncate text-[11px] text-gray-500">
-                      {rec.product.supplier} · {rec.product.category}
-                    </span>
-                    {deltaByProductId[rec.product.id] && (
-                      <RecommendationDeltaBadge
-                        delta={deltaByProductId[rec.product.id]}
-                        dataTestId={
-                          columnTestId ? `${columnTestId}-delta-${rec.product.id}` : undefined
-                        }
-                      />
-                    )}
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </div>

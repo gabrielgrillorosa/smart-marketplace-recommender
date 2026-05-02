@@ -33,12 +33,31 @@ export interface SearchResult {
   score: number;
 }
 
+export interface RankingConfig {
+  neuralWeight: number;
+  semanticWeight: number;
+  recencyRerankWeight: number;
+  /** M17 P2 — ai-service profile pooling (optional). */
+  profilePoolingMode?: 'mean' | 'exp';
+  profilePoolingHalfLifeDays?: number;
+}
+
 export interface RecommendationResult {
   product: Product;
-  finalScore: number;
-  neuralScore?: number;
-  semanticScore?: number;
+  finalScore: number | null;
+  neuralScore?: number | null;
+  semanticScore?: number | null;
   matchReason: 'semantic' | 'neural' | 'hybrid';
+  /** M17 — present when ai-service recency re-rank is active. */
+  recencySimilarity?: number | null;
+  rankScore?: number | null;
+  hybridNeuralTerm?: number;
+  hybridSemanticTerm?: number;
+  recencyBoostTerm?: number;
+  /** M16 — omitted or true when API does not send eligibility (backward compatible). */
+  eligible?: boolean;
+  eligibilityReason?: string;
+  suppressionUntil?: string | null;
 }
 
 export interface RagChunk {

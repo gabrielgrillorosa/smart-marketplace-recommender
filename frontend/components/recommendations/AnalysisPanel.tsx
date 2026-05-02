@@ -52,9 +52,11 @@ export function AnalysisPanel() {
   const { selectedClient } = useSelectedClient();
 
   const analysis = useAppStore((s) => s.analysis);
+  const cartSnapshotStale = useAppStore((s) => s.cartSnapshotStale);
   const captureInitial = useAppStore((s) => s.captureInitial);
   const captureCartAware = useAppStore((s) => s.captureCartAware);
   const clearCartAware = useAppStore((s) => s.clearCartAware);
+  const clearCartSnapshotStale = useAppStore((s) => s.clearCartSnapshotStale);
   const captureRetrained = useAppStore((s) => s.captureRetrained);
   const resetAnalysis = useAppStore((s) => s.resetAnalysis);
   const resetAnalysisSnapshots = useAppStore((s) => s.resetAnalysisSnapshots);
@@ -143,14 +145,22 @@ export function AnalysisPanel() {
     prevCartKeyRef.current = key;
 
     if (cartProductIds.length === 0) {
-      clearCartAware(selectedClient.id);
+      // After checkout the UI cart is empty but we must keep the slice cart
+      // snapshot for Pos-Efetivar deltas (M19 / Node B). Checkout marks stale first.
+      if (analysis.phase !== 'postCheckout' && !cartSnapshotStale) {
+        clearCartAware(selectedClient.id);
+      }
       // Cart is empty: ensure no stale loading flag from a previous cart-aware fetch
-      // keeps the skeletons visible.
+      // keeps the skeletons visible. When checkout consumed the cart, keep the
+      // last `Com Carrinho` snapshot on screen as stale comparison data.
       setCartLoading(false);
       return;
     }
 
     let cancelled = false;
+    if (cartSnapshotStale) {
+      clearCartSnapshotStale(selectedClient.id);
+    }
     setCartLoading(true);
     fetchCartAwareRecs(selectedClient.id, cartProductIds, analysisWindow.requestedLimit)
       .then((recs) => {
@@ -168,7 +178,16 @@ export function AnalysisPanel() {
     return () => {
       cancelled = true;
     };
-  }, [analysis, analysisWindow, captureCartAware, cartProductIds, clearCartAware, selectedClient]);
+  }, [
+    analysis,
+    analysisWindow,
+    captureCartAware,
+    cartProductIds,
+    cartSnapshotStale,
+    clearCartAware,
+    clearCartSnapshotStale,
+    selectedClient,
+  ]);
 
   // Phase 3: post-checkout capture (`Pos-Efetivar`) when model promotion is detected.
   useEffect(() => {
@@ -205,6 +224,7 @@ export function AnalysisPanel() {
   const initialCapturedAt = initialSnapshot?.capturedAt;
   const cartRecs = cartSnapshot?.recommendations ?? null;
   const cartCapturedAt = cartSnapshot?.capturedAt;
+  const cartIsStale = cartSnapshotStale && cartSnapshot !== null && cartProductIds.length === 0;
   const postCheckoutRecs = postCheckoutSnapshot?.recommendations ?? null;
   const postCheckoutCapturedAt = postCheckoutSnapshot?.capturedAt;
   const postCheckoutOutcome = useMemo(
@@ -232,6 +252,31 @@ export function AnalysisPanel() {
     () => buildRecommendationDeltaMap(cartSnapshot, postCheckoutSnapshot),
     [cartSnapshot, postCheckoutSnapshot]
   );
+  const postCheckoutDeltaEmptyDegraded = useMemo((): 'no_baseline' | 'window_mismatch' | undefined => {
+    if (analysis.phase !== 'postCheckout') return undefined;
+    if (!postCheckoutRecs?.length) return undefined;
+    if (Object.keys(postCheckoutDeltaByProductId).length > 0) return undefined;
+    if (!cartSnapshot && postCheckoutSnapshot) return 'no_baseline';
+    if (
+      cartSnapshot &&
+      postCheckoutSnapshot &&
+      !hasSameRankingWindow(cartSnapshot.window, postCheckoutSnapshot.window)
+    ) {
+      return 'window_mismatch';
+    }
+    return undefined;
+  }, [
+    analysis.phase,
+    cartSnapshot,
+    postCheckoutDeltaByProductId,
+    postCheckoutRecs?.length,
+    postCheckoutSnapshot,
+  ]);
+  const cartBadge = cartIsStale ? (
+    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700">
+      stale
+    </span>
+  ) : null;
 
   const clientSection = selectedClient ? (
     selectedClientProfile ? <ClientProfileCard profile={selectedClientProfile} /> : null
@@ -266,10 +311,12 @@ export function AnalysisPanel() {
         title="Com Carrinho"
         columnTestId="analysis-column-cart"
         colorScheme="emerald"
+        badge={cartBadge}
         recommendations={cartRecs}
         capturedAt={cartCapturedAt}
         loading={cartLoading}
         emptyMessage="Adicione itens ao carrinho no catálogo"
+        stale={cartIsStale}
         deltaByProductId={cartDeltaByProductId}
       />
       <div id="pos-efetivar">
@@ -282,7 +329,7 @@ export function AnalysisPanel() {
           </div>
         ) : null}
         <RecommendationColumn
-          title="Pos-Efetivar"
+          title="Pós efetivar"
           columnTestId="analysis-column-post-checkout"
           colorScheme="violet"
           recommendations={postCheckoutRecs}
@@ -290,6 +337,7 @@ export function AnalysisPanel() {
           loading={postCheckoutLoading}
           emptyMessage={postCheckoutEmptyMessage}
           deltaByProductId={postCheckoutDeltaByProductId}
+          deltaEmptyDegraded={postCheckoutDeltaEmptyDegraded}
         />
       </div>
     </>

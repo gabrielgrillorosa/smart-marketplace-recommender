@@ -6,7 +6,13 @@
 
 - `.specs/codebase/frontend/TESTING.md`
 
-**Status**: Draft
+**Status**: Implemented — reconciliado em 2026-04-29
+
+## Execution Outcome
+
+- T1..T10 foram entregues no frontend principal: `ranking-window`, cobertura de score, banner de truncamento, timeline `Com Carrinho`, deltas comparativos e migração de vocabulário para carrinho.
+- O fluxo E2E ativo ficou concentrado em `frontend/e2e/tests/m13-cart-async-retrain.spec.ts`, que cobre score em mais de 10 itens, modo diagnóstico, recaptura do carrinho e `Pos-Efetivar`.
+- Os checklists abaixo foram preservados como plano histórico de execução; o fechamento formal passou a ser rastreado por este status, pelo `spec.md` reconciliado e pelo `ROADMAP.md`.
 
 ---
 
@@ -367,8 +373,7 @@ Expected: analysis orchestration compiles with shared windows and explicit cart 
 - `frontend/components/catalog/CatalogPanel.tsx`
 - `frontend/components/recommendations/AnalysisPanel.tsx`
 - `frontend/store/index.ts`
-- `frontend/e2e/tests/m11-ai-learning-showcase.spec.ts`
-- `frontend/e2e/tests/m9a-demo-buy.spec.ts`
+- `frontend/e2e/tests/m13-cart-async-retrain.spec.ts`
 
 **Depends on**: T6, T8  
 **Reuses**: Already-cart-based M13 UI and the existing advanced/demo isolation direction in the analysis/retrain surfaces.  
@@ -381,11 +386,11 @@ Expected: analysis orchestration compiles with shared windows and explicit cart 
 
 **Done when**:
 
-- [ ] Main-flow labels and explanatory text no longer use `Demo Comprar`, `Limpar Demo`, or `Com Demo`.
-- [ ] Principal-flow selectors and test IDs reflect cart semantics instead of demo semantics.
-- [ ] `store/index.ts` no longer implies demo state as the principal-flow source of intent.
-- [ ] Legacy demo scenarios, if retained, are explicitly marked as `legacy` / `advanced` and stop defining the acceptance path for M14.
-- [ ] Gate check passes: `npm run lint && npm run build`.
+- [x] Main-flow labels and explanatory text no longer use `Demo Comprar`, `Limpar Demo`, or `Com Demo`.
+- [x] Principal-flow selectors and test IDs reflect cart semantics instead of demo semantics.
+- [x] `store/index.ts` no longer implies demo state as the principal-flow source of intent.
+- [x] Legacy demo scenarios, if retained, are explicitly marked as `legacy` / `advanced` and stop defining the acceptance path for M14.
+- [x] Gate check passes: `npm run lint && npm run build`.
 
 **Verify**:
 
@@ -407,8 +412,6 @@ Expected: principal-flow vocabulary is cart-first and legacy demo paths are clea
 **Where**:
 
 - `frontend/e2e/tests/m13-cart-async-retrain.spec.ts`
-- `frontend/e2e/tests/m11-ai-learning-showcase.spec.ts`
-- `frontend/e2e/tests/m9a-demo-buy.spec.ts`
 
 **Depends on**: T9  
 **Reuses**: Existing `data-testid` conventions and the current cart -> checkout -> async retrain flow.  
@@ -421,13 +424,13 @@ Expected: principal-flow vocabulary is cart-first and legacy demo paths are clea
 
 **Done when**:
 
-- [ ] The active E2E path validates score coverage beyond the old implicit top-10 behavior.
-- [ ] The suite validates `Com Carrinho` recapture on add, remove, and empty-cart reset.
-- [ ] The suite validates delta visibility between adjacent phases.
-- [ ] The suite validates modal score context when ordered metadata exists.
-- [ ] Legacy demo specs no longer define the acceptance path for principal-flow behavior.
-- [ ] Build gate passes: `npm run lint && npm run build && npm run test:e2e`.
-- [ ] Existing Playwright suite passes with no silent deletions.
+- [x] The active E2E path validates score coverage beyond the old implicit top-10 behavior.
+- [x] The suite validates `Com Carrinho` recapture on add, remove, and empty-cart reset.
+- [x] The suite validates delta visibility between adjacent phases.
+- [x] The suite validates modal score context when ordered metadata exists.
+- [x] Legacy demo specs no longer define the acceptance path for principal-flow behavior.
+- [x] Build gate passes: `npm run lint && npm run build && npm run test:e2e`.
+- [x] Existing Playwright suite passes with no silent deletions.
 
 **Verify**:
 

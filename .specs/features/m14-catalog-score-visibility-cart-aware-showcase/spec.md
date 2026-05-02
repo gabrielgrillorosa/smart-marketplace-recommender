@@ -1,5 +1,7 @@
 # M14 — Catalog Score Visibility & Cart-Aware Showcase — Especificação
 
+**Status:** IMPLEMENTED — reconciliado com o código e os testes em 2026-04-29. O fluxo principal usa semântica de carrinho, a cobertura de score deixou de depender de `top-10` fixo no caminho principal e os restos legados de frontend ligados a `demo` foram removidos.
+
 ## Problema
 
 O fluxo principal do projeto já foi reorientado para `Carrinho -> Checkout -> Pedido -> Treino` no `M13`, e o frontend já contém partes dessa migração: `AnalysisPanel.tsx` usa as colunas `Com Carrinho` e `Pos-Efetivar`, `ProductCard.tsx` já mostra ação `Adicionar ao Carrinho`, e o store já possui `cartSlice`.
@@ -15,12 +17,12 @@ O M14 fecha esse gap de observabilidade e linguagem: o avaliador deve conseguir 
 
 ## Goals
 
-- [ ] Exibir score em todos os itens relevantes da grade do catálogo quando `Ordenar por IA` estiver ativo, sem depender de um top-10 fixo
-- [ ] Fazer a coluna `Com Carrinho` reagir a toda mudança relevante de composição do carrinho, sem congelar no primeiro snapshot
-- [ ] Tornar legíveis os deltas entre `Com IA`, `Com Carrinho` e `Pos-Efetivar`, com posição anterior, posição nova e variação de score
-- [ ] Concluir a migração de vocabulário do fluxo principal para semântica de carrinho, removendo termos `Demo` da jornada principal
-- [ ] Oferecer um modo/cap diagnóstico explícito para catálogos maiores, sem fallback silencioso para `limit: 10`
-- [ ] Garantir consistência de marca/categoria nos cards e detalhes de produto durante o showcase
+- [x] Exibir score em todos os itens relevantes da grade do catálogo quando `Ordenar por IA` estiver ativo, sem depender de um top-10 fixo
+- [x] Fazer a coluna `Com Carrinho` reagir a toda mudança relevante de composição do carrinho, sem congelar no primeiro snapshot
+- [x] Tornar legíveis os deltas entre `Com IA`, `Com Carrinho` e `Pos-Efetivar`, com posição anterior, posição nova e variação de score
+- [x] Concluir a migração de vocabulário do fluxo principal para semântica de carrinho, removendo termos `Demo` da jornada principal
+- [x] Oferecer um modo/cap diagnóstico explícito para catálogos maiores, sem fallback silencioso para `limit: 10`
+- [x] Garantir consistência de marca/categoria nos cards e detalhes de produto durante o showcase
 
 ## Fora de Escopo
 
@@ -173,49 +175,49 @@ O M14 fecha esse gap de observabilidade e linguagem: o avaliador deve conseguir 
 
 | Requirement ID | Story | Fase | Status |
 |---|---|---|---|
-| SHOW-01 | P1: Cobertura de score para toda a grade filtrada visível | Design | Pending |
-| SHOW-02 | P1: Sem `limit: 10` fixo no catálogo ordenado por IA | Design | Pending |
-| SHOW-03 | P1: Todo card exibido em modo ordenado renderiza `ScoreBadge` | Design | Pending |
-| SHOW-04 | P1: Mudança de filtros recarrega cobertura de score | Design | Pending |
-| SHOW-05 | P1: Desativar ordenação remove badges e restaura ordem original | Design | Pending |
-| SHOW-06 | P1: Sem cliente selecionado, ordenação fica desabilitada | Design | Pending |
-| SHOW-07 | P1: Loading/truncation state explícito durante fetch ampliado | Design | Pending |
-| SHOW-08 | P1: Primeiro item distinto captura fase `Com Carrinho` | Design | Pending |
-| SHOW-09 | P1: Novo item distinto recaptura `Com Carrinho` | Design | Pending |
-| SHOW-10 | P1: Remover item recaptura `Com Carrinho` | Design | Pending |
-| SHOW-11 | P1: Carrinho vazio volta o showcase ao baseline | Design | Pending |
-| SHOW-12 | P1: Profundidade/cap consistente entre `Com IA`, `Com Carrinho` e `Pos-Efetivar` | Design | Pending |
-| SHOW-13 | P1: Troca de cliente reseta snapshots cart/post-checkout | Design | Pending |
-| SHOW-14 | P1: `Pos-Efetivar` persiste até novo checkout ou reset | Design | Pending |
-| SHOW-15 | P1: `Com Carrinho` não congela no primeiro evento | Design | Pending |
-| SHOW-16 | P1: CTA principal usa `Adicionar ao Carrinho` | Design | Pending |
-| SHOW-17 | P1: Ação de limpeza usa `Esvaziar Carrinho` | Design | Pending |
-| SHOW-18 | P1: Jornada principal remove `Demo Comprar` | Design | Pending |
-| SHOW-19 | P1: Jornada principal remove `Limpar Demo` | Design | Pending |
-| SHOW-20 | P1: Jornada principal remove `Com Demo` | Design | Pending |
-| SHOW-21 | P1: Fluxo principal depende de estado de carrinho, não de `demoBoughtByClient` | Design | Pending |
-| SHOW-22 | P1: Caminhos legados de demo ficam isolados como avançado/legado | Design | Pending |
-| SHOW-23 | P1: E2E principal adota vocabulário de carrinho | Design | Pending |
-| SHOW-24 | P1: Seletores/test IDs principais adotam semântica de carrinho | Design | Pending |
-| SHOW-25 | P2: UI mostra posição anterior em `Com IA -> Com Carrinho` | Design | Pending |
-| SHOW-26 | P2: UI mostra posição anterior em `Com Carrinho -> Pos-Efetivar` | Design | Pending |
-| SHOW-27 | P2: UI mostra delta de score entre fases comparadas | Design | Pending |
-| SHOW-28 | P2: UI mostra posição nova na fase atual | Design | Pending |
-| SHOW-29 | P2: Estado neutro explícito para zero delta | Design | Pending |
-| SHOW-30 | P2: Produto novo entra com label explícita | Design | Pending |
-| SHOW-31 | P2: Produto fora do ranking anterior é sinalizado explicitamente | Design | Pending |
-| SHOW-32 | P2: Deltas usam identidade consistente por `product.id` | Design | Pending |
-| SHOW-33 | P2: Fase vazia não gera delta inválido | Design | Pending |
-| SHOW-34 | P2: Dataset padrão cobre grade filtrada sem toggle manual | Design | Pending |
-| SHOW-35 | P2: Existe modo/cap diagnóstico explícito para cobertura ampliada | Design | Pending |
-| SHOW-36 | P2: UI comunica quantidade pontuada vs truncada | Design | Pending |
-| SHOW-37 | P2: Mesmo cap/configuração aplicado nas fases comparáveis | Design | Pending |
-| SHOW-38 | P2: Sem fallback silencioso para top-10 no showcase | Design | Pending |
-| SHOW-39 | P2: Card de produto exibe categoria | Design | Pending |
-| SHOW-40 | P2: Card de produto exibe supplier/marca | Design | Pending |
-| SHOW-41 | P2: Modo ordenado por IA preserva categoria/supplier visíveis | Design | Pending |
-| SHOW-42 | P2: Modal de detalhe reflete a mesma categoria/supplier do card | Design | Pending |
-| SHOW-43 | P2: Contexto de marca/categoria permanece suficiente para desambiguar itens relevantes | Design | Pending |
+| SHOW-01 | P1: Cobertura de score para toda a grade filtrada visível | Execute | Implemented |
+| SHOW-02 | P1: Sem `limit: 10` fixo no catálogo ordenado por IA | Execute | Implemented |
+| SHOW-03 | P1: Todo card exibido em modo ordenado renderiza `ScoreBadge` | Execute | Implemented |
+| SHOW-04 | P1: Mudança de filtros recarrega cobertura de score | Execute | Implemented |
+| SHOW-05 | P1: Desativar ordenação remove badges e restaura ordem original | Execute | Implemented |
+| SHOW-06 | P1: Sem cliente selecionado, ordenação fica desabilitada | Execute | Implemented |
+| SHOW-07 | P1: Loading/truncation state explícito durante fetch ampliado | Execute | Implemented |
+| SHOW-08 | P1: Primeiro item distinto captura fase `Com Carrinho` | Execute | Implemented |
+| SHOW-09 | P1: Novo item distinto recaptura `Com Carrinho` | Execute | Implemented |
+| SHOW-10 | P1: Remover item recaptura `Com Carrinho` | Execute | Implemented |
+| SHOW-11 | P1: Carrinho vazio volta o showcase ao baseline | Execute | Implemented |
+| SHOW-12 | P1: Profundidade/cap consistente entre `Com IA`, `Com Carrinho` e `Pos-Efetivar` | Execute | Implemented |
+| SHOW-13 | P1: Troca de cliente reseta snapshots cart/post-checkout | Execute | Implemented |
+| SHOW-14 | P1: `Pos-Efetivar` persiste até novo checkout ou reset | Execute | Implemented |
+| SHOW-15 | P1: `Com Carrinho` não congela no primeiro evento | Execute | Implemented |
+| SHOW-16 | P1: CTA principal usa `Adicionar ao Carrinho` | Execute | Implemented |
+| SHOW-17 | P1: Ação de limpeza usa `Esvaziar Carrinho` | Execute | Implemented |
+| SHOW-18 | P1: Jornada principal remove `Demo Comprar` | Execute | Implemented |
+| SHOW-19 | P1: Jornada principal remove `Limpar Demo` | Execute | Implemented |
+| SHOW-20 | P1: Jornada principal remove `Com Demo` | Execute | Implemented |
+| SHOW-21 | P1: Fluxo principal depende de estado de carrinho, não de `demoBoughtByClient` | Execute | Implemented |
+| SHOW-22 | P1: Caminhos legados de demo ficam isolados como avançado/legado | Execute | Implemented |
+| SHOW-23 | P1: E2E principal adota vocabulário de carrinho | Execute | Implemented |
+| SHOW-24 | P1: Seletores/test IDs principais adotam semântica de carrinho | Execute | Implemented |
+| SHOW-25 | P2: UI mostra posição anterior em `Com IA -> Com Carrinho` | Execute | Implemented |
+| SHOW-26 | P2: UI mostra posição anterior em `Com Carrinho -> Pos-Efetivar` | Execute | Implemented |
+| SHOW-27 | P2: UI mostra delta de score entre fases comparadas | Execute | Implemented |
+| SHOW-28 | P2: UI mostra posição nova na fase atual | Execute | Implemented |
+| SHOW-29 | P2: Estado neutro explícito para zero delta | Execute | Implemented |
+| SHOW-30 | P2: Produto novo entra com label explícita | Execute | Implemented |
+| SHOW-31 | P2: Produto fora do ranking anterior é sinalizado explicitamente | Execute | Implemented |
+| SHOW-32 | P2: Deltas usam identidade consistente por `product.id` | Execute | Implemented |
+| SHOW-33 | P2: Fase vazia não gera delta inválido | Execute | Implemented |
+| SHOW-34 | P2: Dataset padrão cobre grade filtrada sem toggle manual | Execute | Implemented |
+| SHOW-35 | P2: Existe modo/cap diagnóstico explícito para cobertura ampliada | Execute | Implemented |
+| SHOW-36 | P2: UI comunica quantidade pontuada vs truncada | Execute | Implemented |
+| SHOW-37 | P2: Mesmo cap/configuração aplicado nas fases comparáveis | Execute | Implemented |
+| SHOW-38 | P2: Sem fallback silencioso para top-10 no showcase | Execute | Implemented |
+| SHOW-39 | P2: Card de produto exibe categoria | Execute | Implemented |
+| SHOW-40 | P2: Card de produto exibe supplier/marca | Execute | Implemented |
+| SHOW-41 | P2: Modo ordenado por IA preserva categoria/supplier visíveis | Execute | Implemented |
+| SHOW-42 | P2: Modal de detalhe reflete a mesma categoria/supplier do card | Execute | Implemented |
+| SHOW-43 | P2: Contexto de marca/categoria permanece suficiente para desambiguar itens relevantes | Execute | Implemented |
 
 **Total:** 43 requisitos | P1: 24 | P2: 19
 
@@ -225,27 +227,27 @@ O M14 fecha esse gap de observabilidade e linguagem: o avaliador deve conseguir 
 
 ### Estado atual confirmado no código
 
-- `frontend/components/recommendations/AnalysisPanel.tsx` já usa a semântica nova (`Com Carrinho`, `Pos-Efetivar`) e o `analysisSlice` já tipa as fases como `empty | initial | cart | postCheckout`
-- Apesar disso, `AnalysisPanel.tsx` ainda chama `fetch('/api/proxy/recommend', { body: { clientId, limit: 10 } })` e `fetch('/api/proxy/recommend/from-cart', { body: { clientId, productIds, limit: 10 } })`
-- `frontend/lib/hooks/useRecommendationFetcher.ts` ainda faz `POST /api/proxy/recommend` com `limit: 10`, o que explica por que só parte da grade recebe `scoreMap`
-- `frontend/components/catalog/CatalogPanel.tsx` carrega até 100 produtos no frontend e já renderiza `ScoreBadge` quando o score existe; o gap é cobertura, não ausência do componente
-- `frontend/components/catalog/ProductCard.tsx` e `frontend/components/catalog/ProductDetailModal.tsx` já mostram `category` e `supplier`; o design do `M14` deve preservar essa consistência e decidir se o comparativo precisa de contexto extra
-- `frontend/store/index.ts` ainda compõe `createDemoSlice` junto com `createCartSlice`, então a migração semântica do fluxo principal ainda não está totalmente fechada
-- Os testes E2E legados `frontend/e2e/tests/m9a-demo-buy.spec.ts` e `frontend/e2e/tests/m11-ai-learning-showcase.spec.ts` ainda validam `Demo Comprar`, `Limpar Demo` e `Com Demo`
+- `frontend/lib/showcase/ranking-window.ts` centraliza `CoverageMode`, `RankingWindow`, `CoverageMeta`, `buildShowcaseRequestKey()` e elimina a dependencia do `limit: 10` fixo no caminho principal
+- `frontend/components/catalog/CatalogPanel.tsx` usa `activeOrderedSession`, `CoverageStatusBanner` e `fetchRecommendations(..., { window, requestKey })` para recomputar a cobertura quando cliente, modo ou grade visivel mudam
+- `frontend/store/analysisSlice.ts` tipa as fases como `empty | initial | cart | postCheckout`, preserva `postCheckout` quando o carrinho zera e expõe `clearCartAware()` explicitamente
+- `frontend/components/recommendations/AnalysisPanel.tsx` recaptura `Com Carrinho` a cada add/remove, aplica a mesma `analysisWindow` entre fases e calcula deltas com `buildRecommendationDeltaMap()`
+- `frontend/components/catalog/ProductCard.tsx` e `frontend/components/catalog/ProductDetailModal.tsx` preservam `category` e `supplier` enquanto exibem score
+- `frontend/store/index.ts` usa `cartSlice` no fluxo principal; os restos legados de frontend ligados a `demo` foram removidos na reconciliacao de 2026-04-29
+- `frontend/e2e/tests/m13-cart-async-retrain.spec.ts` cobre o fluxo principal do showcase: score em mais de 10 itens, modo diagnostico, recaptura de `Com Carrinho`, deltas e `Pos-Efetivar`
 
 ### Implicações para a próxima fase
 
-- O design do `M14` deve decidir como calcular a profundidade da grade pontuada: tamanho da grade filtrada, cap fixo configurável, ou modo diagnóstico explícito
-- O design deve definir onde os deltas vivem: no `RecommendationColumn`, em badges laterais, em linhas expandidas ou em combinação dessas abordagens
-- O design deve explicitar como `Com Carrinho` volta ao baseline quando o carrinho zera, porque o `analysisSlice` atual aceita `captureCartAware([])` mas não modela um retorno explícito a `initial`
+- A reconciliacao de 2026-04-29 confirma a decisao final: `RankingWindow` compartilhada, modo `full` por padrao e `diagnostic` como ampliacao explicita
+- Os deltas vivem na superficie presentacional de `RecommendationColumn` / `RecommendationDeltaBadge`, enquanto `AnalysisPanel` apenas orquestra snapshots adjacentes
+- `Com Carrinho` volta ao baseline via `clearCartAware()` quando o carrinho zera, sem sintetizar snapshot vazio enganoso
 
 ---
 
 ## Critérios de Sucesso
 
-- [ ] Avaliador seleciona cliente, aplica filtro com mais de 10 produtos e ativa `Ordenar por IA`; todos os cards relevantes exibem score, não apenas o top-10
-- [ ] Ao adicionar e remover itens do carrinho, a coluna `Com Carrinho` é recapturada e continua refletindo a composição mais recente da sessão
-- [ ] A jornada principal não exibe `Demo Comprar`, `Limpar Demo` ou `Com Demo`; a narrativa visível é coerente com `Carrinho -> Checkout -> Pos-Efetivar`
-- [ ] O showcase exibe deltas suficientes para interpretar `Com IA -> Com Carrinho -> Pos-Efetivar` sem leitura manual produto a produto
-- [ ] Se houver truncamento por cap diagnóstico, a UI comunica isso explicitamente
-- [ ] Categoria e supplier permanecem visíveis e consistentes nos cards e detalhes do produto durante o showcase
+- [x] Avaliador seleciona cliente, aplica filtro com mais de 10 produtos e ativa `Ordenar por IA`; todos os cards relevantes exibem score, não apenas o top-10
+- [x] Ao adicionar e remover itens do carrinho, a coluna `Com Carrinho` é recapturada e continua refletindo a composição mais recente da sessão
+- [x] A jornada principal não exibe `Demo Comprar`, `Limpar Demo` ou `Com Demo`; a narrativa visível é coerente com `Carrinho -> Checkout -> Pos-Efetivar`
+- [x] O showcase exibe deltas suficientes para interpretar `Com IA -> Com Carrinho -> Pos-Efetivar` sem leitura manual produto a produto
+- [x] Se houver truncamento por cap diagnóstico, a UI comunica isso explicitamente
+- [x] Categoria e supplier permanecem visíveis e consistentes nos cards e detalhes do produto durante o showcase

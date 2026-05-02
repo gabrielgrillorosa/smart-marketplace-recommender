@@ -1,16 +1,22 @@
 import type { StateCreator } from 'zustand';
-import type { RecommendationResult } from '@/lib/types';
+import type { RankingConfig, RecommendationResult } from '@/lib/types';
 import type { CoverageMeta, CoverageMode } from '@/lib/showcase/ranking-window';
 
 export interface RecommendationSlice {
   recommendations: RecommendationResult[];
+  rankingConfig: RankingConfig | null;
   loading: boolean;
   isFallback: boolean;
   ordered: boolean;
   requestKey: string | null;
   coverageMode: CoverageMode;
   coverageMeta: CoverageMeta | null;
-  setRecommendations: (recs: RecommendationResult[], isFallback: boolean, coverageMeta: CoverageMeta) => void;
+  setRecommendations: (
+    recs: RecommendationResult[],
+    isFallback: boolean,
+    coverageMeta: CoverageMeta,
+    rankingConfig?: RankingConfig | null
+  ) => void;
   setLoading: (v: boolean) => void;
   setOrdered: (v: boolean) => void;
   setCoverageMode: (mode: CoverageMode) => void;
@@ -20,18 +26,20 @@ export interface RecommendationSlice {
 
 export const createRecommendationSlice: StateCreator<RecommendationSlice> = (set) => ({
   recommendations: [],
+  rankingConfig: null,
   loading: false,
   isFallback: false,
   ordered: false,
   requestKey: null,
   coverageMode: 'full',
   coverageMeta: null,
-  setRecommendations: (recs, isFallback, coverageMeta) =>
+  setRecommendations: (recs, isFallback, coverageMeta, rankingConfig) =>
     set({
       recommendations: recs,
       isFallback,
       requestKey: coverageMeta.requestKey,
       coverageMeta,
+      rankingConfig: rankingConfig ?? null,
     }),
   setLoading: (v) => set({ loading: v }),
   setOrdered: (v) => set({ ordered: v }),
@@ -39,6 +47,7 @@ export const createRecommendationSlice: StateCreator<RecommendationSlice> = (set
   resetOrderedState: () =>
     set({
       recommendations: [],
+      rankingConfig: null,
       isFallback: false,
       ordered: false,
       requestKey: null,
@@ -48,6 +57,7 @@ export const createRecommendationSlice: StateCreator<RecommendationSlice> = (set
   clearRecommendations: () =>
     set({
       recommendations: [],
+      rankingConfig: null,
       isFallback: false,
       ordered: false,
       requestKey: null,

@@ -53,19 +53,30 @@ export function useModelStatus(): UseModelStatusResult {
 
   const evaluateModelStatus = useCallback((status: ModelStatusResponse, nowTs: number) => {
     if (awaitingRetrainSince != null) {
-      if (status.lastTrainingResult === 'failed') {
+      const matchesAwaitedOrder =
+        awaitingForOrderId == null || status.lastOrderId === awaitingForOrderId;
+
+      if (status.lastTrainingResult === 'failed' && matchesAwaitedOrder) {
         clearAwaitingRetrain();
         setPanelState('failed');
         return;
       }
 
-      if (status.lastTrainingResult === 'rejected' && status.currentVersion === lastObservedVersion) {
+      if (
+        status.lastTrainingResult === 'rejected' &&
+        status.currentVersion === lastObservedVersion &&
+        matchesAwaitedOrder
+      ) {
         clearAwaitingRetrain();
         setPanelState('rejected');
         return;
       }
 
-      if (status.currentVersion && status.currentVersion !== lastObservedVersion) {
+      if (
+        status.currentVersion &&
+        status.currentVersion !== lastObservedVersion &&
+        matchesAwaitedOrder
+      ) {
         clearAwaitingRetrain();
         setPanelState('promoted');
         return;
@@ -93,7 +104,7 @@ export function useModelStatus(): UseModelStatusResult {
       return;
     }
     setPanelState('idle');
-  }, [awaitingRetrainSince, clearAwaitingRetrain, lastObservedVersion]);
+  }, [awaitingForOrderId, awaitingRetrainSince, clearAwaitingRetrain, lastObservedVersion]);
 
   const refreshStatus = useCallback(async () => {
     try {
