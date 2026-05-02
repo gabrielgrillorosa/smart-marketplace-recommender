@@ -19,15 +19,15 @@ export function ManualRetrainStatusSlot({ showProgress, banner }: ManualRetrainS
   if (showProgress) {
     return (
       <div
-        className="flex min-h-[44px] w-full min-w-0 flex-1 flex-col justify-center rounded-md border border-sky-200 bg-sky-50 px-3 py-2 sm:max-w-md"
+        className="flex min-h-[44px] w-full min-w-[10rem] items-center rounded-md border border-sky-200 bg-sky-50 px-3 py-2"
         data-testid="manual-retrain-progress"
         role="status"
         aria-live="polite"
+        aria-label="Retreino em curso. A sincronizar estado com o servidor do modelo."
       >
-        <div className="h-2 w-full overflow-hidden rounded bg-sky-100">
-          <div className="h-full w-full origin-left animate-pulse bg-sky-500 motion-reduce:animate-none" />
+        <div className="h-2.5 w-full overflow-hidden rounded-full bg-sky-100" aria-hidden>
+          <div className="h-full w-full rounded-full bg-sky-400/80 motion-safe:animate-pulse motion-reduce:animate-none" />
         </div>
-        <p className="mt-1.5 text-xs font-medium text-sky-950">A sincronizar com o servidor do modelo…</p>
       </div>
     );
   }
@@ -43,7 +43,7 @@ export function ManualRetrainStatusSlot({ showProgress, banner }: ManualRetrainS
     return (
       <div
         className={cn(
-          'flex min-h-[44px] w-full min-w-0 flex-1 items-center rounded-md border px-3 py-2 text-xs font-medium sm:max-w-md',
+          'flex min-h-[44px] w-full min-w-0 items-center rounded-md border px-3 py-2 text-xs font-medium',
           tone
         )}
         data-testid={`manual-retrain-banner-${banner.kind}`}

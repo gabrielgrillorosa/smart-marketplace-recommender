@@ -387,31 +387,34 @@ export function AnalysisPanel() {
         <div className="space-y-4">
           <div className="rounded-lg border border-gray-200 bg-white p-4">
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
-                <p className="max-w-xl text-xs text-gray-600 lg:pt-2">
-                  Retreino manual com os dados já sincronizados (não depende só do checkout).
-                </p>
-                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end lg:max-w-[720px] lg:flex-1">
-                  <ManualRetrainStatusSlot showProgress={showRetrainProgress} banner={retrainBanner} />
-                  <button
-                    type="button"
-                    data-testid="model-status-manual-retrain"
-                    onClick={() => void modelStatus.startManualRetrain()}
-                    disabled={modelStatus.loading}
-                    className={cn(
-                      'min-h-[44px] shrink-0 rounded-md px-3 text-sm font-medium sm:self-start',
-                      modelStatus.loading
-                        ? 'cursor-not-allowed bg-gray-200 text-gray-500'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    )}
-                  >
-                    {modelStatus.loading ? 'A executar retreino…' : 'Executar retreino manual'}
-                  </button>
-                </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+                {(showRetrainProgress || retrainBanner) ? (
+                  <div className="min-w-0 flex-1 basis-0">
+                    <ManualRetrainStatusSlot showProgress={showRetrainProgress} banner={retrainBanner} />
+                  </div>
+                ) : null}
+                <button
+                  type="button"
+                  data-testid="model-status-manual-retrain"
+                  onClick={() => void modelStatus.startManualRetrain()}
+                  disabled={modelStatus.loading}
+                  className={cn(
+                    'min-h-[44px] w-full shrink-0 rounded-md px-3 text-sm font-medium sm:w-auto',
+                    !(showRetrainProgress || retrainBanner) && 'sm:ml-auto',
+                    modelStatus.loading
+                      ? 'cursor-not-allowed bg-gray-200 text-gray-500'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
+                >
+                  {modelStatus.loading ? 'A executar retreino…' : 'Executar retreino manual'}
+                </button>
               </div>
 
               <div className="mt-2 border-t border-gray-100 pt-10">
-                <TrainingMetricsSummary status={modelStatus.modelStatus} />
+                <TrainingMetricsSummary
+                  status={modelStatus.modelStatus}
+                  metricsSyncActive={showRetrainProgress}
+                />
               </div>
             </div>
           </div>

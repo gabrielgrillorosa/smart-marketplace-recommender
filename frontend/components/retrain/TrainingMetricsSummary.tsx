@@ -5,6 +5,8 @@ import { describeNeuralHeadForMetrics } from '@/lib/neuralHeadLabels';
 
 interface TrainingMetricsSummaryProps {
   status: ModelStatusResponse | null;
+  /** True enquanto o painel está a fazer polling do treino — métricas podem actualizar a cada poucos segundos. */
+  metricsSyncActive?: boolean;
 }
 
 function formatModelStatus(status: string | undefined): string {
@@ -28,7 +30,7 @@ function dash(value: string | number | undefined | null): string {
  * Nota: versões anteriores ocultavam o bloco inteiro quando todas as métricas numéricas
  * vinham vazias (cold start), o que parecia «remoção» da UI — ver discussão em ADR/spec do projeto.
  */
-export function TrainingMetricsSummary({ status }: TrainingMetricsSummaryProps) {
+export function TrainingMetricsSummary({ status, metricsSyncActive }: TrainingMetricsSummaryProps) {
   if (!status) {
     return (
       <p className="text-xs text-gray-500" data-testid="training-metrics-empty">
@@ -68,9 +70,17 @@ export function TrainingMetricsSummary({ status }: TrainingMetricsSummaryProps) 
       className="rounded-md border border-gray-200 bg-gray-50/80 p-3"
       data-testid="training-metrics-summary"
       aria-labelledby="training-metrics-heading"
+      aria-busy={metricsSyncActive ? true : undefined}
     >
-      <h4 id="training-metrics-heading" className="text-xs font-medium text-gray-800">
+      <h4 id="training-metrics-heading" className="flex items-center gap-2 text-xs font-medium text-gray-800">
         Métricas do último treino
+        {metricsSyncActive ? (
+          <span
+            className="inline-flex h-2 w-2 shrink-0 rounded-full bg-sky-400 motion-safe:animate-pulse"
+            title="Sincronização com o servidor em curso"
+            aria-hidden
+          />
+        ) : null}
       </h4>
       <dl className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         {rows.map((r) => (

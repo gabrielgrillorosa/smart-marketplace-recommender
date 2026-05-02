@@ -45,7 +45,6 @@ export interface UseModelStatusResult {
 }
 
 export function useModelStatus(): UseModelStatusResult {
-  const selectedClient = useAppStore((s) => s.selectedClient);
   const awaitingRetrainSince = useAppStore((s) => s.awaitingRetrainSince);
   const lastObservedVersion = useAppStore((s) => s.lastObservedVersion);
   const awaitingForOrderId = useAppStore((s) => s.awaitingForOrderId);
@@ -190,9 +189,12 @@ export function useModelStatus(): UseModelStatusResult {
     }
   }, [awaitingRetrainSince]);
 
+  // Poll while any train is awaited (checkout or manual). Do not gate on
+  // `selectedClient` — manual retreino must refresh metrics even without a
+  // cliente seleccionado na navbar.
   useEffect(() => {
     stopPolling();
-    if (!selectedClient || awaitingRetrainSince == null) {
+    if (awaitingRetrainSince == null) {
       return;
     }
 
@@ -209,7 +211,7 @@ export function useModelStatus(): UseModelStatusResult {
     return () => {
       stopPolling();
     };
-  }, [awaitingRetrainSince, refreshStatus, selectedClient, stopPolling]);
+  }, [awaitingRetrainSince, refreshStatus, stopPolling]);
 
   return {
     panelState,
