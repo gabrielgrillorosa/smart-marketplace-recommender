@@ -26,6 +26,7 @@ import {
 } from '@/lib/adapters/cart';
 import { CartSummaryBar } from '@/components/cart/CartSummaryBar';
 import { getModelStatus } from '@/lib/adapters/train';
+import { modelTrainOutcomeFingerprint } from '@/lib/modelTrainOutcomeBaseline';
 import {
   buildShowcaseRequestKey,
   resolveShowcaseRankingWindow,
@@ -434,7 +435,8 @@ export function CatalogPanel() {
       setCart(selectedClient.id, refreshedCart);
       const status = await getModelStatus().catch(() => null);
       if (result.expectedTrainingTriggered) {
-        startAwaitingRetrain(result.orderId, status?.currentVersion ?? null);
+        const fp = status != null ? modelTrainOutcomeFingerprint(status) : null;
+        startAwaitingRetrain(result.orderId, status?.currentVersion ?? null, fp);
       }
       toast.success('Checkout concluído com sucesso');
       clearRecommendations();

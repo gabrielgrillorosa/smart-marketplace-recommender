@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/fetch-wrapper';
 import { getModelStatus, postModelTrain } from '@/lib/adapters/train';
+import { modelTrainOutcomeFingerprint } from '@/lib/modelTrainOutcomeBaseline';
 import type { ModelStatusResponse } from '@/lib/types';
 import { useAppStore } from '@/store';
 
@@ -48,6 +49,7 @@ export function useModelStatus(): UseModelStatusResult {
   const awaitingRetrainSince = useAppStore((s) => s.awaitingRetrainSince);
   const lastObservedVersion = useAppStore((s) => s.lastObservedVersion);
   const awaitingForOrderId = useAppStore((s) => s.awaitingForOrderId);
+  const awaitOutcomeBaselineSnapshot = useAppStore((s) => s.awaitOutcomeBaselineSnapshot);
   const startAwaitingRetrain = useAppStore((s) => s.startAwaitingRetrain);
   const clearAwaitingRetrain = useAppStore((s) => s.clearAwaitingRetrain);
 
@@ -72,6 +74,13 @@ export function useModelStatus(): UseModelStatusResult {
         awaitingForOrderId == null || status.lastOrderId === awaitingForOrderId;
 
       if (status.lastTrainingResult === 'failed' && matchesAwaitedOrder) {
+        if (
+          awaitOutcomeBaselineSnapshot != null &&
+          modelTrainOutcomeFingerprint(status) === awaitOutcomeBaselineSnapshot
+        ) {
+          setPanelState('training');
+          return;
+        }
         const kept = formatKeptModelLabel(lastObservedVersion, status);
         toast.error(`Treino falhou. Mantém-se o modelo: ${kept}.`);
         clearAwaitingRetrain();
@@ -84,6 +93,13 @@ export function useModelStatus(): UseModelStatusResult {
         status.currentVersion === lastObservedVersion &&
         matchesAwaitedOrder
       ) {
+        if (
+          awaitOutcomeBaselineSnapshot != null &&
+          modelTrainOutcomeFingerprint(status) === awaitOutcomeBaselineSnapshot
+        ) {
+          setPanelState('training');
+          return;
+        }
         const kept = formatKeptModelLabel(lastObservedVersion, status);
         toast.error(`Treino não promovido. Mantém-se o modelo: ${kept}.`);
         clearAwaitingRetrain();
@@ -122,7 +138,13 @@ export function useModelStatus(): UseModelStatusResult {
     // poll shows "rejeitado pós-checkout" even though no new train was triggered.
     // The server field is historical; checkout/cron/manual runs all write it.
     setPanelState('idle');
-  }, [awaitingForOrderId, awaitingRetrainSince, clearAwaitingRetrain, lastObservedVersion]);
+  }, [
+    awaitOutcomeBaselineSnapshot,
+    awaitingForOrderId,
+    awaitingRetrainSince,
+    clearAwaitingRetrain,
+    lastObservedVersion,
+  ]);
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -144,7 +166,8 @@ export function useModelStatus(): UseModelStatusResult {
   const startAwaitingCheckout = useCallback(async (orderId: string) => {
     const status = await getModelStatus().catch(() => null);
     const observedVersion = status?.currentVersion ?? null;
-    startAwaitingRetrain(orderId, observedVersion);
+    const baseline = status != null ? modelTrainOutcomeFingerprint(status) : null;
+    startAwaitingRetrain(orderId, observedVersion, baseline);
     if (status) {
       setModelStatus(status);
     }
@@ -159,7 +182,8 @@ export function useModelStatus(): UseModelStatusResult {
     try {
       await postModelTrain(adminKey);
       const status = await getModelStatus().catch(() => null);
-      startAwaitingRetrain(null, status?.currentVersion ?? null);
+      const baseline = status != null ? modelTrainOutcomeFingerprint(status) : null;
+      startAwaitingRetrain(null, status?.currentVersion ?? null, baseline);
       if (status) {
         setModelStatus(status);
       }

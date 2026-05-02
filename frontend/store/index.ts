@@ -51,6 +51,7 @@ export const useAppStore = create<CombinedStore>()(
         awaitingRetrainSince: state.awaitingRetrainSince,
         lastObservedVersion: state.lastObservedVersion,
         awaitingForOrderId: state.awaitingForOrderId,
+        awaitOutcomeBaselineSnapshot: state.awaitOutcomeBaselineSnapshot,
       }),
       skipHydration: true,
     }

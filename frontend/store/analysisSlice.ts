@@ -20,6 +20,8 @@ export interface AnalysisSlice {
   awaitingRetrainSince: number | null;
   lastObservedVersion: string | null;
   awaitingForOrderId: string | null;
+  /** Snapshot de trainedAt|lastTrainingResult|versão ao iniciar a espera; evita falso «rejected» do ciclo anterior. */
+  awaitOutcomeBaselineSnapshot: string | null;
   captureInitial: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   captureCartAware: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   clearCartAware: (clientId: string) => void;
@@ -28,7 +30,11 @@ export interface AnalysisSlice {
   captureRetrained: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
   /** Promotes Pos-Retreino snapshot to the new «Com IA» baseline (ADR-067 / ADR-069). */
   applyPostRetrainToInitial: (clientId: string) => void;
-  startAwaitingRetrain: (orderId: string | null, observedVersion: string | null) => void;
+  startAwaitingRetrain: (
+    orderId: string | null,
+    observedVersion: string | null,
+    outcomeBaselineSnapshot?: string | null
+  ) => void;
   clearAwaitingRetrain: () => void;
   resetAnalysis: () => void;
   // Resets only the snapshots (keeps awaiting-retrain state). Used when the
@@ -43,6 +49,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   awaitingRetrainSince: null,
   lastObservedVersion: null,
   awaitingForOrderId: null,
+  awaitOutcomeBaselineSnapshot: null,
 
   captureInitial: (clientId, recs, window) => {
     const current = get().analysis;
@@ -150,6 +157,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
       awaitingRetrainSince: null,
       lastObservedVersion: null,
       awaitingForOrderId: null,
+      awaitOutcomeBaselineSnapshot: null,
     });
   },
 
@@ -171,11 +179,12 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
     });
   },
 
-  startAwaitingRetrain: (orderId, observedVersion) => {
+  startAwaitingRetrain: (orderId, observedVersion, outcomeBaselineSnapshot = null) => {
     set({
       awaitingRetrainSince: Date.now(),
       lastObservedVersion: observedVersion,
       awaitingForOrderId: orderId,
+      awaitOutcomeBaselineSnapshot: outcomeBaselineSnapshot ?? null,
     });
   },
 
@@ -184,6 +193,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
       awaitingRetrainSince: null,
       lastObservedVersion: null,
       awaitingForOrderId: null,
+      awaitOutcomeBaselineSnapshot: null,
     });
   },
 
@@ -194,6 +204,7 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
       awaitingRetrainSince: null,
       lastObservedVersion: null,
       awaitingForOrderId: null,
+      awaitOutcomeBaselineSnapshot: null,
     });
   },
 
