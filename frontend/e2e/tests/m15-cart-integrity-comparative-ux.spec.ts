@@ -437,7 +437,7 @@ test.describe('M15 — Cart Integrity & Comparative UX', () => {
     await expect(page.getByText('Produto antigo')).toHaveCount(0);
   });
 
-  test('explica com clareza o estado rejeitado no painel e em Pos-Efetivar', async ({ page }) => {
+  test('métricas refletem treino rejeitado e a coluna Pós retreino permanece vazia até promoção', async ({ page }) => {
     test.setTimeout(120000);
 
     await page.route('**/api/proxy/model/status', async (route) => {
@@ -465,22 +465,16 @@ test.describe('M15 — Cart Integrity & Comparative UX', () => {
     const clientSelected = await selectFirstClient(page);
     test.skip(!clientSelected, 'Sem clientes disponíveis no ambiente E2E atual.');
 
-    const modelStatusPanel = page.getByTestId('model-status-panel');
-    await expect(modelStatusPanel).toContainText('Modelo atual mantido após o checkout', { timeout: 15000 });
-    await expect(modelStatusPanel).toContainText(/rejeitado|Pos-Efetivar/i);
-
-    const outcomeNotice = page.getByTestId('post-checkout-outcome-notice');
-    await expect(outcomeNotice).toBeVisible({ timeout: 10000 });
-    await expect(outcomeNotice).toContainText('Modelo atual mantido após o checkout');
-    await expect(outcomeNotice).toContainText(/ausência de mudança visível é esperada/i);
+    const metrics = page.getByTestId('training-metrics-summary');
+    await expect(metrics).toContainText(/rejected/i, { timeout: 15000 });
 
     await expectNoPostCheckoutSnapshot(page);
     await expect(page.getByTestId('analysis-column-post-checkout')).toContainText(
-      'Sem novo ranking visível: o modelo atual foi mantido.'
+      'Ainda sem ranking pós-retreino'
     );
   });
 
-  test('explica com clareza o estado de falha no painel e em Pos-Efetivar', async ({ page }) => {
+  test('métricas refletem falha de treino e a coluna Pós retreino permanece vazia até promoção', async ({ page }) => {
     test.setTimeout(120000);
 
     await page.route('**/api/proxy/model/status', async (route) => {
@@ -500,21 +494,18 @@ test.describe('M15 — Cart Integrity & Comparative UX', () => {
     const clientSelected = await selectFirstClient(page);
     test.skip(!clientSelected, 'Sem clientes disponíveis no ambiente E2E atual.');
 
-    const modelStatusPanel = page.getByTestId('model-status-panel');
-    await expect(modelStatusPanel).toContainText('Treinamento pós-checkout não concluiu', { timeout: 15000 });
-    await expect(modelStatusPanel).toContainText(/Pos-Efetivar continua representando o modelo ativo anterior/i);
-
-    const outcomeNotice = page.getByTestId('post-checkout-outcome-notice');
-    await expect(outcomeNotice).toBeVisible({ timeout: 10000 });
-    await expect(outcomeNotice).toContainText('Nenhum novo snapshot pós-checkout aplicado');
+    const metrics = page.getByTestId('training-metrics-summary');
+    await expect(metrics).toContainText(/failed/i, { timeout: 15000 });
 
     await expectNoPostCheckoutSnapshot(page);
     await expect(page.getByTestId('analysis-column-post-checkout')).toContainText(
-      'Sem novo snapshot: o retreinamento pós-checkout não concluiu.'
+      'Ainda sem ranking pós-retreino'
     );
   });
 
-  test('explica com clareza o estado indefinido com affordance de refresh manual', async ({ page }) => {
+  test('timeout de confirmação do treino mostra aviso (toast) e coluna Pós retreino sem snapshot', async ({
+    page,
+  }) => {
     test.setTimeout(120000);
 
     await page.route('**/api/proxy/model/status', async (route) => {
@@ -545,18 +536,11 @@ test.describe('M15 — Cart Integrity & Comparative UX', () => {
     });
     await openAnalysisTab(page);
 
-    const modelStatusPanel = page.getByTestId('model-status-panel');
-    await expect(modelStatusPanel).toContainText('Resultado do checkout ainda sem confirmação', { timeout: 15000 });
-    await expect(modelStatusPanel.getByTestId('model-status-refresh')).toBeVisible();
-
-    const outcomeNotice = page.getByTestId('post-checkout-outcome-notice');
-    await expect(outcomeNotice).toBeVisible({ timeout: 10000 });
-    await expect(outcomeNotice).toContainText('Resultado do retreinamento ainda não confirmado');
-    await expect(page.getByTestId('post-checkout-outcome-refresh')).toBeVisible();
+    await expect(page.getByText(/Resultado do treino ainda sem confirmação/i)).toBeVisible({ timeout: 15000 });
 
     await expectNoPostCheckoutSnapshot(page);
     await expect(page.getByTestId('analysis-column-post-checkout')).toContainText(
-      'Aguardando confirmação do resultado pós-checkout.'
+      'Ainda sem ranking pós-retreino'
     );
   });
 });

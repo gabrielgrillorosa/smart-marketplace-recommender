@@ -248,52 +248,40 @@ test.describe('M13 — Cart, Checkout & Async Retrain', () => {
 
     await openAnalysisTab(page);
 
-    const modelStatusPanel = page.getByTestId('model-status-panel');
-    await expect(modelStatusPanel).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('model-status-manual-retrain')).toBeVisible({ timeout: 10000 });
     test.skip(
       checkoutPayload?.expectedTrainingTriggered !== true,
-      'Checkout backend nao sinalizou expectedTrainingTriggered=true; pulando assercao de model-status.'
-    );
-    await expect(modelStatusPanel).toContainText(
-      /Pedido confirmado, modelo aprendendo|Pos-Efetivar já reflete a nova versão ativa|Modelo atual mantido após o checkout|Treinamento pós-checkout não concluiu|Resultado do checkout ainda sem confirmação/,
-      { timeout: 30000 }
+      'Checkout backend nao sinalizou expectedTrainingTriggered=true; pulando assercao de retreino assincrono.'
     );
 
-    await page.waitForFunction(
-      () => {
-        const text = document.body.innerText;
-        return (
-          text.includes('Pos-Efetivar já reflete a nova versão ativa') ||
-          text.includes('Modelo atual mantido após o checkout') ||
-          text.includes('Treinamento pós-checkout não concluiu') ||
-          text.includes('Resultado do checkout ainda sem confirmação')
-        );
-      },
-      { timeout: 120000 }
-    );
+    await expect
+      .poll(
+        async () => {
+          const postCol = page.getByTestId('analysis-column-post-checkout');
+          const hasRows = (await postCol.locator('li').count()) > 0;
+          const terminalToast =
+            (await page
+              .getByText(
+                /Treino concluído com sucesso|Treino falhou|Treino não promovido|Resultado do treino ainda sem confirmação/
+              )
+              .count()) > 0;
+          return hasRows || terminalToast;
+        },
+        { timeout: 120000 }
+      )
+      .toBeTruthy();
 
-    const promoted = await modelStatusPanel
-      .getByText('Pos-Efetivar já reflete a nova versão ativa')
-      .isVisible()
-      .catch(() => false);
-    const rejected = await modelStatusPanel
-      .getByText('Modelo atual mantido após o checkout')
-      .isVisible()
-      .catch(() => false);
-    const failed = await modelStatusPanel
-      .getByText('Treinamento pós-checkout não concluiu')
-      .isVisible()
-      .catch(() => false);
-    const unknown = await modelStatusPanel
-      .getByText('Resultado do checkout ainda sem confirmação')
-      .isVisible()
-      .catch(() => false);
+    const postCheckoutColumn = page.getByTestId('analysis-column-post-checkout');
+    let hasPostRows = (await postCheckoutColumn.locator('li').count()) > 0;
+    const sawSuccessToast = await page.getByText(/Treino concluído com sucesso/).isVisible().catch(() => false);
+    if (sawSuccessToast && !hasPostRows) {
+      await expect(postCheckoutColumn.locator('li').first()).toBeVisible({ timeout: 60000 });
+      hasPostRows = true;
+    }
 
-    if (promoted) {
-      const postCheckoutColumn = page.getByTestId('analysis-column-post-checkout');
-      // M19 / PE-06 / ADR-065: Pos-Efetivar deltas require cart-aware baseline; copy + pills
-      // regress when the post-checkout column loses its diff map after checkout.
-      await expect(postCheckoutColumn).toContainText('Pós efetivar', { timeout: 5000 });
+    if (hasPostRows) {
+      // M19 / PE-06 / ADR-065: deltas da última coluna vs Com IA congelado (`initial`).
+      await expect(postCheckoutColumn).toContainText('Pós retreino', { timeout: 5000 });
       await expect(postCheckoutColumn.locator('li').first()).toBeVisible({ timeout: 30000 });
       await expect(
         postCheckoutColumn.locator(`[data-testid^="analysis-column-post-checkout-delta-"]`).first()
@@ -304,17 +292,8 @@ test.describe('M13 — Cart, Checkout & Async Retrain', () => {
       return;
     }
 
-    if (rejected) {
-      await expect(modelStatusPanel).toContainText(/rejeitado|mantido|Pos-Efetivar/i);
-      return;
-    }
-
-    if (failed) {
-      await expect(modelStatusPanel).toContainText(/não concluiu|anterior|erro/i);
-      return;
-    }
-
-    expect(unknown).toBeTruthy();
-    await expect(modelStatusPanel.getByTestId('model-status-refresh')).toBeVisible();
+    await expect(
+      page.getByText(/Treino falhou|Treino não promovido|Resultado do treino ainda sem confirmação/)
+    ).toBeVisible({ timeout: 5000 });
   });
 });

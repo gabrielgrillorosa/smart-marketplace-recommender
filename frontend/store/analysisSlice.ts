@@ -26,6 +26,8 @@ export interface AnalysisSlice {
   markCartSnapshotStale: (clientId: string) => void;
   clearCartSnapshotStale: (clientId?: string) => void;
   captureRetrained: (clientId: string, recs: RecommendationResult[], window: RankingWindow) => void;
+  /** Promotes Pos-Retreino snapshot to the new «Com IA» baseline (ADR-067 / ADR-069). */
+  applyPostRetrainToInitial: (clientId: string) => void;
   startAwaitingRetrain: (orderId: string | null, observedVersion: string | null) => void;
   clearAwaitingRetrain: () => void;
   resetAnalysis: () => void;
@@ -103,8 +105,8 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
   clearCartAware: (clientId) => {
     const current = get().analysis;
     if (current.phase === 'empty' || current.clientId !== clientId) return;
-    // M19 / ADR-048: never drop the cart snapshot in postCheckout — Pos-Efetivar
-    // needs the pre-checkout cart-aware baseline for buildRecommendationDeltaMap.
+    // M19 / ADR-048: never drop the cart snapshot in postCheckout — useful for
+    // showcase history; Pós retreino deltas vs Com IA use `initial`, not cart.
     if (current.phase === 'postCheckout') return;
     if (current.phase === 'initial') return;
 
@@ -148,6 +150,24 @@ export const createAnalysisSlice: StateCreator<AnalysisSlice> = (set, get) => ({
       awaitingRetrainSince: null,
       lastObservedVersion: null,
       awaitingForOrderId: null,
+    });
+  },
+
+  applyPostRetrainToInitial: (clientId) => {
+    const current = get().analysis;
+    if (current.phase !== 'postCheckout' || current.clientId !== clientId) return;
+    const promoted: Snapshot = {
+      recommendations: current.postCheckout.recommendations,
+      capturedAt: new Date().toISOString(),
+      window: current.postCheckout.window,
+    };
+    set({
+      analysis: {
+        phase: 'initial',
+        clientId,
+        initial: promoted,
+      },
+      cartSnapshotStale: false,
     });
   },
 

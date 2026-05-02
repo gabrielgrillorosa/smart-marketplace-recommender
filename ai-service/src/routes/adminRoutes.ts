@@ -1,15 +1,18 @@
 import { FastifyPluginAsync } from 'fastify'
 import { TrainingJobRegistry } from '../services/TrainingJobRegistry.js'
 import { ConflictError } from '../services/ModelTrainer.js'
+import type { GenerateAttentionLearnedJsonResult } from '../services/attentionLearnedJsonGenerator.js'
 
 interface AdminRoutesOptions {
   registry: TrainingJobRegistry
   adminApiKey?: string
+  /** Optional: regenerate `attention_learned` JSON (corruption / ops). */
+  regenerateAttentionLearned?: (force: boolean) => Promise<GenerateAttentionLearnedJsonResult>
 }
 
 export const adminRoutes: FastifyPluginAsync<AdminRoutesOptions> = async (
   fastify,
-  { registry, adminApiKey }
+  { registry, adminApiKey, regenerateAttentionLearned }
 ) => {
   fastify.addHook('onRequest', async (request, reply) => {
     const provided = request.headers['x-admin-key']
@@ -32,4 +35,21 @@ export const adminRoutes: FastifyPluginAsync<AdminRoutesOptions> = async (
       throw err
     }
   })
+
+  if (regenerateAttentionLearned) {
+    fastify.post<{ Body: { force?: boolean } }>(
+      '/admin/attention-learned/regenerate',
+      async (request, reply) => {
+        const force = request.body?.force === true
+        try {
+          const result = await regenerateAttentionLearned(force)
+          return reply.code(200).send(result)
+        } catch (err) {
+          return reply.code(500).send({
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+    )
+  }
 }

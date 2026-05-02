@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify'
+import { isCheckoutEnqueueTrainingEnabled } from '../config/checkoutEnqueueEnv.js'
 import { Neo4jRepository, Neo4jUnavailableError } from '../repositories/Neo4jRepository.js'
 import { TrainingJobRegistry } from '../services/TrainingJobRegistry.js'
 import { ConflictError } from '../services/ModelTrainer.js'
@@ -61,11 +62,14 @@ export async function ordersRoutes(
 
       try {
         const synced = await repo.syncBoughtRelationships(edges)
-        const training = registry.enqueue({
-          triggeredBy: 'checkout',
-          orderId,
-          strategy: 'queue',
-        })
+        const enqueueTraining = isCheckoutEnqueueTrainingEnabled()
+        const training = enqueueTraining
+          ? registry.enqueue({
+              triggeredBy: 'checkout',
+              orderId,
+              strategy: 'queue',
+            })
+          : { enqueued: false as const }
 
         return reply.code(202).send({
           orderId,

@@ -235,6 +235,12 @@ Reutilizar `NEURAL_WEIGHT`, `SEMANTIC_WEIGHT`, `PROFILE_POOLING_HALF_LIFE_DAYS` 
 
 ---
 
+## Relação com M20 (política de treino)
+
+M21 define **como** treinar e inferir (cabeça, pooling, fusão) após existir massa de dados; **não** define **quando** enfileirar o treino MLP. A acumulação de compras e o retreino manual com métricas (showcase **Pos-Retreino**) estão em **[M20 / ADR-067](../m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md)**. Variável partilhada com o `api-service`: `CHECKOUT_ENQUEUE_TRAINING` (default **false** — sync Neo4j no checkout sem enqueue automático).
+
+---
+
 ## Referências
 
 - [ARCHITECTURE.md — ai-service](../../codebase/ai-service/ARCHITECTURE.md)

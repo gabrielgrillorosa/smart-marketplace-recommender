@@ -6,8 +6,8 @@ import { Neo4jUnavailableError, ClientNotFoundError } from '../repositories/Neo4
 import {
   aggregateClientProfileEmbeddings,
   deltaDaysUtc,
-  type ProfilePoolingMode,
 } from '../profile/clientProfileAggregation.js'
+import type { ProfilePoolingRuntimeHolder } from '../config/profilePoolingRuntimeHolder.js'
 import type {
   CatalogProductRow,
   EligibilityReasonCode,
@@ -77,7 +77,7 @@ export function maxCosineToAnchors(candidateEmbedding: number[], anchors: number
 export function meanPooling(embeddings: number[][]): number[] {
   if (embeddings.length === 0) throw new Error('meanPooling: empty embeddings')
   const entries = embeddings.map((e) => ({ embedding: e, deltaDays: 0 }))
-  return aggregateClientProfileEmbeddings(entries, 'mean', 30)
+  return aggregateClientProfileEmbeddings(entries, { mode: 'mean', halfLifeDays: 30 })
 }
 
 export function computeFinalScore(
@@ -172,19 +172,30 @@ export class RecommendationService {
     private readonly recentPurchaseWindowDays: number,
     private readonly recencyRerankWeight: number,
     private readonly recencyAnchorCount: number,
-    private readonly profilePoolingMode: ProfilePoolingMode,
-    private readonly profilePoolingHalfLifeDays: number,
+    private readonly profilePoolingHolder: ProfilePoolingRuntimeHolder,
     private readonly logger?: FastifyBaseLogger
   ) {}
 
   private getRankingConfig(): RankingConfig {
-    return {
+    const rc: RankingConfig = {
       neuralWeight: this.neuralWeight,
       semanticWeight: this.semanticWeight,
       recencyRerankWeight: this.recencyRerankWeight,
-      profilePoolingMode: this.profilePoolingMode,
-      profilePoolingHalfLifeDays: this.profilePoolingHalfLifeDays,
+      profilePoolingMode: this.profilePoolingHolder.get().mode,
+      profilePoolingHalfLifeDays: this.profilePoolingHolder.get().halfLifeDays,
     }
+    if (this.profilePoolingHolder.get().mode === 'attention_light' || this.profilePoolingHolder.get().mode === 'attention_learned') {
+      rc.profilePoolingAttentionTemperature =
+        this.profilePoolingHolder.get().attentionTemperature === Number.POSITIVE_INFINITY ||
+        this.profilePoolingHolder.get().attentionTemperature === undefined
+          ? null
+          : this.profilePoolingHolder.get().attentionTemperature
+      rc.profilePoolingAttentionMaxEntries = this.profilePoolingHolder.get().attentionMaxEntries ?? 0
+    }
+    if (this.profilePoolingHolder.get().mode === 'attention_learned') {
+      rc.profilePoolingAttentionLearned = true
+    }
+    return rc
   }
 
   /**
@@ -223,12 +234,7 @@ export class RecommendationService {
       embedding: row.embedding,
       deltaDays: deltaDaysUtc(now, row.lastPurchaseIso, this.logger),
     }))
-    const clientProfileVector = aggregateClientProfileEmbeddings(
-      entries,
-      this.profilePoolingMode,
-      this.profilePoolingHalfLifeDays,
-      this.logger
-    )
+    const clientProfileVector = aggregateClientProfileEmbeddings(entries, this.profilePoolingHolder.get(), this.logger)
 
     return this.recommendFromVector(clientId, limit, clientProfileVector, {
       emptyCatalogReason: EMPTY_CATALOG_REASON,
@@ -280,8 +286,7 @@ export class RecommendationService {
 
     const clientProfileVector = aggregateClientProfileEmbeddings(
       merged.map((m) => ({ embedding: m.embedding, deltaDays: m.deltaDays })),
-      this.profilePoolingMode,
-      this.profilePoolingHalfLifeDays,
+      this.profilePoolingHolder.get(),
       this.logger
     )
 

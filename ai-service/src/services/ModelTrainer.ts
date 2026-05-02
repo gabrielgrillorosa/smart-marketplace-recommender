@@ -14,7 +14,7 @@ import { buildNeuralModel } from '../ml/neuralModelFactory.js'
 import { computePrecisionAtK } from '../ml/rankingEval.js'
 import { neuralLossModeToHeadKind } from '../ml/neuralHead.js'
 import { buildClientPurchaseTemporalMap } from './training-temporal-map.js'
-import type { ProfilePoolingRuntime } from '../profile/clientProfileAggregation.js'
+import type { ProfilePoolingRuntimeHolder } from '../config/profilePoolingRuntimeHolder.js'
 
 export { ApiServiceUnavailableError } from './training-data-fetch.js'
 
@@ -60,7 +60,7 @@ export class ModelTrainer {
     private readonly apiServiceUrl: string,
     private readonly neuralWeight: number,
     private readonly semanticWeight: number,
-    private readonly profilePooling: ProfilePoolingRuntime,
+    private readonly profilePooling: ProfilePoolingRuntimeHolder,
     private readonly neuralLossMode: NeuralLossMode = 'bce'
   ) {}
 
@@ -159,7 +159,7 @@ export class ModelTrainer {
           useClassWeight: true,
         },
         temporal,
-        this.profilePooling
+        this.profilePooling.get()
       )
 
       if (inputVectors.length === 0) {
@@ -254,7 +254,7 @@ export class ModelTrainer {
           productEmbeddingMap,
           model,
           5,
-          this.profilePooling,
+          this.profilePooling.get(),
           neuralHeadKind
         )
       } catch (precErr) {

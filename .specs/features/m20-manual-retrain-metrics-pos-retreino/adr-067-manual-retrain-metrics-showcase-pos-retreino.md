@@ -49,3 +49,10 @@ O painel **`ModelStatusPanel`** esconde o retreino manual e métricas sob **«Mo
 - **Planeado:** [spec.md](./spec.md) (requisitos **PR-067-01**…), [design.md](./design.md) (UI complexo), [ADR-068](./adr-068-post-retrain-baseline-snapshot-in-analysis-slice.md), [ADR-069](./adr-069-reiniciar-vs-limpar-showcase-copy.md), e [tasks.md](./tasks.md) (**T067-1**…**T067-7**). Atalhos históricos em M19: [spec-adr067.md](../m19-pos-efetivar-showcase-deltas/spec-adr067.md), [tasks-adr067.md](../m19-pos-efetivar-showcase-deltas/tasks-adr067.md).
 - O [spec M19](../m19-pos-efetivar-showcase-deltas/spec.md) permanece registo da entrega **ADR-065/066**; **M20** / ADR-067 estende-se nos artefactos acima até fecho **IMPLEMENTED**.
 - Actualização de [STATE.md](../../project/STATE.md) e [ROADMAP.md](../../project/ROADMAP.md) na tarefa **T067-7**.
+
+## Implementação no código (incremental)
+
+| Data | Entrega |
+|------|---------|
+| 2026-05-02 | **`CHECKOUT_ENQUEUE_TRAINING`** (default **`false`**) em `ai-service` [`orders.ts`](../../../ai-service/src/routes/orders.ts) + helper [`checkoutEnqueueEnv.ts`](../../../ai-service/src/config/checkoutEnqueueEnv.ts): sync `BOUGHT` sem `TrainingJobRegistry.enqueue` quando a flag é falsa; resposta `202` com `training: { enqueued: false }`. **`api-service`:** `training.checkout.enqueue` / env `CHECKOUT_ENQUEUE_TRAINING` espelhado em `CartApplicationService` → `CheckoutResponse.expectedTrainingTriggered`. **Compose / `.env.example`:** variável documentada nos dois serviços. |
+| 2026-05-02 | **Frontend:** `useModelStatus` deixa de mapear `lastTrainingResult` persistido do `GET /model/status` para estado «rejeitado pós-checkout» quando não há fluxo de espera pós-checkout — evita avisos enganadores ao limpar carrinho ou recarregar (complementar a M20 P1). `ModelStatusPanel` mostra contexto histórico em copy neutra. |

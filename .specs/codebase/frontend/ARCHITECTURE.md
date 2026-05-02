@@ -21,6 +21,7 @@ Browser
 │
 ├── app/api/proxy/          → Next.js Route Handlers (server-side proxy)
 │   ├── recommend/route.ts  → POST → AI Service /api/v1/recommend
+│   ├── recommend/from-cart/route.ts → POST → AI Service /api/v1/recommend/from-cart
 │   ├── search/route.ts     → POST → AI Service /api/v1/search/semantic
 │   └── rag/route.ts        → POST → AI Service /api/v1/rag/query
 │
@@ -60,6 +61,8 @@ Browser → POST /api/proxy/recommend
 ```
 
 O API Service (Java :8080) é chamado diretamente do browser via rewrite configurado em `next.config.js` (`/backend/*` → `http://api-service:8080/*`). Confirmado em `useServiceHealth.ts`: `checkEndpoint('/backend/actuator/health')`.
+
+O catálogo em modo **«Ordenar por IA»** com itens no carrinho usa também `POST /api/proxy/recommend/from-cart` (ranking com pooling do carrinho; alinhado à coluna «Com Carrinho» do showcase). Ver [ADR-073](../../features/m18-catalog-simplified-ad055/adr-073-catalog-live-reorder-with-cart.md) e [INTEGRATIONS](./INTEGRATIONS.md).
 
 ## Padrão de adaptadores
 

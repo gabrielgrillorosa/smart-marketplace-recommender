@@ -82,11 +82,7 @@ export function buildTrainingDataset(
     }
     if (entries.length === 0) continue
 
-    const clientProfileVector = aggregateClientProfileEmbeddings(
-      entries,
-      pooling.mode,
-      pooling.halfLifeDays
-    )
+    const clientProfileVector = aggregateClientProfileEmbeddings(entries, pooling)
 
     const positiveProducts = productsWithEmbeddings.filter((p) => purchasedIds.has(p.id))
 

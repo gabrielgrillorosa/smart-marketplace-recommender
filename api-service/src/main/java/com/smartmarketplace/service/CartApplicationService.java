@@ -14,6 +14,7 @@ import com.smartmarketplace.exception.ResourceNotFoundException;
 import com.smartmarketplace.repository.CartRepository;
 import com.smartmarketplace.repository.ClientRepository;
 import com.smartmarketplace.repository.ProductRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -33,19 +34,22 @@ public class CartApplicationService {
     private final ProductAvailabilityPolicy productAvailabilityPolicy;
     private final OrderApplicationService orderApplicationService;
     private final AiSyncClient aiSyncClient;
+    private final boolean checkoutEnqueueTraining;
 
     public CartApplicationService(CartRepository cartRepository,
                                   ClientRepository clientRepository,
                                   ProductRepository productRepository,
                                   ProductAvailabilityPolicy productAvailabilityPolicy,
                                   OrderApplicationService orderApplicationService,
-                                  AiSyncClient aiSyncClient) {
+                                  AiSyncClient aiSyncClient,
+                                  @Value("${training.checkout.enqueue:false}") boolean checkoutEnqueueTraining) {
         this.cartRepository = cartRepository;
         this.clientRepository = clientRepository;
         this.productRepository = productRepository;
         this.productAvailabilityPolicy = productAvailabilityPolicy;
         this.orderApplicationService = orderApplicationService;
         this.aiSyncClient = aiSyncClient;
+        this.checkoutEnqueueTraining = checkoutEnqueueTraining;
     }
 
     @Transactional(readOnly = true)
@@ -154,7 +158,7 @@ public class CartApplicationService {
             notifyCheckoutSync.run();
         }
 
-        return new CheckoutResponse(order.id(), true);
+        return new CheckoutResponse(order.id(), checkoutEnqueueTraining);
     }
 
     private void requireClient(UUID clientId) {

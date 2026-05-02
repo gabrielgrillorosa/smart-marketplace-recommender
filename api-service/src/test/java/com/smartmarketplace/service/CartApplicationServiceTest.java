@@ -13,9 +13,9 @@ import com.smartmarketplace.exception.CartItemUnavailableException;
 import com.smartmarketplace.repository.CartRepository;
 import com.smartmarketplace.repository.ClientRepository;
 import com.smartmarketplace.repository.ProductRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -54,8 +54,19 @@ class CartApplicationServiceTest {
     @Mock
     private AiSyncClient aiSyncClient;
 
-    @InjectMocks
     private CartApplicationService cartApplicationService;
+
+    @BeforeEach
+    void setUp() {
+        cartApplicationService = new CartApplicationService(
+                cartRepository,
+                clientRepository,
+                productRepository,
+                productAvailabilityPolicy,
+                orderApplicationService,
+                aiSyncClient,
+                false);
+    }
 
     @Test
     void getActiveCart_returnsEmptyContract_whenNoCartExists() {
@@ -205,6 +216,42 @@ class CartApplicationServiceTest {
         );
 
         var response = cartApplicationService.checkout(clientId);
+
+        verify(orderApplicationService).createOrder(any());
+        verify(cartRepository).delete(cart);
+        verify(aiSyncClient).notifyCheckoutCompleted(eq(orderId), eq(clientId), eq(List.of(productId)), eq(orderPlacedAt));
+        assertThat(response.orderId()).isEqualTo(orderId);
+        assertThat(response.expectedTrainingTriggered()).isFalse();
+    }
+
+    @Test
+    void checkout_expectedTrainingTriggeredTrue_whenCheckoutEnqueueEnabled() {
+        UUID clientId = UUID.randomUUID();
+        UUID productId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+
+        Client client = buildClient(clientId);
+        Product product = buildProduct(productId);
+        Cart cart = buildCart(client, List.of(buildCartItem(product, 2)));
+        cart.setId(UUID.randomUUID());
+
+        CartApplicationService svc = new CartApplicationService(
+                cartRepository,
+                clientRepository,
+                productRepository,
+                productAvailabilityPolicy,
+                orderApplicationService,
+                aiSyncClient,
+                true);
+
+        when(clientRepository.existsById(clientId)).thenReturn(true);
+        when(cartRepository.findByClientIdWithItems(clientId)).thenReturn(Optional.of(cart));
+        LocalDateTime orderPlacedAt = LocalDateTime.of(2025, 6, 1, 12, 0);
+        when(orderApplicationService.createOrder(any())).thenReturn(
+                new OrderDTO(orderId, orderPlacedAt, null, List.of(new OrderItemDTO(productId, "Any", 2, null)))
+        );
+
+        var response = svc.checkout(clientId);
 
         verify(orderApplicationService).createOrder(any());
         verify(cartRepository).delete(cart);

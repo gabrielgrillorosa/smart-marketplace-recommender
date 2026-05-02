@@ -1,8 +1,8 @@
 # M18 — Catálogo simplificado & contrato de payload (AD-055) — Especificação
 
-**Status:** **IMPLEMENTED** — 2026-04-30. **Design:** [design.md](./design.md). **Tasks:** [tasks.md](./tasks.md) (T1…T9).
+**Status:** **IMPLEMENTED** — 2026-04-30. **Design:** [design.md](./design.md). **Tasks:** [tasks.md](./tasks.md) (T1…T9). **Extensão (2026-05-01):** reordenação do catálogo com carrinho após «Ordenar por IA» — [ADR-073](./adr-073-catalog-live-reorder-with-cart.md).
 
-**Roadmap:** [.specs/project/ROADMAP.md](../../project/ROADMAP.md) — **M18**.
+**Roadmap:** [.specs/project/ROADMAP.md](../../project/ROADMAP.md) — **M18**. **Nota:** política de treino (checkout vs manual) não é M18 — ver [M20 / ADR-067](../m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md).
 
 ---
 
@@ -14,6 +14,7 @@
 - [ADR-056](../m16-neural-first-didactic-ranking-catalog-density/adr-056-view-mode-zustand-flag-catalog-view-mode-hook.md) — *Accepted*; M18 remove o toggle `vitrine` ↔ `ranking` (ver § Frontend).
 - [ADR-058](../m16-neural-first-didactic-ranking-catalog-density/adr-058-early-eligibility-prefetch-on-client-select.md) — *Accepted*; M18 reavalia prefetch face ao novo contrato (ver § Pré-fetch).
 - [ADR-062](../m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md) — ortogonal: sinais de recência no `ai-service` **não** são revertidos por M18.
+- [ADR-073](./adr-073-catalog-live-reorder-with-cart.md) — *Accepted* (2026-05-01): com «Ordenar por IA» activo, alterações no carrinho **actualizam** o ranking via `POST .../recommend/from-cart` (debounce, abort, mesma semântica que a coluna «Com Carrinho» no showcase).
 
 ---
 
@@ -136,6 +137,7 @@ O [M16](../m16-neural-first-didactic-ranking-catalog-density/spec.md) entregou v
 | CSL-09 | NFD-18 para itens fora do ranking | Verified |
 | CSL-10 | E2E `m18-catalog-ad055` | Verified |
 | CSL-11 | ADR-055 / 056 / 058 actualizados (Amended/Superseded + link) | Verified |
+| CSL-12 | Catálogo pós-«Ordenar por IA»: ranking **cart-aware** quando o carrinho tem itens ([ADR-073](./adr-073-catalog-live-reorder-with-cart.md)) | Verified |
 
 ---
 

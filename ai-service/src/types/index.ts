@@ -140,10 +140,16 @@ export interface RankingConfig {
   neuralWeight: number
   semanticWeight: number
   recencyRerankWeight: number
-  /** M17 P2 — profile pooling mode (`mean` | `exp`). */
-  profilePoolingMode?: 'mean' | 'exp'
-  /** M17 P2 — half-life in days when mode is `exp`. */
+  /** M17 P2 — profile pooling mode (`mean` | `exp` | `attention_light` | `attention_learned`). */
+  profilePoolingMode?: 'mean' | 'exp' | 'attention_light' | 'attention_learned'
+  /** M17 P2 / M21 A — half-life in days for `exp` and for recency scale in attention modes. */
   profilePoolingHalfLifeDays?: number
+  /** M21 A — softmax temperature when mode is `attention_light` or `attention_learned`; `null` means uniform weights (mean over window). */
+  profilePoolingAttentionTemperature?: number | null
+  /** M21 A — max purchases in the attention window (0 = unlimited). */
+  profilePoolingAttentionMaxEntries?: number
+  /** M21 — `true` when `PROFILE_POOLING_MODE=attention_learned` (weights use JSON `w`/`b`/`λ`). */
+  profilePoolingAttentionLearned?: boolean
 }
 
 export interface RecommendationResult {

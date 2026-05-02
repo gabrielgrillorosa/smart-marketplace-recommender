@@ -6,11 +6,14 @@ import { useModelStatus } from '@/lib/hooks/useModelStatus';
 import { useSelectedClientProfile } from '@/lib/hooks/useSelectedClientProfile';
 import { useAppStore } from '@/store';
 import { ClientProfileCard } from '@/components/client/ClientProfileCard';
-import { ModelStatusPanel } from '@/components/retrain/ModelStatusPanel';
 import { TrainingMetricsSummary } from '@/components/retrain/TrainingMetricsSummary';
+import {
+  ManualRetrainStatusSlot,
+  type ManualRetrainBanner,
+} from '@/components/retrain/ManualRetrainStatusSlot';
 import { RecommendationColumn } from '@/components/analysis/RecommendationColumn';
-import { PostCheckoutOutcomeNotice } from '@/components/analysis/PostCheckoutOutcomeNotice';
 import { seededShuffle } from '@/lib/utils/shuffle';
+import { cn } from '@/lib/utils';
 import type { RecommendationResult } from '@/lib/types';
 import {
   DEFAULT_FULL_COVERAGE_CAP,
@@ -18,7 +21,6 @@ import {
   resolveShowcaseRankingWindow,
 } from '@/lib/showcase/ranking-window';
 import { buildRecommendationDeltaMap } from '@/lib/showcase/deltas';
-import { buildPostCheckoutOutcome } from '@/lib/showcase/post-checkout-outcome';
 
 async function fetchRecs(clientId: string, limit: number): Promise<RecommendationResult[]> {
   const res = await fetch('/api/proxy/recommend', {
@@ -59,6 +61,7 @@ export function AnalysisPanel() {
   const clearCartAware = useAppStore((s) => s.clearCartAware);
   const clearCartSnapshotStale = useAppStore((s) => s.clearCartSnapshotStale);
   const captureRetrained = useAppStore((s) => s.captureRetrained);
+  const applyPostRetrainToInitial = useAppStore((s) => s.applyPostRetrainToInitial);
   const resetAnalysis = useAppStore((s) => s.resetAnalysis);
   const resetAnalysisSnapshots = useAppStore((s) => s.resetAnalysisSnapshots);
   const cartByClient = useAppStore((s) => s.cartByClient);
@@ -66,6 +69,60 @@ export function AnalysisPanel() {
   const catalogCoverageMeta = useAppStore((s) => s.coverageMeta);
   const modelStatus = useModelStatus();
   const selectedClientProfile = useSelectedClientProfile(selectedClient);
+
+  const [retrainBanner, setRetrainBanner] = useState<ManualRetrainBanner | null>(null);
+  const prevPanelStateRef = useRef(modelStatus.panelState);
+
+  useEffect(() => {
+    const p = modelStatus.panelState;
+    const prev = prevPanelStateRef.current;
+    const ms = modelStatus.modelStatus;
+
+    if (p === 'training') {
+      setRetrainBanner(null);
+    }
+
+    if (prev === 'training' && p === 'promoted' && ms) {
+      const name = (ms.currentModel ?? ms.currentVersion ?? '').trim() || '—';
+      setRetrainBanner({
+        kind: 'success',
+        message: `Modelo treinado com sucesso. Novo modelo activo: ${name}.`,
+      });
+    } else if (prev === 'training' && p === 'rejected' && ms) {
+      const kept =
+        (ms.currentVersion ?? ms.currentModel ?? ms.lastDecision?.currentVersion ?? '').trim() ||
+        'versão anterior';
+      setRetrainBanner({
+        kind: 'error',
+        message: `Treino não promovido. Mantém-se o modelo: ${kept}.`,
+      });
+    } else if (prev === 'training' && p === 'failed' && ms) {
+      const kept =
+        (ms.currentVersion ?? ms.currentModel ?? ms.lastDecision?.currentVersion ?? '').trim() ||
+        'versão anterior';
+      setRetrainBanner({
+        kind: 'error',
+        message: `Treino falhou. Mantém-se o modelo: ${kept}.`,
+      });
+    } else if (prev === 'training' && p === 'unknown') {
+      setRetrainBanner({
+        kind: 'warning',
+        message:
+          'Resultado do treino ainda sem confirmação. Verifique as métricas ou actualize o estado.',
+      });
+    }
+
+    prevPanelStateRef.current = p;
+  }, [modelStatus.modelStatus, modelStatus.panelState]);
+
+  useEffect(() => {
+    if (!retrainBanner) return undefined;
+    const id = window.setTimeout(() => setRetrainBanner(null), 14000);
+    return () => window.clearTimeout(id);
+  }, [retrainBanner]);
+
+  const showRetrainProgress =
+    modelStatus.panelState === 'training' || modelStatus.loading;
 
   const [noAiRecs, setNoAiRecs] = useState<RecommendationResult[] | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -147,7 +204,7 @@ export function AnalysisPanel() {
 
     if (cartProductIds.length === 0) {
       // After checkout the UI cart is empty but we must keep the slice cart
-      // snapshot for Pos-Efetivar deltas (M19 / Node B). Checkout marks stale first.
+      // snapshot for a história do showcase; checkout marca stale primeiro.
       if (analysis.phase !== 'postCheckout' && !cartSnapshotStale) {
         clearCartAware(selectedClient.id);
       }
@@ -190,7 +247,7 @@ export function AnalysisPanel() {
     selectedClient,
   ]);
 
-  // Phase 3: post-checkout capture (`Pos-Efetivar`) when model promotion is detected.
+  // Phase 3: capture «Pós retreino» quando o modelo promovido é detectado no estado do serviço.
   useEffect(() => {
     if (!selectedClient) return;
     if (modelStatus.panelState !== 'promoted') return;
@@ -228,47 +285,34 @@ export function AnalysisPanel() {
   const cartIsStale = cartSnapshotStale && cartSnapshot !== null && cartProductIds.length === 0;
   const postCheckoutRecs = postCheckoutSnapshot?.recommendations ?? null;
   const postCheckoutCapturedAt = postCheckoutSnapshot?.capturedAt;
-  const postCheckoutOutcome = useMemo(
-    () =>
-      buildPostCheckoutOutcome(
-        modelStatus.panelState,
-        modelStatus.modelStatus,
-        postCheckoutSnapshot !== null
-      ),
-    [modelStatus.modelStatus, modelStatus.panelState, postCheckoutSnapshot]
-  );
-  const postCheckoutEmptyMessage = postCheckoutOutcome
-    ? postCheckoutOutcome.kind === 'rejected'
-      ? 'Sem novo ranking visível: o modelo atual foi mantido.'
-      : postCheckoutOutcome.kind === 'failed'
-        ? 'Sem novo snapshot: o retreinamento pós-checkout não concluiu.'
-        : 'Aguardando confirmação do resultado pós-checkout.'
-    : 'Efetive o checkout para capturar recomendações atualizadas';
+  const postCheckoutEmptyMessage =
+    'Ainda sem ranking pós-retreino. Quando o treino completar com sucesso, as recomendações aparecem aqui.';
 
   const cartDeltaByProductId = useMemo(
     () => buildRecommendationDeltaMap(initialSnapshot, cartSnapshot),
     [cartSnapshot, initialSnapshot]
   );
+  /** Pós retreino vs Com IA antigo: `initial` é congelado até «Fixa novos Scores» (mesmo snapshot da coluna azul antes do retreino). */
   const postCheckoutDeltaByProductId = useMemo(
-    () => buildRecommendationDeltaMap(cartSnapshot, postCheckoutSnapshot),
-    [cartSnapshot, postCheckoutSnapshot]
+    () => buildRecommendationDeltaMap(initialSnapshot, postCheckoutSnapshot),
+    [initialSnapshot, postCheckoutSnapshot]
   );
   const postCheckoutDeltaEmptyDegraded = useMemo((): 'no_baseline' | 'window_mismatch' | undefined => {
     if (analysis.phase !== 'postCheckout') return undefined;
     if (!postCheckoutRecs?.length) return undefined;
     if (Object.keys(postCheckoutDeltaByProductId).length > 0) return undefined;
-    if (!cartSnapshot && postCheckoutSnapshot) return 'no_baseline';
+    if (!initialSnapshot && postCheckoutSnapshot) return 'no_baseline';
     if (
-      cartSnapshot &&
+      initialSnapshot &&
       postCheckoutSnapshot &&
-      !hasSameRankingWindow(cartSnapshot.window, postCheckoutSnapshot.window)
+      !hasSameRankingWindow(initialSnapshot.window, postCheckoutSnapshot.window)
     ) {
       return 'window_mismatch';
     }
     return undefined;
   }, [
     analysis.phase,
-    cartSnapshot,
+    initialSnapshot,
     postCheckoutDeltaByProductId,
     postCheckoutRecs?.length,
     postCheckoutSnapshot,
@@ -320,17 +364,9 @@ export function AnalysisPanel() {
         stale={cartIsStale}
         deltaByProductId={cartDeltaByProductId}
       />
-      <div id="pos-efetivar">
-        {postCheckoutOutcome ? (
-          <div className="mb-3">
-            <PostCheckoutOutcomeNotice
-              outcome={postCheckoutOutcome}
-              onRefresh={postCheckoutOutcome.kind === 'unknown' ? modelStatus.refreshStatus : undefined}
-            />
-          </div>
-        ) : null}
+      <div id="pos-retreino">
         <RecommendationColumn
-          title="Pós efetivar"
+          title="Pós retreino"
           columnTestId="analysis-column-post-checkout"
           colorScheme="violet"
           recommendations={postCheckoutRecs}
@@ -349,8 +385,36 @@ export function AnalysisPanel() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {clientSection}
         <div className="space-y-4">
-          <ModelStatusPanel modelStatusHook={modelStatus} />
-          <TrainingMetricsSummary status={modelStatus.modelStatus} defaultOpen />
+          <div className="rounded-lg border border-gray-200 bg-white p-4">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between lg:gap-4">
+                <p className="max-w-xl text-xs text-gray-600 lg:pt-2">
+                  Retreino manual com os dados já sincronizados (não depende só do checkout).
+                </p>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-stretch sm:justify-end lg:max-w-[720px] lg:flex-1">
+                  <ManualRetrainStatusSlot showProgress={showRetrainProgress} banner={retrainBanner} />
+                  <button
+                    type="button"
+                    data-testid="model-status-manual-retrain"
+                    onClick={() => void modelStatus.startManualRetrain()}
+                    disabled={modelStatus.loading}
+                    className={cn(
+                      'min-h-[44px] shrink-0 rounded-md px-3 text-sm font-medium sm:self-start',
+                      modelStatus.loading
+                        ? 'cursor-not-allowed bg-gray-200 text-gray-500'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    )}
+                  >
+                    {modelStatus.loading ? 'A executar retreino…' : 'Executar retreino manual'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-2 border-t border-gray-100 pt-10">
+                <TrainingMetricsSummary status={modelStatus.modelStatus} />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -359,18 +423,39 @@ export function AnalysisPanel() {
           <div>
             <h2 className="text-base font-semibold text-gray-800">📊 Showcase de aprendizagem com carrinho</h2>
             <p className="mt-1 text-xs text-gray-500">
-              Acompanhe as 4 fases: selecione cliente → monte carrinho → checkout → captura pós-efetivar.
+              Quatro colunas: baseline → recomendação IA → carrinho → após retreino. Use{' '}
+              <strong className="font-medium text-gray-600">Fixa novos Scores</strong> para promover o ranking pós-retreino
+              ao novo «Com IA», ou <strong className="font-medium text-gray-600">Limpar showcase</strong> para recomeçar.
             </p>
           </div>
-          {analysis.phase !== 'empty' && (
-            <button
-              onClick={resetAnalysis}
-              className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-              title="Reiniciar showcase"
-            >
-              ↺ Reiniciar
-            </button>
-          )}
+          {analysis.phase !== 'empty' ? (
+            <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2">
+              {analysis.phase === 'postCheckout' && postCheckoutRecs && postCheckoutRecs.length > 0 ? (
+                <button
+                  type="button"
+                  data-testid="showcase-apply-post-retrain"
+                  title="Torna o ranking pós-retreino o novo baseline em Com IA"
+                  onClick={() => {
+                    if (analysis.phase === 'postCheckout') {
+                      applyPostRetrainToInitial(analysis.clientId);
+                    }
+                  }}
+                  className="rounded-md border border-violet-300 bg-violet-50 px-2.5 py-1.5 text-xs font-medium text-violet-800 shadow-sm transition-colors hover:bg-violet-100"
+                >
+                  Fixa novos Scores
+                </button>
+              ) : null}
+              <button
+                type="button"
+                data-testid="showcase-reset-analysis"
+                onClick={resetAnalysis}
+                className="text-xs text-gray-400 transition-colors hover:text-red-500"
+                title="Zerar fases e snapshots do showcase"
+              >
+                ↺ Limpar showcase
+              </button>
+            </div>
+          ) : null}
         </div>
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-4 lg:gap-3">{columns}</div>
       </div>

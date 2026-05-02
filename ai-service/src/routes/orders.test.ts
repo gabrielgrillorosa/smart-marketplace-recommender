@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { buildApp } from '../tests/helpers/buildApp.js'
 import { Neo4jUnavailableError } from '../repositories/Neo4jRepository.js'
 
@@ -6,7 +6,21 @@ const sampleOrderDate = '2024-01-15T12:00:00.000Z'
 const sampleOrderDateIso = new Date(sampleOrderDate).toISOString()
 
 describe('ordersRoutes', () => {
-  it('POST /orders/:orderId/sync-and-train syncs BOUGHT edges and enqueues checkout training', async () => {
+  const originalEnv = process.env.CHECKOUT_ENQUEUE_TRAINING
+
+  beforeEach(() => {
+    process.env.CHECKOUT_ENQUEUE_TRAINING = 'true'
+  })
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.CHECKOUT_ENQUEUE_TRAINING
+    } else {
+      process.env.CHECKOUT_ENQUEUE_TRAINING = originalEnv
+    }
+  })
+
+  it('POST /orders/:orderId/sync-and-train syncs BOUGHT edges and enqueues checkout training when flag true', async () => {
     const repo = {
       syncBoughtRelationships: vi.fn().mockResolvedValue({ created: 2, existed: 0, skipped: 0 }),
     }
@@ -57,6 +71,44 @@ describe('ordersRoutes', () => {
       orderId: 'order-123',
       strategy: 'queue',
     })
+  })
+
+  it('POST sync-and-train does not enqueue when CHECKOUT_ENQUEUE_TRAINING is false (ADR-067)', async () => {
+    process.env.CHECKOUT_ENQUEUE_TRAINING = 'false'
+    const repo = {
+      syncBoughtRelationships: vi.fn().mockResolvedValue({ created: 1, existed: 0, skipped: 0 }),
+    }
+    const registry = {
+      enqueue: vi.fn(),
+      getActiveJobId: vi.fn(),
+      getJob: vi.fn(),
+    }
+
+    const app = await buildApp({
+      neo4jRepo: repo,
+      embeddingService: {},
+      modelStore: {},
+      modelTrainer: {},
+      trainingJobRegistry: registry as never,
+      recommendationService: {},
+      ragService: {},
+      searchService: {},
+    })
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/orders/order-123/sync-and-train',
+      payload: {
+        clientId: 'client-001',
+        productIds: ['prod-001'],
+        orderDate: sampleOrderDate,
+      },
+    })
+
+    expect(response.statusCode).toBe(202)
+    const body = JSON.parse(response.body) as { training: { enqueued: false } }
+    expect(body.training).toEqual({ enqueued: false })
+    expect(registry.enqueue).not.toHaveBeenCalled()
   })
 
   it('returns 400 when payload is malformed', async () => {

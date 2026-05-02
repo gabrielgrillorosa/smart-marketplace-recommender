@@ -22,10 +22,13 @@ import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
 import { ordersRoutes } from './routes/orders.js'
 import { listenAndScheduleRecovery, registerStartupProbes } from './startup/bootstrap.js'
+import { ProfilePoolingRuntimeHolder } from './config/profilePoolingRuntimeHolder.js'
+import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } from './config/profilePoolingEnv.js'
+import { generateAttentionLearnedJson } from './services/attentionLearnedJsonGenerator.js'
 
 const fastify = Fastify({ logger: true })
 
-const start = async () => {
+export async function start(): Promise<void> {
   try {
     await fastify.register(cors, {
       origin: (origin, cb) => {
@@ -54,6 +57,35 @@ const start = async () => {
     await embeddingService.init()
     fastify.log.info('[ai-service] Embedding model ready')
 
+    const profilePoolingHolder = new ProfilePoolingRuntimeHolder(ENV.PROFILE_POOLING_RUNTIME)
+
+    const reloadProfilePoolingFromEnv = (): void => {
+      profilePoolingHolder.replace(buildProfilePoolingRuntimeFromEnv(process.env))
+    }
+
+    const regenerateAttentionLearnedJsonAdmin = async (force: boolean) => {
+      const outPath = resolveAttentionLearnedJsonPath(process.env)
+      const result = await generateAttentionLearnedJson({
+        apiServiceUrl: ENV.API_SERVICE_URL,
+        neo4jUri: ENV.NEO4J_URI,
+        neo4jUser: ENV.NEO4J_USER,
+        neo4jPassword: ENV.NEO4J_PASSWORD,
+        outPath,
+        negativesPerPositive: parseInt(process.env.ATTENTION_LEARNED_NEGATIVES_PER_POSITIVE ?? '2', 10) || 2,
+        skipIfValid: !force,
+        logger: fastify.log,
+      })
+      if (ENV.PROFILE_POOLING_MODE === 'attention_learned') {
+        reloadProfilePoolingFromEnv()
+      }
+      return result
+    }
+
+    const afterTrainSuccess = async (): Promise<void> => {
+      if (ENV.PROFILE_POOLING_MODE !== 'attention_learned') return
+      await regenerateAttentionLearnedJsonAdmin(true)
+    }
+
     const modelTrainer = new ModelTrainer(
       versionedModelStore,
       repo,
@@ -61,15 +93,12 @@ const start = async () => {
       ENV.API_SERVICE_URL,
       ENV.NEURAL_WEIGHT,
       ENV.SEMANTIC_WEIGHT,
-      {
-        mode: ENV.PROFILE_POOLING_MODE,
-        halfLifeDays: ENV.PROFILE_POOLING_HALF_LIFE_DAYS,
-      },
+      profilePoolingHolder,
       ENV.NEURAL_LOSS_MODE
     )
 
     // Step 6: TrainingJobRegistry
-    const trainingJobRegistry = new TrainingJobRegistry(modelTrainer, versionedModelStore)
+    const trainingJobRegistry = new TrainingJobRegistry(modelTrainer, versionedModelStore, afterTrainSuccess)
 
     const startupRecoveryService = new StartupRecoveryService({
       autoHealModel: ENV.AUTO_HEAL_MODEL,
@@ -83,8 +112,19 @@ const start = async () => {
       trainingDataProbeDelayMs: 5_000,
     })
 
-    // Step 7: CronScheduler — registers daily retraining at 02:00
-    const cronScheduler = new CronScheduler(trainingJobRegistry)
+    // Step 7: CronScheduler — daily retraining (optional) + optional attention JSON-only refresh
+    const dailyTrainEnabled = process.env.ENABLE_DAILY_TRAIN !== 'false'
+    const cronScheduler = new CronScheduler(
+      trainingJobRegistry,
+      { enabled: dailyTrainEnabled, schedule: process.env.DAILY_TRAIN_CRON ?? '0 2 * * *' },
+      {
+        attentionLearnedSchedule: process.env.ATTENTION_LEARNED_REFRESH_CRON?.trim() || undefined,
+        onAttentionLearnedRefresh: async () => {
+          if (ENV.PROFILE_POOLING_MODE !== 'attention_learned') return
+          await regenerateAttentionLearnedJsonAdmin(false)
+        },
+      }
+    )
     cronScheduler.start()
 
     const recommendationService = new RecommendationService(
@@ -95,8 +135,7 @@ const start = async () => {
       ENV.RECENT_PURCHASE_WINDOW_DAYS,
       ENV.RECENCY_RERANK_WEIGHT,
       ENV.RECENCY_ANCHOR_COUNT,
-      ENV.PROFILE_POOLING_MODE,
-      ENV.PROFILE_POOLING_HALF_LIFE_DAYS,
+      profilePoolingHolder,
       fastify.log,
     )
 
@@ -113,6 +152,7 @@ const start = async () => {
     await fastify.register(adminRoutes, {
       prefix: '/api/v1',
       registry: trainingJobRegistry,
+      regenerateAttentionLearned: (force) => regenerateAttentionLearnedJsonAdmin(force),
     })
 
     await fastify.register(embeddingsRoutes, {
@@ -185,5 +225,3 @@ const start = async () => {
     process.exit(1)
   }
 }
-
-start()

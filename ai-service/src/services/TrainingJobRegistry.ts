@@ -22,6 +22,7 @@ export class TrainingJobRegistry {
   constructor(
     private readonly modelTrainer: ModelTrainer,
     private readonly versionedModelStore: VersionedModelStore,
+    private readonly afterTrainSuccess?: () => Promise<void>
   ) {}
 
   getActiveJobId(): string | undefined {
@@ -113,6 +114,11 @@ export class TrainingJobRegistry {
         completedAt: new Date().toISOString(),
         loss: result.finalLoss,
       })
+      try {
+        await this.afterTrainSuccess?.()
+      } catch (e) {
+        console.warn('[TrainingJobRegistry] afterTrainSuccess hook failed:', e)
+      }
     } catch (err) {
       this.versionedModelStore.markTrainingFailed(context)
       this._updateJob(jobId, {

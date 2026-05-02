@@ -6,7 +6,7 @@
 **ADR:** [ADR-070](./adr-070-m21-committee-priorities-and-m17-p3-deferral.md)  
 **Testing ai-service:** [.specs/codebase/ai-service/TESTING.md](../../codebase/ai-service/TESTING.md)
 
-**Status:** T21-1 (Track T1) implemented in `ai-service` (2026-05-01)  
+**Status:** T21-1 (Track T1) + **T21-2 (Track A)** implemented in `ai-service` (2026-05-01)  
 **Ordem canónica:** T1 → A → T2 → R → T4 → T3
 
 ---
@@ -301,13 +301,13 @@ T21-2a ─► T21-2b ───┼──► T21-2d [P] ──┼──► T21-2f 
 
 | Sub-tarefa | Âmbito | Status |
 |------------|--------|--------|
-| T21-2a | Env + tipos `ProfilePoolingRuntime` / parsers / `ENV` / `index` | Pending |
-| T21-2b | `aggregateClientProfileEmbeddings` + assinatura + testes agregação | Pending |
-| T21-2c | `training-utils` (+ `model.test` se regressão) | Pending |
-| T21-2d | `rankingEval` (+ testes co-localizados) | Pending |
-| T21-2e | `RecommendationService` + `recommend.test` (+ `meanPooling` se aplicável) | Pending |
-| T21-2f | Teste anti-drift / contrato ADR-065+M21 | Pending |
-| T21-2g | README operador Track A | Pending |
+| T21-2a | Env + tipos `ProfilePoolingRuntime` / parsers / `ENV` / `index` | ✅ |
+| T21-2b | `aggregateClientProfileEmbeddings` + assinatura + testes agregação | ✅ |
+| T21-2c | `training-utils` (+ `model.test` se regressão) | ✅ |
+| T21-2d | `rankingEval` (+ testes co-localizados) | ✅ |
+| T21-2e | `RecommendationService` + `recommend.test` (+ `meanPooling` se aplicável) | ✅ |
+| T21-2f | Teste anti-drift / contrato ADR-065+M21 | ✅ |
+| T21-2g | README operador Track A | ✅ |
 
 ### Diagram ↔ `Depends on` cross-check
 

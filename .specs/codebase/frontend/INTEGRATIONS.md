@@ -26,6 +26,7 @@ Endpoints consumidos diretamente pelo browser:
 |---|---|---|
 | `POST /api/proxy/search` | `POST http://ai-service:3001/api/v1/search/semantic` | `lib/adapters/search.ts` |
 | `POST /api/proxy/recommend` | `POST http://ai-service:3001/api/v1/recommend` | `lib/adapters/recommend.ts` |
+| `POST /api/proxy/recommend/from-cart` | `POST http://ai-service:3001/api/v1/recommend/from-cart` | `lib/adapters/recommend.ts` (mesmo `adaptRecommendations`) — ranking **cart-aware** (pooling do carrinho); usado por `AnalysisPanel` (coluna «Com Carrinho») e por `useRecommendationFetcher` quando o catálogo está em modo «Ordenar por IA» e o carrinho tem itens (reordenação em tempo quase real — ver [ADR-073](../../features/m18-catalog-simplified-ad055/adr-073-catalog-live-reorder-with-cart.md)). |
 | `POST /api/proxy/rag` | `POST http://ai-service:3001/api/v1/rag/query` | `lib/adapters/rag.ts` |
 
 URL configurada via env `AI_SERVICE_URL` (default: `http://localhost:3001`). **Nota:** `route.ts` de recommend usa `AI_SERVICE_URL` mas chama `/api/v1/recommend` no ai-service diretamente (não via api-service Java). O AI Service implementa a rota de recomendação.

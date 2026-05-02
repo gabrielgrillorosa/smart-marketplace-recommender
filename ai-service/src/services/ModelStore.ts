@@ -27,16 +27,18 @@ export class ModelStore {
 
   getEnrichedStatus(nowFn: () => Date = () => new Date()): EnrichedTrainingStatus {
     const base = { ...this.status }
+    const head = { neuralHeadKind: this.neuralHeadKind }
 
     if (base.status === 'trained' && base.trainedAt) {
       const staleDays = Math.floor((nowFn().getTime() - new Date(base.trainedAt).getTime()) / MS_PER_DAY)
       const staleWarning = staleDays >= 7
         ? `Model trained ${staleDays} days ago — consider retraining`
         : undefined
-      return { ...base, staleDays, staleWarning, neuralHeadKind: this.neuralHeadKind }
+      return { ...base, ...head, staleDays, staleWarning }
     }
 
-    return { ...base, staleDays: null, ...(base.status === 'trained' ? { neuralHeadKind: this.neuralHeadKind } : {}) }
+    // Sempre expor neuralHeadKind (runtime default ou último treino) para a UI exigir BCE vs pairwise.
+    return { ...base, ...head, staleDays: null }
   }
 
   setModel(model: tf.LayersModel, metadata: TrainingMetadata): void {

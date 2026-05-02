@@ -209,14 +209,26 @@ export function CatalogPanel() {
     () => resolveShowcaseRankingWindow({ totalCatalogItems: allProducts.length, mode: coverageMode }),
     [allProducts.length, coverageMode]
   );
-  const requestKey = clientId
+  const baseRequestKey = clientId
     ? buildShowcaseRequestKey({ clientId, window: rankingWindow, searchStateKind })
     : null;
+  const sortedCartProductIds = useMemo(() => {
+    const ids = (cartForClient?.items ?? []).map((item) => item.productId);
+    ids.sort();
+    return ids;
+  }, [cartForClient]);
+  const catalogRequestKey = useMemo(() => {
+    if (!baseRequestKey) return null;
+    if (sortedCartProductIds.length > 0) {
+      return `${baseRequestKey}|cart:${sortedCartProductIds.join(',')}`;
+    }
+    return baseRequestKey;
+  }, [baseRequestKey, sortedCartProductIds]);
   const visibleCatalogSignature = useMemo(
     () => displayedProducts.map((product) => product.id).join(','),
     [displayedProducts]
   );
-  const activeOrderedSession = requestKey ? `${requestKey}|${visibleCatalogSignature}` : null;
+  const activeOrderedSession = catalogRequestKey ? `${catalogRequestKey}|${visibleCatalogSignature}` : null;
   const activeRecommendations = useMemo(
     () => (ordered && !recLoading ? recommendations : []),
     [ordered, recLoading, recommendations]
@@ -273,11 +285,29 @@ export function CatalogPanel() {
 
   const footerRecentIds = useMemo(() => new Set(footerRecent.map((p) => p.id)), [footerRecent]);
 
+  /**
+   * AD-055 omite linhas `in_cart` do JSON → não há entrada em scoreMap / primaryRanked.
+   * Anexamos produtos que estão no carrinho mas ficaram de fora da resposta, para manter
+   * badge «no carrinho», botão Remover e posição na lista até ao checkout.
+   */
+  const rankingGridPrimary = useMemo(() => {
+    if (!rankingModeActive) return [];
+    const cartSet = new Set(sortedCartProductIds);
+    const scoredIds = new Set(primaryRanked.map((p) => p.id));
+    const inCartNotInResponse = displayedProducts.filter(
+      (p) => cartSet.has(p.id) && !scoredIds.has(p.id)
+    );
+    return [...primaryRanked, ...inCartNotInResponse];
+  }, [rankingModeActive, primaryRanked, displayedProducts, sortedCartProductIds]);
+
   const zeroEligibleInRanking =
-    rankingModeActive && primaryRanked.length === 0 && displayedProducts.length > 0;
+    rankingModeActive &&
+    rankingGridPrimary.length === 0 &&
+    footerRecent.length === 0 &&
+    displayedProducts.length > 0;
 
   useEffect(() => {
-    if (!selectedClient || !requestKey || !activeOrderedSession) {
+    if (!selectedClient || !catalogRequestKey || !activeOrderedSession) {
       lastRequestedOrderedSessionRef.current = null;
       return;
     }
@@ -287,17 +317,32 @@ export function CatalogPanel() {
       return;
     }
 
-    if (recLoading) {
-      return;
-    }
+    const debounceMs = 200;
+    const timer = window.setTimeout(() => {
+      if (lastRequestedOrderedSessionRef.current === activeOrderedSession) {
+        return;
+      }
+      lastRequestedOrderedSessionRef.current = activeOrderedSession;
+      const hasCart = sortedCartProductIds.length > 0;
+      void fetchRecommendations(selectedClient.id, {
+        window: rankingWindow,
+        requestKey: catalogRequestKey,
+        force: true,
+        cartProductIds: hasCart ? sortedCartProductIds : undefined,
+        silent: hasCart,
+      });
+    }, debounceMs);
 
-    if (lastRequestedOrderedSessionRef.current === activeOrderedSession) {
-      return;
-    }
-
-    lastRequestedOrderedSessionRef.current = activeOrderedSession;
-    void fetchRecommendations(selectedClient.id, { window: rankingWindow, requestKey, force: true });
-  }, [activeOrderedSession, fetchRecommendations, ordered, rankingWindow, recLoading, requestKey, selectedClient]);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeOrderedSession,
+    catalogRequestKey,
+    fetchRecommendations,
+    ordered,
+    rankingWindow,
+    selectedClient,
+    sortedCartProductIds,
+  ]);
 
   async function handleProductClick(product: Product) {
     try {
@@ -309,9 +354,15 @@ export function CatalogPanel() {
   }
 
   async function handleSortByAI() {
-    if (!selectedClient || !requestKey || !activeOrderedSession) return;
+    if (!selectedClient || !catalogRequestKey || !activeOrderedSession) return;
     lastRequestedOrderedSessionRef.current = activeOrderedSession;
-    await fetchRecommendations(selectedClient.id, { window: rankingWindow, requestKey });
+    const hasCart = sortedCartProductIds.length > 0;
+    await fetchRecommendations(selectedClient.id, {
+      window: rankingWindow,
+      requestKey: catalogRequestKey,
+      cartProductIds: hasCart ? sortedCartProductIds : undefined,
+      silent: false,
+    });
   }
 
   async function handleAddToCart(productId: string) {
@@ -478,12 +529,12 @@ export function CatalogPanel() {
               <button
                 type="button"
                 data-testid="catalog-order-ai"
-                aria-disabled={!selectedClient || recLoading}
+                aria-disabled={!selectedClient || !catalogRequestKey || recLoading}
                 aria-pressed={false}
                 aria-busy={recLoading ? 'true' : undefined}
-                onClick={selectedClient && !recLoading ? handleSortByAI : undefined}
+                onClick={selectedClient && catalogRequestKey && !recLoading ? handleSortByAI : undefined}
                 className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  selectedClient && !recLoading
+                  selectedClient && catalogRequestKey && !recLoading
                     ? 'bg-blue-600 text-white hover:bg-blue-700'
                     : 'cursor-not-allowed bg-gray-100 text-gray-400'
                 }`}
@@ -550,9 +601,9 @@ export function CatalogPanel() {
 
       {rankingModeActive ? (
         <div className="space-y-4">
-          {primaryRanked.length > 0 ? (
+          {rankingGridPrimary.length > 0 ? (
             <ReorderableGrid
-              items={primaryRanked}
+              items={rankingGridPrimary}
               getKey={(p) => p.id}
               getScore={(p) => {
                 const s = scoreMap.get(p.id);
@@ -562,7 +613,7 @@ export function CatalogPanel() {
               ordered={false}
             />
           ) : null}
-          {primaryRanked.length > 0 && footerRecent.length > 0 ? <RankingFooterHeading /> : null}
+          {rankingGridPrimary.length > 0 && footerRecent.length > 0 ? <RankingFooterHeading /> : null}
           {footerRecent.length > 0 ? (
             <ReorderableGrid
               items={footerRecent}

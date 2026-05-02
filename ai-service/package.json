@@ -4,14 +4,15 @@
   "description": "Smart Marketplace Recommender — AI Service",
   "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node dist/entry.js",
     "build": "tsc",
     "verify": "npm run build && npm test && npm run lint",
-    "dev": "ts-node src/index.ts",
+    "dev": "ts-node src/entry.ts",
     "seed": "ts-node src/seed/seed.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark:neural-arch": "npm run build && node dist/scripts/neural-arch-benchmark-cli.js",
+    "train:attention-pooling": "ts-node src/scripts/train-attention-pooling-cli.ts",
     "lint": "eslint 'src/**/*.ts'"
   },
   "dependencies": {

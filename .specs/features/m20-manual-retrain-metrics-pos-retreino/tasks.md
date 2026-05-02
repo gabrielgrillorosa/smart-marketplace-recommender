@@ -41,6 +41,8 @@ Start ──┤          ├──► T067-3 (api) ──┐
 
 ## T067-1 — `ai-service`: checkout sync-only + contrato de resposta
 
+**Status:** **Done** (2026-05-02) — `CHECKOUT_ENQUEUE_TRAINING` + `training: { enqueued: false }` quando aplicável.
+
 **What:** Ler `CHECKOUT_ENQUEUE_TRAINING` (default `false` para demo manual). Em `orders.ts`, após `syncBoughtRelationships`, só chamar `registry.enqueue` quando a flag for `true`. Ajustar payload `202`: quando não enfileirar, não devolver `training` com job queued ou devolver corpo explícito `{ training: { enqueued: false } }` — **escolher uma variante** e documentar em `ai-service/README.md`.
 
 **Where:** `ai-service/src/routes/orders.ts`, config/env loader (onde as outras env são lidas), `ai-service/src/routes/orders.test.ts`
@@ -52,9 +54,9 @@ Start ──┤          ├──► T067-3 (api) ──┐
 
 **Done when:**
 
-- [ ] Com flag `false`, `enqueue` não é invocado com `triggeredBy: 'checkout'`.
-- [ ] Com flag `true`, comportamento legado preservado.
-- [ ] `npm test` em `orders.test.ts` + gate quick `ai-service`.
+- [x] Com flag `false`, `enqueue` não é invocado com `triggeredBy: 'checkout'`.
+- [x] Com flag `true`, comportamento legado preservado.
+- [x] `npm test` em `orders.test.ts` + gate quick `ai-service`.
 
 **Tests:** Vitest `orders.test.ts`  
 **Gate:** quick (`npm test` focado ou suite `ai-service`)
@@ -88,6 +90,8 @@ Start ──┤          ├──► T067-3 (api) ──┐
 
 ## T067-3 — `api-service`: `expectedTrainingTriggered` alinhado
 
+**Status:** **Done** (2026-05-02)
+
 **What:** Substituir `new CheckoutResponse(order.id(), true)` por valor derivado da mesma política que o `ai-service` (recomendado: `@Value` boolean espelhado `CHECKOUT_ENQUEUE_TRAINING` com o **mesmo nome e default** que compose; documentar que deve coincidir com o `ai-service`). Actualizar `CartApplicationServiceTest`, `CartControllerIT`.
 
 **Where:** `CartApplicationService.java`, `application.yml` / env, testes referidos
@@ -98,8 +102,8 @@ Start ──┤          ├──► T067-3 (api) ──┐
 
 **Done when:**
 
-- [ ] Com property `false`, testes esperam `expectedTrainingTriggered` false mesmo com itens.
-- [ ] `./mvnw test` no módulo afectado.
+- [x] Com property `false`, testes esperam `expectedTrainingTriggered` false mesmo com itens.
+- [x] `./mvnw test` no módulo afectado.
 
 **Gate:** `api-service` test suite
 

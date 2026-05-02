@@ -16,6 +16,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
 - [M17 — Recency-aware profile & ranking](#m17--recency-aware-profile--ranking)
+- [M21 — Profile pooling and neural head](#m21--profile-pooling-and-neural-head)
 - [RAG Pipeline](#rag-pipeline)
 - [Service Communication Patterns](#service-communication-patterns)
 - [Async Training: 202 + Polling Pattern](#async-training-202--polling-pattern)
@@ -468,7 +469,7 @@ flowchart LR
     subgraph P2["M17 P2 — profile vector p"]
         HIST["📦 Confirmed purchases\nembedding + lastPurchase"]
         CART["🛒 Cart items\nΔ = 0 days"]
-        AGG["⚙️ aggregateClientProfileEmbeddings\nmean | exp"]
+        AGG["⚙️ aggregateClientProfileEmbeddings\nmean · exp · attention_light · attention_learned"]
         HIST --> AGG
         CART --> AGG
     end
@@ -532,7 +533,90 @@ Successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` retur
 
 See [`.env.example`](.env.example): **`RECENCY_RERANK_WEIGHT`**, **`RECENCY_ANCHOR_COUNT`**, **`PROFILE_POOLING_MODE`**, **`PROFILE_POOLING_HALF_LIFE_DAYS`**.
 
-**M21 (ai-service):** optional **`NEURAL_LOSS_MODE`** (`bce` default, `pairwise` for ranking-style training). Training mode is read at **service startup**; **inference** uses the **`neural-head.json`** sidecar next to the saved model (see [`ai-service/README.md`](ai-service/README.md) — diagram and test checklist).
+**M21 — pooling & cabeça neural:** além de `mean` / `exp`, o deploy pode usar **`attention_light`** (softmax só sobre recência) ou **`attention_learned`** (pesos aprendidos + JSON). O modo de **treino da rede** (BCE vs pairwise) é independente — ver [M21 — Profile pooling and neural head](#m21--profile-pooling-and-neural-head).
+
+---
+
+## M21 — Profile pooling and neural head
+
+Esta secção resume **dois eixos ortogonais** que confundem-se facilmente:
+
+| Eixo | Variável principal | O que muda |
+|------|-------------------|------------|
+| **Vector do cliente **p** (antes do MLP)** | `PROFILE_POOLING_MODE` | Como compras anteriores (e carrinho) são agregadas num único vector 384d. |
+| **Como a rede aprende o score neural** | `NEURAL_LOSS_MODE` (+ manifesto em disco) | Cabeça **BCE + sigmoide** vs **linear + loss pairwise**; em inferência usa-se `neural-head.json` junto ao checkpoint. |
+
+Detalhe operacional e envs: [`ai-service/README.md`](ai-service/README.md), [`.env.example`](.env.example).
+
+### Modos de profile pooling (`PROFILE_POOLING_MODE`)
+
+Todos passam pela mesma função **`aggregateClientProfileEmbeddings`** (`ai-service/src/profile/clientProfileAggregation.ts`) — treino, `POST /recommend`, `POST /recommend/from-cart` e avaliação offline partilham o mesmo runtime injectado (`ProfilePoolingRuntime`).
+
+| Modo | Nome no env | Ideia |
+|------|--------------|--------|
+| **Média** | `mean` | Média aritmética dos embeddings das compras na janela — legado, pesos uniformes. |
+| **Exponencial** | `exp` | Média ponderada por **`exp(−Δ/τ)`** com **τ = H / ln 2**, **H** = `PROFILE_POOLING_HALF_LIFE_DAYS`; compras recentes pesam mais. |
+| **Attention light** | `attention_light` | Softmax sobre logits de **recência** (−Δ/τ); temperatura opcional (`PROFILE_POOLING_ATTENTION_*`). Temperatura infinita / omitida ⇒ pesos uniformes na janela (**equivalente à média** sobre o mesmo multiconjunto). |
+| **Attention learned** | `attention_learned` | Softmax com logits **`w·e + b − λΔ/τ`** (pesos **`w`**, bias **`b`**, **`λ`**) lidos de JSON gerido pelo serviço; recarrega após treino bem-sucedido quando aplicável. |
+
+```mermaid
+flowchart TD
+    START([🧩 Compras + embeddings\n+ recência Δ]) --> MODE{PROFILE_POOLING_MODE}
+
+    MODE -->|mean| M["📊 Média aritmética\npesos uniformes"]
+    MODE -->|exp| E["📉 Peso exp−Δ/τ\nhalf-life H"]
+    MODE -->|attention_light| AL["🔆 Softmax só recência\n−Δ/τ · T opcional"]
+    MODE -->|attention_learned| ALR["🎯 Softmax aprendida\nw·e + b − λΔ/τ\n+ JSON em disco"]
+
+    M --> P["👤 Vector perfil p\n384d"]
+    E --> P
+    AL --> P
+    ALR --> P
+
+    classDef legacy fill:#FFE66D,stroke:#333,stroke-width:2px,color:#1a1a1a
+    classDef decay fill:#87CEEB,stroke:#333,stroke-width:2px,color:#002244
+    classDef attn fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#003300
+    classDef learned fill:#DDA0DD,stroke:#6B2D8C,stroke-width:2px,color:#2d0a3d
+    classDef out fill:#90EE90,stroke:#2F6B2F,stroke-width:2px,color:#003300
+
+    class M legacy
+    class E decay
+    class AL attn
+    class ALR learned
+    class P out
+```
+
+### Cabeça de treino: BCE vs pairwise (`NEURAL_LOSS_MODE`)
+
+- **`NEURAL_LOSS_MODE=bce`** (por omissão): cabeça com **sigmoide** e **binary cross-entropy** sobre pares (cliente, produto) como classificação binária — métricas tipo **accuracy** e **loss** são as habituais para BCE.
+- **`NEURAL_LOSS_MODE=pairwise`**: última camada **linear** + **loss de ranking** sobre linhas empilhadas positivo/negativo; **não** comparar numericamente loss/accuracy com corridas BCE. Foque **P@5** e ordem relativa.
+- **Inferência:** cada versão promovida grava **`neural-head.json`** (`bce_sigmoid` vs `ranking_linear`). O `RecommendationService` mapeia o output bruto para o mesmo intervalo híbrido (ex. sigmoid em logits lineares). Modelos antigos sem manifesto assumem **BCE**.
+
+```mermaid
+flowchart LR
+    subgraph Treino
+      ENV["NEURAL_LOSS_MODE\nbce · pairwise"] --> MT["ModelTrainer\ncompile + fit"]
+      MT --> ART["Checkpoint +\nneural-head.json"]
+    end
+
+    subgraph Inferência
+      ART --> RD["Ler cabeça activa"]
+      RD --> MAP["toHybridNeuralScalar\nlogit → escalar híbrido"]
+      MAP --> HYB["0.6·neural + 0.4·semantic"]
+    end
+
+    classDef cfg fill:#FFE66D,stroke:#333,stroke-width:2px,color:#1a1a1a
+    classDef train fill:#4ECDC4,stroke:#0B7285,color:#fff,stroke-width:2px
+    classDef disk fill:#A8DADC,stroke:#1864AB,stroke-width:2px,color:#0B1F33
+    classDef inf fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#003300
+
+    class ENV cfg
+    class MT train
+    class ART disk
+    class RD,MAP,HYB inf
+```
+
+**Frontend:** a coluna de métricas mostra **«Cabeça do modelo»** com o mesmo significado que `GET /model/status` → `neuralHeadKind`.
 
 ---
 

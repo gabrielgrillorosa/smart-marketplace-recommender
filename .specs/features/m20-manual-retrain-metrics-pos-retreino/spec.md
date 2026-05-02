@@ -3,20 +3,24 @@
 **Status:** SPECIFIED (planeado) · **Design (UI complexo):** [design.md](./design.md) (*Approved*, 2026-05-01); **ADRs UI:** [ADR-068](./adr-068-post-retrain-baseline-snapshot-in-analysis-slice.md), [ADR-069](./adr-069-reiniciar-vs-limpar-showcase-copy.md)  
 **Milestone:** **M20** · **ADR:** [ADR-067](./adr-067-manual-retrain-metrics-showcase-pos-retreino.md) (*Accepted*)  
 **Tasks:** [tasks.md](./tasks.md) (**T067-1**…**T067-7**)  
-**Relação com M19:** Estende [ADR-065](../m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md) / [spec M19](../m19-pos-efetivar-showcase-deltas/spec.md) — M19 permanece válido para modo **cart-aware** histórico; ADR-067 (M20) introduz modo **«Pos-Retreino»** (baseline = ranking **Com IA** antes da promoção do modelo).
+**Relação com M19:** Estende [ADR-065](../m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md) / [spec M19](../m19-pos-efetivar-showcase-deltas/spec.md) — o spec M19 mantém modo **cart-aware** / **Pos-Efetivar**; ADR-067 (M20) acrescenta **«Pos-Retreino»** (baseline = **Com IA** pré-promoção) e o desacoplamento checkout→treino.
+
+**Relação com M18:** o [spec M18](../m18-catalog-simplified-ad055/spec.md) (catálogo / ADR-055) não reescreve a política de treino; o comportamento «sync sem treino por defeito» e showcase **Pos-Retreino** estão em **M20 / ADR-067**.
+
+**Relação com M21:** ver [design M21 § M20](../m21-ranking-evolution-committee-decisions/design.md#relação-com-m20-política-de-treino).
 
 ---
 
 ## Problem Statement
 
-O checkout enfileira treino em cada sincronização, o que gera batches ruidosos, UX de «sempre a treinar» e pouco controlo pedagógico. O contrato `expectedTrainingTriggered` não reflete quando o enqueue automático está desligado. As métricas expostas ao fim do job são incompletas face ao que `ModelTrainer` já calcula. No showcase, a narrativa «modelo antigo vs modelo novo após retreino» exige comparar **Com IA** (pré-promoção) com o snapshot pós-promoção, não obrigatoriamente o carrinho pré-checkout. Com retreino só manual, o caminho de retreino no `ModelStatusPanel` deve deixar de ser apenas «modo avançado» e passar a ser **primário**.
+O checkout **podia** enfileirar treino em cada sincronização (M13 legado), o que gera batches ruidosos, UX de «sempre a treinar» e pouco controlo pedagógico. **Implementado (2026-05-02):** `CHECKOUT_ENQUEUE_TRAINING` default **`false`** — sync Neo4j sem enqueue; ver [ADR-067](./adr-067-manual-retrain-metrics-showcase-pos-retreino.md). Resta alinhar UI showcase **Pos-Retreino**, métricas completas no painel, e retreino manual como caminho primário. O contrato `expectedTrainingTriggered` deve refletir a política em todos os ambientes. As métricas expostas ao fim do job podem ser incompletas face ao que `ModelTrainer` já calcula. No showcase, a narrativa «modelo antigo vs modelo novo após retreino» exige comparar **Com IA** (pré-promoção) com o snapshot pós-promoção, não obrigatoriamente o carrinho pré-checkout. Com retreino só manual, o caminho de retreino no `ModelStatusPanel` deve deixar de ser apenas «modo avançado» e passar a ser **primário**.
 
 ---
 
 ## Goals
 
-- [ ] Checkout sincroniza relações no Neo4j **sem** enfileirar treino por defeito; retreino profundo via `POST /api/v1/model/train` (política `X-Admin-Key` inalterada).
-- [ ] `expectedTrainingTriggered` alinha-se à política real de enqueue (frontend não entra em polling de treino só por checkout quando o enqueue estiver desligado).
+- [x] Checkout sincroniza relações no Neo4j **sem** enfileirar treino por defeito (`CHECKOUT_ENQUEUE_TRAINING`, **2026-05-02**); retreino profundo via `POST /api/v1/model/train` (política `X-Admin-Key` inalterada).
+- [x] `expectedTrainingTriggered` alinha-se à política real de enqueue (**2026-05-02**); frontend não entra em polling de treino só por checkout quando o enqueue estiver desligado (`useModelStatus` não usa `lastTrainingResult` histórico como alerta pós-checkout fora do fluxo de espera).
 - [ ] Feature flags documentadas e independentes: enqueue no checkout vs cron diário.
 - [ ] Métricas completas do ciclo de treino nos resultados do job e/ou `GET /model/status` (loss/accuracy finais, amostras, `precisionAt5`, duração, `syncedAt`, épocas configuradas vs efectivas se early stopping, metadados de artefacto quando aplicável).
 - [ ] UI: copy **«Pos-Efetivar» → «Pos-Retreino»** onde a semântica for pós-promoção; delta com `buildRecommendationDeltaMap(previous, current)` onde `previous` = snapshot **Com IA** antes da promoção e `current` = pós-promoção (`captureRetrained`).

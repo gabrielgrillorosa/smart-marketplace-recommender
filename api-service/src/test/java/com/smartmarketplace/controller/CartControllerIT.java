@@ -90,7 +90,7 @@ class CartControllerIT extends BaseIntegrationTest {
         mockMvc.perform(post("/api/v1/carts/{clientId}/checkout", SEEDED_CLIENT_ID))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.orderId").exists())
-                .andExpect(jsonPath("$.expectedTrainingTriggered").value(true));
+                .andExpect(jsonPath("$.expectedTrainingTriggered").value(false));
 
         mockMvc.perform(get("/api/v1/carts/{clientId}", SEEDED_CLIENT_ID))
                 .andExpect(status().isOk())

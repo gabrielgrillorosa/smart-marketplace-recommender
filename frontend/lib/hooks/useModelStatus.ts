@@ -10,6 +10,21 @@ import { useAppStore } from '@/store';
 const POLL_INTERVAL_MS = 2000;
 const AWAIT_TIMEOUT_MS = 90_000;
 
+function formatActiveModelLabel(status: ModelStatusResponse): string {
+  const label = (status.currentModel ?? status.currentVersion ?? '').trim();
+  return label || '—';
+}
+
+function formatKeptModelLabel(
+  lastObservedVersion: string | null,
+  status: ModelStatusResponse
+): string {
+  const fromDecision = status.lastDecision?.currentVersion;
+  const base = lastObservedVersion ?? fromDecision ?? status.currentVersion;
+  const label = (base ?? '').trim();
+  return label || 'versão anterior';
+}
+
 export type ModelPanelState =
   | 'idle'
   | 'training'
@@ -43,6 +58,7 @@ export function useModelStatus(): UseModelStatusResult {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const unknownTimeoutToastSentRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -57,6 +73,8 @@ export function useModelStatus(): UseModelStatusResult {
         awaitingForOrderId == null || status.lastOrderId === awaitingForOrderId;
 
       if (status.lastTrainingResult === 'failed' && matchesAwaitedOrder) {
+        const kept = formatKeptModelLabel(lastObservedVersion, status);
+        toast.error(`Treino falhou. Mantém-se o modelo: ${kept}.`);
         clearAwaitingRetrain();
         setPanelState('failed');
         return;
@@ -67,6 +85,8 @@ export function useModelStatus(): UseModelStatusResult {
         status.currentVersion === lastObservedVersion &&
         matchesAwaitedOrder
       ) {
+        const kept = formatKeptModelLabel(lastObservedVersion, status);
+        toast.error(`Treino não promovido. Mantém-se o modelo: ${kept}.`);
         clearAwaitingRetrain();
         setPanelState('rejected');
         return;
@@ -77,12 +97,19 @@ export function useModelStatus(): UseModelStatusResult {
         status.currentVersion !== lastObservedVersion &&
         matchesAwaitedOrder
       ) {
+        toast.success(`Treino concluído com sucesso. Modelo activo: ${formatActiveModelLabel(status)}.`);
         clearAwaitingRetrain();
         setPanelState('promoted');
         return;
       }
 
       if (nowTs - awaitingRetrainSince >= AWAIT_TIMEOUT_MS) {
+        if (!unknownTimeoutToastSentRef.current) {
+          unknownTimeoutToastSentRef.current = true;
+          toast.warning(
+            'Resultado do treino ainda sem confirmação. Verifique as métricas ou actualize o estado.'
+          );
+        }
         setPanelState('unknown');
         return;
       }
@@ -91,18 +118,10 @@ export function useModelStatus(): UseModelStatusResult {
       return;
     }
 
-    if (status.lastTrainingResult === 'failed') {
-      setPanelState('failed');
-      return;
-    }
-    if (status.lastTrainingResult === 'rejected') {
-      setPanelState('rejected');
-      return;
-    }
-    if (status.lastTrainingResult === 'promoted') {
-      setPanelState('promoted');
-      return;
-    }
+    // Do not mirror persisted `lastTrainingResult` from GET /model/status when we are
+    // not awaiting a checkout-driven train. Otherwise every page load / cart clear /
+    // poll shows "rejeitado pós-checkout" even though no new train was triggered.
+    // The server field is historical; checkout/cron/manual runs all write it.
     setPanelState('idle');
   }, [awaitingForOrderId, awaitingRetrainSince, clearAwaitingRetrain, lastObservedVersion]);
 
@@ -166,13 +185,19 @@ export function useModelStatus(): UseModelStatusResult {
   }, [refreshStatus]);
 
   useEffect(() => {
+    if (awaitingRetrainSince != null) {
+      unknownTimeoutToastSentRef.current = false;
+    }
+  }, [awaitingRetrainSince]);
+
+  useEffect(() => {
     stopPolling();
     if (!selectedClient || awaitingRetrainSince == null) {
       return;
     }
 
     if (Date.now() - awaitingRetrainSince >= AWAIT_TIMEOUT_MS) {
-      setPanelState('unknown');
+      void refreshStatus();
       return;
     }
 

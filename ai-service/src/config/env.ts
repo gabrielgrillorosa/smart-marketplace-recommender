@@ -1,5 +1,5 @@
 import { parseRecencyAnchorCount, parseRecencyRerankWeight } from './recencyRerankEnv.js'
-import { parseProfilePoolingHalfLifeDays, parseProfilePoolingMode } from './profilePoolingEnv.js'
+import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } from './profilePoolingEnv.js'
 import { parseNeuralLossMode } from './neuralLossEnv.js'
 
 const missingVars: string[] = []
@@ -75,13 +75,22 @@ console.info(
   `[ai-service] Recency re-rank: RECENCY_RERANK_WEIGHT=${RECENCY_RERANK_WEIGHT}, RECENCY_ANCHOR_COUNT=${RECENCY_ANCHOR_COUNT}`
 )
 
-const PROFILE_POOLING_MODE = parseProfilePoolingMode(process.env.PROFILE_POOLING_MODE)
-const PROFILE_POOLING_HALF_LIFE_DAYS = parseProfilePoolingHalfLifeDays(
-  process.env.PROFILE_POOLING_HALF_LIFE_DAYS
-)
+const PROFILE_POOLING_RUNTIME = Object.freeze(buildProfilePoolingRuntimeFromEnv(process.env))
+const attTLog =
+  PROFILE_POOLING_RUNTIME.attentionTemperature === Number.POSITIVE_INFINITY
+    ? 'inf'
+    : String(PROFILE_POOLING_RUNTIME.attentionTemperature)
 console.info(
-  `[ai-service] Profile pooling: PROFILE_POOLING_MODE=${PROFILE_POOLING_MODE}, PROFILE_POOLING_HALF_LIFE_DAYS=${PROFILE_POOLING_HALF_LIFE_DAYS}`
+  `[ai-service] Profile pooling: PROFILE_POOLING_MODE=${PROFILE_POOLING_RUNTIME.mode}, PROFILE_POOLING_HALF_LIFE_DAYS=${PROFILE_POOLING_RUNTIME.halfLifeDays}` +
+    (PROFILE_POOLING_RUNTIME.mode === 'attention_light' || PROFILE_POOLING_RUNTIME.mode === 'attention_learned'
+      ? `, PROFILE_POOLING_ATTENTION_TEMPERATURE=${attTLog}, PROFILE_POOLING_ATTENTION_MAX_ENTRIES=${PROFILE_POOLING_RUNTIME.attentionMaxEntries ?? 0}`
+      : '')
 )
+if (PROFILE_POOLING_RUNTIME.mode === 'attention_learned') {
+  console.info(
+    `[ai-service] attention_learned params: PROFILE_POOLING_ATTENTION_LEARNED_JSON_PATH=${resolveAttentionLearnedJsonPath(process.env)}`
+  )
+}
 
 const NEURAL_LOSS_MODE = parseNeuralLossMode(process.env.NEURAL_LOSS_MODE)
 console.info(`[ai-service] NEURAL_LOSS_MODE=${NEURAL_LOSS_MODE}`)
@@ -115,7 +124,10 @@ export const ENV = Object.freeze({
   RECENT_PURCHASE_WINDOW_DAYS,
   RECENCY_RERANK_WEIGHT,
   RECENCY_ANCHOR_COUNT,
-  PROFILE_POOLING_MODE,
-  PROFILE_POOLING_HALF_LIFE_DAYS,
+  PROFILE_POOLING_MODE: PROFILE_POOLING_RUNTIME.mode,
+  PROFILE_POOLING_HALF_LIFE_DAYS: PROFILE_POOLING_RUNTIME.halfLifeDays,
+  PROFILE_POOLING_ATTENTION_TEMPERATURE: PROFILE_POOLING_RUNTIME.attentionTemperature,
+  PROFILE_POOLING_ATTENTION_MAX_ENTRIES: PROFILE_POOLING_RUNTIME.attentionMaxEntries ?? 0,
+  PROFILE_POOLING_RUNTIME,
   NEURAL_LOSS_MODE,
 })

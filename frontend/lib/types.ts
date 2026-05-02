@@ -190,6 +190,8 @@ export interface ModelStatusResponse {
   epochsConfigured?: number;
   epochsEffective?: number;
   currentVersion?: string | null;
+  /** Nome do ficheiro de checkpoint activo (quando `VersionedModelStore` está injectado no ai-service). */
+  currentModel?: string | null;
   lastTrainingResult?: 'promoted' | 'rejected' | 'failed' | null;
   lastTrainingTriggeredBy?: 'checkout' | 'manual' | null;
   lastOrderId?: string | null;

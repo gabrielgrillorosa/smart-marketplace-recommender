@@ -59,4 +59,4 @@ RUN mkdir -p /root/.cache/huggingface
 COPY --from=builder /opt/ai-service-huggingface-cache/ /root/.cache/huggingface/
 
 EXPOSE 3001
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/entry.js"]

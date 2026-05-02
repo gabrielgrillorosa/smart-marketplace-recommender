@@ -66,4 +66,118 @@ describe('aggregateClientProfileEmbeddings', () => {
     expect(deltaDaysUtc(tRef, '2026-07-01T00:00:00.000Z', { warn })).toBe(0)
     expect(warn).toHaveBeenCalled()
   })
+
+  it('attention_light with infinite temperature matches mean (M21 A)', () => {
+    const mean = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 10 },
+        { embedding: e1, deltaDays: 99 },
+      ],
+      'mean',
+      30
+    )
+    const attn = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 10 },
+        { embedding: e1, deltaDays: 99 },
+      ],
+      {
+        mode: 'attention_light',
+        halfLifeDays: 30,
+        attentionTemperature: Number.POSITIVE_INFINITY,
+      }
+    )
+    expect(attn[0]).toBeCloseTo(mean[0]!, 6)
+    expect(attn[1]).toBeCloseTo(mean[1]!, 6)
+  })
+
+  it('attention_light T=1 matches exp weights (golden, M21 A)', () => {
+    const H = 30
+    const expOut = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 0 },
+        { embedding: e1, deltaDays: 30 },
+      ],
+      'exp',
+      H
+    )
+    const attnOut = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 0 },
+        { embedding: e1, deltaDays: 30 },
+      ],
+      { mode: 'attention_light', halfLifeDays: H, attentionTemperature: 1 }
+    )
+    expect(attnOut[0]).toBeCloseTo(expOut[0]!, 6)
+    expect(attnOut[1]).toBeCloseTo(expOut[1]!, 6)
+  })
+
+  it('attention_light maxEntries=1 keeps only most recent purchase (smallest delta)', () => {
+    const out = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 100 },
+        { embedding: e1, deltaDays: 1 },
+      ],
+      { mode: 'attention_light', halfLifeDays: 30, attentionTemperature: 1, attentionMaxEntries: 1 }
+    )
+    expect(out).toEqual(e1)
+  })
+
+  it('attention_learned uniform temperature matches mean (M21)', () => {
+    const mean = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 10 },
+        { embedding: e1, deltaDays: 99 },
+      ],
+      'mean',
+      30
+    )
+    const learned = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 10 },
+        { embedding: e1, deltaDays: 99 },
+      ],
+      {
+        mode: 'attention_learned',
+        halfLifeDays: 30,
+        attentionTemperature: Number.POSITIVE_INFINITY,
+        attentionParams: { w: [1, 0, 0, 0], b: 0 },
+      }
+    )
+    expect(learned[0]).toBeCloseTo(mean[0]!, 6)
+    expect(learned[1]).toBeCloseTo(mean[1]!, 6)
+  })
+
+  it('attention_learned without attentionParams throws when temperature is finite', () => {
+    expect(() =>
+      aggregateClientProfileEmbeddings(
+        [
+          { embedding: e0, deltaDays: 0 },
+          { embedding: e1, deltaDays: 1 },
+        ],
+        {
+          mode: 'attention_learned',
+          halfLifeDays: 30,
+          attentionTemperature: 1,
+        } as import('./clientProfileAggregation.js').ProfilePoolingRuntime
+      )
+    ).toThrow(/attentionParams/)
+  })
+
+  it('attention_learned biases aggregate toward higher w·embedding (lambda=0)', () => {
+    const out = aggregateClientProfileEmbeddings(
+      [
+        { embedding: e0, deltaDays: 0 },
+        { embedding: e1, deltaDays: 0 },
+      ],
+      {
+        mode: 'attention_learned',
+        halfLifeDays: 30,
+        attentionTemperature: 0.5,
+        attentionParams: { w: [8, 0, 0, 0], b: 0, lambda: 0 },
+      }
+    )
+    expect(out[0]).toBeGreaterThan(0.95)
+    expect(out[1]).toBeLessThan(0.08)
+  })
 })

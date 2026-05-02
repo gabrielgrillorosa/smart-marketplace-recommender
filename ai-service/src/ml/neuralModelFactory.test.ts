@@ -36,7 +36,8 @@ describe('buildNeuralModel', () => {
     model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
 
     const xs = tf.randomNormal([8, 768])
-    const ys = tf.ones([4, 1])
+    /** Pairwise loss ignores y; Keras still requires sample count to match xs. */
+    const ys = tf.ones([8, 1])
     await model.fit(xs, ys, { epochs: 1, batchSize: 8, verbose: 0 })
     xs.dispose()
     ys.dispose()

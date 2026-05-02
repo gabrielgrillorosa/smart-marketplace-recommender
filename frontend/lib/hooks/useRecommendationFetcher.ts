@@ -5,10 +5,19 @@ import { apiFetch } from '@/lib/fetch-wrapper';
 import { adaptRecommendations } from '@/lib/adapters/recommend';
 import { buildCoverageMeta, type RankingWindow } from '@/lib/showcase/ranking-window';
 
-export function useRecommendationFetcher() {
-  const loadingRef = useRef(false);
+export type FetchRecommendationsOptions = {
+  window: RankingWindow;
+  requestKey: string;
+  force?: boolean;
+  /** When non-empty, uses cart-aware ranking (`/recommend/from-cart`). */
+  cartProductIds?: string[];
+  /** When true, skip success toast (e.g. cart-driven reorder). */
+  silent?: boolean;
+};
 
-  const loading = useAppStore((s) => s.loading);
+export function useRecommendationFetcher() {
+  const fetchAbortRef = useRef<AbortController | null>(null);
+
   const requestKeyInStore = useAppStore((s) => s.requestKey);
   const coverageMeta = useAppStore((s) => s.coverageMeta);
   const selectedClient = useAppStore((s) => s.selectedClient);
@@ -17,26 +26,45 @@ export function useRecommendationFetcher() {
   const setOrdered = useAppStore((s) => s.setOrdered);
   const resetOrderedState = useAppStore((s) => s.resetOrderedState);
 
-  const fetch = useCallback(async (
-    clientId: string,
-    options: { window: RankingWindow; requestKey: string; force?: boolean }
-  ): Promise<void> => {
-    if (loadingRef.current || loading) return;
-
+  const fetch = useCallback(async (clientId: string, options: FetchRecommendationsOptions): Promise<void> => {
     if (!options.force && requestKeyInStore === options.requestKey && coverageMeta !== null) {
       setOrdered(true);
       return;
     }
 
-    loadingRef.current = true;
+    fetchAbortRef.current?.abort();
+    const ac = new AbortController();
+    fetchAbortRef.current = ac;
+
     setLoading(true);
 
+    const cartIds = options.cartProductIds?.length ? [...options.cartProductIds].sort() : [];
+    const useCartAware = cartIds.length > 0;
+
     try {
-      const data = await apiFetch<unknown>('/api/proxy/recommend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, limit: options.window.requestedLimit }),
-      });
+      const data = useCartAware
+        ? await apiFetch<unknown>(
+            '/api/proxy/recommend/from-cart',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                clientId,
+                productIds: cartIds,
+                limit: options.window.requestedLimit,
+              }),
+            },
+            ac.signal
+          )
+        : await apiFetch<unknown>(
+            '/api/proxy/recommend',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ clientId, limit: options.window.requestedLimit }),
+            },
+            ac.signal
+          );
 
       const { results: recs, isFallback, rankingConfig } = adaptRecommendations(data);
       setRecommendations(
@@ -51,16 +79,23 @@ export function useRecommendationFetcher() {
       );
       setOrdered(true);
 
-      const clientName = selectedClient?.name ?? clientId;
-      toast.success(`✓ Recomendações carregadas para ${clientName}`, { duration: 3000 });
+      if (!options.silent) {
+        const clientName = selectedClient?.name ?? clientId;
+        toast.success(
+          useCartAware
+            ? `✓ Ranking actualizado com o carrinho (${cartIds.length} itens) — ${clientName}`
+            : `✓ Recomendações carregadas para ${clientName}`,
+          { duration: 2800 }
+        );
+      }
     } catch {
+      if (ac.signal.aborted) return;
       resetOrderedState();
       toast.error('Erro ao carregar recomendações — tente novamente');
     } finally {
-      loadingRef.current = false;
       setLoading(false);
     }
-  }, [coverageMeta, loading, requestKeyInStore, resetOrderedState, selectedClient, setLoading, setOrdered, setRecommendations]);
+  }, [coverageMeta, requestKeyInStore, resetOrderedState, selectedClient, setLoading, setOrdered, setRecommendations]);
 
   return { fetch };
 }

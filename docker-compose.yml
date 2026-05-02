@@ -49,6 +49,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       AI_SERVICE_URL: http://ai-service:3001
+      CHECKOUT_ENQUEUE_TRAINING: ${CHECKOUT_ENQUEUE_TRAINING:-false}
     ports:
       - "${API_SERVICE_PORT:-8080}:8080"
     depends_on:
@@ -88,14 +89,25 @@ services:
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       LLM_MODEL: ${LLM_MODEL:-meta-llama/llama-3.2-3b-instruct:free}
       API_SERVICE_URL: http://api-service:8080
+      CHECKOUT_ENQUEUE_TRAINING: ${CHECKOUT_ENQUEUE_TRAINING:-false}
       NEURAL_WEIGHT: ${NEURAL_WEIGHT:-0.6}
       SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
       # M21 T1 — bce = legacy sigmoid + BCE; pairwise = linear head + ranking loss (see ai-service/README.md)
       NEURAL_LOSS_MODE: ${NEURAL_LOSS_MODE:-bce}
       RECENCY_RERANK_WEIGHT: ${RECENCY_RERANK_WEIGHT:-0}
       RECENCY_ANCHOR_COUNT: ${RECENCY_ANCHOR_COUNT:-1}
-      PROFILE_POOLING_MODE: ${PROFILE_POOLING_MODE:-mean}
+      PROFILE_POOLING_MODE: ${PROFILE_POOLING_MODE:-attention_learned}
       PROFILE_POOLING_HALF_LIFE_DAYS: ${PROFILE_POOLING_HALF_LIFE_DAYS:-30}
+      PROFILE_POOLING_ATTENTION_TEMPERATURE: ${PROFILE_POOLING_ATTENTION_TEMPERATURE:-}
+      PROFILE_POOLING_ATTENTION_MAX_ENTRIES: ${PROFILE_POOLING_ATTENTION_MAX_ENTRIES:-0}
+      PROFILE_POOLING_ATTENTION_LEARNED_JSON_PATH: ${PROFILE_POOLING_ATTENTION_LEARNED_JSON_PATH:-}
+      ENABLE_DAILY_TRAIN: ${ENABLE_DAILY_TRAIN:-true}
+      DAILY_TRAIN_CRON: ${DAILY_TRAIN_CRON:-0 2 * * *}
+      ATTENTION_LEARNED_REFRESH_CRON: ${ATTENTION_LEARNED_REFRESH_CRON:-}
+      ATTENTION_LEARNED_NEGATIVES_PER_POSITIVE: ${ATTENTION_LEARNED_NEGATIVES_PER_POSITIVE:-2}
+      AUTO_HEAL_MODEL: ${AUTO_HEAL_MODEL:-true}
+      SOFT_NEGATIVE_SIM_THRESHOLD: ${SOFT_NEGATIVE_SIM_THRESHOLD:-0.65}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-}
       AUTO_SEED_ON_BOOT: ${AUTO_SEED_ON_BOOT:-true}
     ports:
       - "${AI_SERVICE_PORT:-3001}:3001"
@@ -104,6 +116,7 @@ services:
       - 1.1.1.1
     volumes:
       - ai-model-data:/tmp/model
+      - ai-attention-learned-data:/app/data
       # HF embeddings cache is baked into the image at build time (see ai-service/Dockerfile).
       # A named volume here hid that cache and forced a runtime download (often fails with EHOSTUNREACH).
     depends_on:
@@ -152,3 +165,4 @@ volumes:
   neo4j_data:
   neo4j_logs:
   ai-model-data:
+  ai-attention-learned-data:

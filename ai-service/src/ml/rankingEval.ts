@@ -61,11 +61,7 @@ export function computePrecisionAtK(
     }
     if (entries.length === 0) continue
 
-    const clientProfile = aggregateClientProfileEmbeddings(
-      entries,
-      pooling.mode,
-      pooling.halfLifeDays
-    )
+    const clientProfile = aggregateClientProfileEmbeddings(entries, pooling)
 
     const candidates = allProductIds.filter((pid) => !trainPurchased.has(pid))
     if (candidates.length === 0) continue
