@@ -543,7 +543,7 @@ Esta secção resume **dois eixos ortogonais** que confundem-se facilmente:
 
 | Eixo | Variável principal | O que muda |
 |------|-------------------|------------|
-| **Vector do cliente **p** (antes do MLP)** | `PROFILE_POOLING_MODE` | Como compras anteriores (e carrinho) são agregadas num único vector 384d. |
+| **Vector do cliente p** (antes do MLP) | `PROFILE_POOLING_MODE` | Como compras anteriores (e carrinho) são agregadas num único vector 384d. |
 | **Como a rede aprende o score neural** | `NEURAL_LOSS_MODE` (+ manifesto em disco) | Cabeça **BCE + sigmoide** vs **linear + loss pairwise**; em inferência usa-se `neural-head.json` junto ao checkpoint. |
 
 Detalhe operacional e envs: [`ai-service/README.md`](ai-service/README.md), [`.env.example`](.env.example).
