@@ -78,6 +78,8 @@ export interface TrainingStatus {
   lastDecision?: LastDecision | null
   /** M21 — active inference head for the loaded model (`neural-head.json` or legacy default). */
   neuralHeadKind?: NeuralHeadKind
+  /** M22 — active checkpoint architecture (`baseline` 768-MLP vs `m22` multi-input). */
+  modelArchitecture?: ModelArchitectureKind
 }
 
 export interface TrainingMetadata {

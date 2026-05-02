@@ -25,11 +25,19 @@ import {
   type PersistedTrainingMetadata,
 } from './trainingMetadata.js'
 
+export interface FsStatResult {
+  mtimeMs: number
+  isFile: boolean
+  isDirectory: boolean
+}
+
 export interface FsPort {
   symlink(target: string, linkPath: string): Promise<void>
   unlink(p: string): Promise<void>
+  /** Remove file or directory (`recursive` for checkpoint dirs). */
+  rm(p: string, opts?: { recursive?: boolean; force?: boolean }): Promise<void>
   readdir(dir: string): Promise<string[]>
-  stat(p: string): Promise<{ mtimeMs: number }>
+  stat(p: string): Promise<FsStatResult>
   mkdir(dir: string, opts: { recursive: boolean }): Promise<unknown>
   readlink(p: string): Promise<string>
 }
@@ -37,8 +45,12 @@ export interface FsPort {
 export const defaultFsPort: FsPort = {
   symlink: (target, linkPath) => fs.symlink(target, linkPath),
   unlink: (p) => fs.unlink(p),
+  rm: (p, opts) => fs.rm(p, opts ?? { recursive: true, force: true }),
   readdir: (dir) => fs.readdir(dir),
-  stat: (p) => fs.stat(p),
+  stat: async (p) => {
+    const s = await fs.stat(p)
+    return { mtimeMs: s.mtimeMs, isFile: s.isFile(), isDirectory: s.isDirectory() }
+  },
   mkdir: (dir, opts) => fs.mkdir(dir, opts),
   readlink: (p) => fs.readlink(p),
 }
@@ -145,6 +157,7 @@ export class VersionedModelStore extends ModelStore {
         syncedAt: result.syncedAt,
         precisionAt5: candidatePrecisionAt5,
         neuralHeadKind: result.neuralHeadKind,
+        modelArchitecture: arch,
       }
       await fs.writeFile(
         path.join(modelDir, TRAINING_METADATA_FILENAME),
@@ -197,7 +210,8 @@ export class VersionedModelStore extends ModelStore {
         const inferredTs = modelFilenameToCheckpointIso(mostRecent) ?? new Date().toISOString()
         const baseMeta = this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs)
         const m22Manifest = await this._loadM22ManifestSafe(modelPath)
-        const arch: ModelArchitectureKind = m22Manifest ? 'm22' : 'baseline'
+        const arch: ModelArchitectureKind =
+          diskMeta?.modelArchitecture ?? (m22Manifest ? 'm22' : 'baseline')
         super.setModel(loadedModel, { ...baseMeta, modelArchitecture: arch }, {
           m22ItemManifest: m22Manifest,
           modelArchitecture: arch,
@@ -220,7 +234,8 @@ export class VersionedModelStore extends ModelStore {
       const inferredTs = modelFilenameToCheckpointIso(basename) ?? new Date().toISOString()
       const baseMeta = this._metadataForLoadedCheckpoint(diskMeta, neuralHeadKind, inferredTs)
       const m22Manifest = await this._loadM22ManifestSafe(modelPath)
-      const arch: ModelArchitectureKind = m22Manifest ? 'm22' : 'baseline'
+      const arch: ModelArchitectureKind =
+        diskMeta?.modelArchitecture ?? (m22Manifest ? 'm22' : 'baseline')
       super.setModel(loadedModel, { ...baseMeta, modelArchitecture: arch }, {
         m22ItemManifest: m22Manifest,
         modelArchitecture: arch,
@@ -256,9 +271,20 @@ export class VersionedModelStore extends ModelStore {
     const files = await this._getModelFilesSortedByMtime()
     const toDelete = files.slice(MAX_HISTORY)
     for (const f of toDelete) {
-      const filePath = path.join(MODEL_DIR, f)
+      const top = path.join(MODEL_DIR, f)
       try {
-        await this.fsPort.unlink(filePath)
+        const st = await this.fsPort.stat(top)
+        if (st.isFile) {
+          await this.fsPort.unlink(top)
+          continue
+        }
+      } catch {
+        // fall through — checkpoint dir uses label `name.json` but folder has no .json suffix
+      }
+      const dirName = f.endsWith('.json') ? f.slice(0, -'.json'.length) : f
+      const dirPath = path.join(MODEL_DIR, dirName)
+      try {
+        await this.fsPort.rm(dirPath, { recursive: true, force: true })
       } catch (err) {
         console.warn(`[VersionedModelStore] Failed to prune ${f}:`, err)
       }
@@ -316,6 +342,7 @@ export class VersionedModelStore extends ModelStore {
         syncedAt: disk.syncedAt,
         precisionAt5: disk.precisionAt5,
         neuralHeadKind: disk.neuralHeadKind ?? neuralHeadKind,
+        modelArchitecture: disk.modelArchitecture,
       }
     }
     return {
@@ -344,20 +371,39 @@ export class VersionedModelStore extends ModelStore {
   private async _getModelFilesSortedByMtime(): Promise<string[]> {
     try {
       const entries = await this.fsPort.readdir(MODEL_DIR)
-      const jsonFiles = entries.filter((f) => f.startsWith('model-') && f.endsWith('.json'))
+      const candidates: { label: string; mtimeMs: number }[] = []
 
-      const withStats = await Promise.all(
-        jsonFiles.map(async (f) => {
+      for (const name of entries) {
+        if (!name.startsWith('model-')) continue
+        const full = path.join(MODEL_DIR, name)
+
+        if (name.endsWith('.json')) {
           try {
-            const st = await this.fsPort.stat(path.join(MODEL_DIR, f))
-            return { f, mtimeMs: st.mtimeMs }
+            const st = await this.fsPort.stat(full)
+            if (st.isFile) {
+              candidates.push({ label: name, mtimeMs: st.mtimeMs })
+            }
           } catch {
-            return { f, mtimeMs: 0 }
+            continue
           }
-        })
-      )
+          continue
+        }
 
-      return withStats.sort((a, b) => b.mtimeMs - a.mtimeMs).map((x) => x.f)
+        try {
+          const st = await this.fsPort.stat(full)
+          if (!st.isDirectory) continue
+          try {
+            await this.fsPort.stat(path.join(full, 'model.json'))
+          } catch {
+            continue
+          }
+          candidates.push({ label: `${name}.json`, mtimeMs: st.mtimeMs })
+        } catch {
+          continue
+        }
+      }
+
+      return candidates.sort((a, b) => b.mtimeMs - a.mtimeMs).map((x) => x.label)
     } catch {
       return []
     }

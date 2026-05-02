@@ -22,10 +22,13 @@ const makeFakeModel = () => ({
 const makeFsPort = (overrides: Partial<FsPort> = {}): FsPort => ({
   symlink: vi.fn(async () => {}),
   unlink: vi.fn(async () => {}),
+  rm: vi.fn(async () => {}),
   readdir: vi.fn(async () => []),
-  stat: vi.fn(async () => ({ mtimeMs: Date.now() })),
+  stat: vi.fn(async () => ({ mtimeMs: Date.now(), isFile: true, isDirectory: false })),
   mkdir: vi.fn(async () => {}),
-  readlink: vi.fn(async () => { throw new Error('ENOENT') }),
+  readlink: vi.fn(async () => {
+    throw new Error('ENOENT')
+  }),
   ...overrides,
 })
 
@@ -182,8 +185,13 @@ describe('VersionedModelStore', () => {
 
       const pruneFsPort = makeFsPort({
         readdir: vi.fn(async () => files),
-        stat: vi.fn(async (_p: string) => ({ mtimeMs: mtime - files.indexOf(files.find(f => _p.endsWith(f)) ?? '') * 1000 })),
+        stat: vi.fn(async (p: string) => {
+          const idx = files.findIndex((f) => p.endsWith(f))
+          const i = idx >= 0 ? idx : 0
+          return { mtimeMs: mtime - i * 1000, isFile: true, isDirectory: false }
+        }),
         unlink: vi.fn(async () => {}),
+        rm: vi.fn(async () => {}),
       })
       const pruneStore = new VersionedModelStore(pruneFsPort)
 
@@ -197,8 +205,13 @@ describe('VersionedModelStore', () => {
       const files = ['model-2026-01-01T00-00-00-000Z.json', 'model-2026-02-01T00-00-00-000Z.json']
       const pruneFsPort = makeFsPort({
         readdir: vi.fn(async () => files),
-        stat: vi.fn(async () => ({ mtimeMs: Date.now() })),
+        stat: vi.fn(async () => ({
+          mtimeMs: Date.now(),
+          isFile: true,
+          isDirectory: false,
+        })),
         unlink: vi.fn(async () => {}),
+        rm: vi.fn(async () => {}),
       })
       const pruneStore = new VersionedModelStore(pruneFsPort)
 

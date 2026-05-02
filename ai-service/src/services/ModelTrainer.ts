@@ -350,8 +350,6 @@ export class ModelTrainer {
         console.warn('[ModelTrainer] precision@5 eval failed (non-fatal):', precErr)
       }
 
-      await model.save('file:///tmp/model')
-
       const durationMs = Date.now() - startMs
       this._isTraining = false
 

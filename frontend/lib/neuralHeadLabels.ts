@@ -1,4 +1,4 @@
-import type { NeuralHeadKind } from '@/lib/types';
+import type { ModelArchitectureKind, NeuralHeadKind } from '@/lib/types';
 
 /** Rótulo curto para métricas na UI (M21 — BCE vs pairwise). */
 export function describeNeuralHeadForMetrics(kind: NeuralHeadKind | undefined): string | undefined {
@@ -7,6 +7,17 @@ export function describeNeuralHeadForMetrics(kind: NeuralHeadKind | undefined): 
     return 'BCE + sigmoide (binary cross-entropy)';
   }
   return 'Pairwise + linear (ranking loss; não comparar com BCE)';
+}
+
+/** M22 — rótulo para métricas (checkpoint baseline vs torre híbrida). */
+export function describeModelArchitectureForMetrics(
+  arch: ModelArchitectureKind | undefined
+): string | undefined {
+  if (!arch) return undefined;
+  if (arch === 'm22') {
+    return 'M22 — híbrido (HF + esparsa + opcional identity)';
+  }
+  return 'Baseline — MLP 768-d (semântico ‖ utilizador)';
 }
 
 /** Classificação explícita BCE vs pairwise — obrigatória para interpretar loss / accuracy. */

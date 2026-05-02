@@ -176,6 +176,9 @@ export interface ClientProfileViewModel {
 /** M21 — cabeça neural do checkpoint ativo (alinhado com `neural-head.json` / `GET /model/status`). */
 export type NeuralHeadKind = 'bce_sigmoid' | 'ranking_linear';
 
+/** M22 — arquitectura do checkpoint activo (vs legado 768-d). */
+export type ModelArchitectureKind = 'baseline' | 'm22';
+
 export interface ModelStatusResponse {
   status?: string;
   trainedAt?: string;
@@ -185,6 +188,8 @@ export interface ModelStatusResponse {
   precisionAt5?: number;
   /** Cabeça do modelo em produção; distingue BCE de pairwise sem interpretar só pela loss. */
   neuralHeadKind?: NeuralHeadKind;
+  /** Arquitectura neural persistida: baseline (768-d concat) ou M22 (multi-input). */
+  modelArchitecture?: ModelArchitectureKind;
   syncedAt?: string;
   durationMs?: number;
   epochsConfigured?: number;

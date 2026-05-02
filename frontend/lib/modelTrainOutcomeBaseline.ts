@@ -9,5 +9,5 @@ import type { ModelStatusResponse } from '@/lib/types';
 export function modelTrainOutcomeFingerprint(status: ModelStatusResponse | null | undefined): string {
   if (!status) return '';
   const version = (status.currentVersion ?? status.currentModel ?? '').trim();
-  return [status.trainedAt ?? '', status.lastTrainingResult ?? '', version].join('\u001f');
+  return [status.trainedAt ?? '', status.lastTrainingResult ?? '', version, status.modelArchitecture ?? ''].join('\u001f');
 }

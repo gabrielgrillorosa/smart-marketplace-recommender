@@ -94,10 +94,8 @@ services:
       SEMANTIC_WEIGHT: ${SEMANTIC_WEIGHT:-0.4}
       # M21 T1 — bce = legacy sigmoid + BCE; pairwise = linear head + ranking loss (see ai-service/README.md)
       NEURAL_LOSS_MODE: ${NEURAL_LOSS_MODE:-bce}
-      # M22 — hybrid sparse item tower (ADR-074). Defaults off = legacy 768-d path; retrain after enabling.
-      M22_ENABLED: ${M22_ENABLED:-false}
-      M22_STRUCTURAL: ${M22_STRUCTURAL:-false}
-      M22_IDENTITY: ${M22_IDENTITY:-false}
+      # M22_* — read only from env_file (.env). Do not substitute here: ${M22_ENABLED:-false} uses the
+      # compose host environment only and can silently force false even when .env has true.
       RECENCY_RERANK_WEIGHT: ${RECENCY_RERANK_WEIGHT:-0}
       RECENCY_ANCHOR_COUNT: ${RECENCY_ANCHOR_COUNT:-1}
       PROFILE_POOLING_MODE: ${PROFILE_POOLING_MODE:-attention_learned}

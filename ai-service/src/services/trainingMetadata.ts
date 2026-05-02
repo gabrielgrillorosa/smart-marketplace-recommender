@@ -1,4 +1,4 @@
-import type { NeuralHeadKind } from '../types/index.js'
+import type { ModelArchitectureKind, NeuralHeadKind } from '../types/index.js'
 
 /** Sidecar next to `model.json` under a versioned checkpoint directory (written on promotion). */
 export const TRAINING_METADATA_FILENAME = 'training-metadata.json'
@@ -12,6 +12,7 @@ export interface PersistedTrainingMetadata {
   syncedAt?: string
   precisionAt5?: number
   neuralHeadKind?: NeuralHeadKind
+  modelArchitecture?: ModelArchitectureKind
 }
 
 /** Decode `model-2026-05-01T22-40-18-110Z.json` → ISO `2026-05-01T22:40:18.110Z` (checkpoint naming in VersionedModelStore). */
@@ -55,6 +56,9 @@ export function parsePersistedTrainingMetadataJson(text: string): PersistedTrain
   }
   const head = o.neuralHeadKind
   if (head === 'bce_sigmoid' || head === 'ranking_linear') out.neuralHeadKind = head
+
+  const arch = o.modelArchitecture
+  if (arch === 'baseline' || arch === 'm22') out.modelArchitecture = arch
 
   return out
 }

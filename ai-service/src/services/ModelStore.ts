@@ -48,7 +48,10 @@ export class ModelStore {
 
   getEnrichedStatus(nowFn: () => Date = () => new Date()): EnrichedTrainingStatus {
     const base = { ...this.status }
-    const head = { neuralHeadKind: this.neuralHeadKind }
+    const head = {
+      neuralHeadKind: this.neuralHeadKind,
+      modelArchitecture: this.modelArchitecture,
+    }
 
     if (base.status === 'trained' && base.trainedAt) {
       const staleDays = Math.floor((nowFn().getTime() - new Date(base.trainedAt).getTime()) / MS_PER_DAY)

@@ -25,6 +25,7 @@ describe('GET /api/v1/model/status', () => {
     expect(body.status).toBe('untrained')
     expect(body.staleDays).toBeNull()
     expect(body.neuralHeadKind).toBe('bce_sigmoid')
+    expect(body.modelArchitecture).toBe('baseline')
   })
 
   it('staleDays is null when model is untrained', async () => {

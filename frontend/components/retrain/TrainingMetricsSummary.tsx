@@ -1,7 +1,7 @@
 'use client';
 
 import type { ModelStatusResponse } from '@/lib/types';
-import { describeNeuralHeadForMetrics } from '@/lib/neuralHeadLabels';
+import { describeModelArchitectureForMetrics, describeNeuralHeadForMetrics } from '@/lib/neuralHeadLabels';
 
 interface TrainingMetricsSummaryProps {
   status: ModelStatusResponse | null;
@@ -46,6 +46,10 @@ export function TrainingMetricsSummary({ status, metricsSyncActive }: TrainingMe
     { label: 'Treinado em', value: dash(status.trainedAt) },
     { label: 'Último resultado de treino', value: dash(status.lastTrainingResult) },
     { label: 'Disparado por', value: dash(status.lastTrainingTriggeredBy) },
+    {
+      label: 'Arquitectura (checkpoint)',
+      value: dash(describeModelArchitectureForMetrics(status.modelArchitecture)),
+    },
     {
       label: 'Cabeça do modelo',
       value: dash(describeNeuralHeadForMetrics(status.neuralHeadKind)),
