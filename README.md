@@ -15,9 +15,9 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Neural architecture benchmark (CLI)](#neural-architecture-benchmark-cli)
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
-- [M17 — Recency-aware profile & ranking](#m17--recency-aware-profile--ranking)
-- [M21 — Profile pooling and neural head](#m21--profile-pooling-and-neural-head)
-- [M22 — Hybrid dual item tower (delivered)](#m22--hybrid-dual-item-tower-delivered)
+- [Recency-aware profile & ranking](#recency-aware-profile--ranking)
+- [Profile pooling and neural head](#profile-pooling-and-neural-head)
+- [Module C — Item representation (dense + sparse)](#module-c--item-representation-dense--sparse)
 - [RAG Pipeline](#rag-pipeline)
 - [Service Communication Patterns](#service-communication-patterns)
 - [Async Training: 202 + Polling Pattern](#async-training-202--polling-pattern)
@@ -28,7 +28,23 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [API Reference](#api-reference)
 - [Model Observability](#model-observability)
 - [Tech Stack Decision Summary](#tech-stack-decision-summary)
-- [Architecture Decision Records](#architecture-decision-records)
+- [Architecture decision index](#architecture-decision-index)
+
+---
+
+### Reader map (no `.specs` folder required)
+
+You do **not** need the internal `.specs/` tree to run or understand this system. This README and [`ai-service/README.md`](ai-service/README.md) are self-contained.
+
+**Module C** is the product name for the optional **dual item path**: dense semantic embeddings **(A)**, sparse catalog priors **(B)** (brand, category, subcategory, price bucket), and optional per-`product_id` memorisation **(C)**, fused with the profile vector **u** before the neural logit. The implementation still uses **`M22_*` environment variables** and **`m22-item-manifest.json`** beside promoted checkpoints — those identifiers are historical names in code and Docker, not a requirement to read any ADR file.
+
+| Reader term | Code / env | Role |
+|-------------|------------|------|
+| **Module C** | `M22_ENABLED`, `M22_STRUCTURAL`, `M22_IDENTITY`, `predictM22HybridScores`, `m22-item-manifest.json` | Fusion `f(u, e_sem, e_struct, e_id)` for the neural branch; **`semanticScore`** remains **`cosine(u, e_sem)`**. |
+| Recency (phased) | `RECENCY_*`, `PROFILE_POOLING_*` | **P1:** optional re-rank after hybrid score. **P2:** one shared profile builder for training, `/recommend`, and eval. **P3:** temporal attention inside the MLP — **not implemented** yet. |
+| Hybrid blend | `NEURAL_WEIGHT`, `SEMANTIC_WEIGHT` | Weighted sum of neural and semantic scalars (defaults 60/40). |
+
+The **Architecture decision index** at the end lists **ADR-###** labels as one-line mnemonics for traceability only (no links into `.specs`).
 
 ---
 
@@ -46,7 +62,7 @@ The system combines three complementary signals:
 
 The frontend demonstrates the **full ML lifecycle** in a single interactive session: select a client → see initial recommendations → simulate purchases → observe real-time profile update → trigger full model retrain → compare before/after quality metrics.
 
-**Latest ranking stack (optional, flags):** milestone **[M22](#m22--hybrid-dual-item-tower-delivered)** adds a **dual item representation** — dense **semantic** (HuggingFace) plus **sparse structural** priors (brand, category, subcategory, price bucket) and an optional **identity** embedding keyed by `product_id` for SKU-level memorisation — fused with the **user vector** **u** from **[M21](#m21--profile-pooling-and-neural-head)** pooling (including **attention learned**). Defaults keep the legacy **768-d concat** path until operators enable `M22_*` and retrain.
+**Latest ranking stack (optional, flags):** **[Module C](#module-c--item-representation-dense--sparse)** adds a **dual item representation** — dense **semantic** (HuggingFace) plus **sparse structural** priors (brand, category, subcategory, price bucket) and an optional **identity** embedding keyed by `product_id` for SKU-level memorisation — fused with the **user vector** **u** from **[profile pooling](#profile-pooling-and-neural-head)** (including **attention learned**). Defaults keep the legacy **768-d concat** path until operators enable **`M22_*`** and retrain.
 
 ---
 
@@ -71,7 +87,7 @@ graph TB
     subgraph "ai-service — Fastify 4 + TF.js :3001"
         direction TB
         EMB["🧠 EmbeddingService\n@xenova/transformers\nall-MiniLM-L6-v2 (384d)\nlocal, no API cost"]
-        TRAINER["⚙️ ModelTrainer\nDense[64,L2]→Dropout[0.2]→Dense[1]\nEPOCHS=30 BATCH=16\nnegative sampling N=4\nhard negative mining\nsoft negative exclusion (ADR-031+032)"]
+        TRAINER["⚙️ ModelTrainer\nDense[64,L2]→Dropout[0.2]→Dense[1]\nEPOCHS=30 BATCH=16\nnegative sampling N=4\nhard negative mining\nsoft negative exclusion\n(category+supplier + cosine cap)"]
         REGISTRY["📋 TrainingJobRegistry\nsetImmediate async\n202+polling pattern"]
         VSTORE["💾 VersionedModelStore\ntimestamp + symlink /current\nprecisionAt5 promotion gate"]
         CRON["⏰ CronScheduler\nnode-cron 02:00 daily\nauto-retrain"]
@@ -162,7 +178,7 @@ docker compose up -d         # Restart after stop
 docker compose down -v       # Full reset — deletes model, data, and graph
 ```
 
-### Startup Self-Healing Flow (M12 + ADR-052)
+### Startup self-healing flow (auto-seed + training cache bypass)
 
 The complete boot sequence handles both cold-start (empty databases) and warm-start (existing data):
 
@@ -246,9 +262,9 @@ graph LR
     class OUT output
 ```
 
-**Baseline path above** (`768 = e_sem ‖ u`) is the default when **`M22_ENABLED=false`**. With **[M22](#m22--hybrid-dual-item-tower-delivered)** enabled and a valid **`m22-item-manifest.json`**, the neural branch uses **multi-input** fusion **f(u, e_sem, e_struct, e_id)** (concat → dense → logit) while **semanticScore** stays **cosine(u, e_sem)** per [ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md).
+**Baseline path above** (`768 = e_sem ‖ u`) is the default when **`M22_ENABLED=false`**. With **[Module C](#module-c--item-representation-dense--sparse)** enabled and a valid **`m22-item-manifest.json`**, the neural branch uses **multi-input** fusion **f(u, e_sem, e_struct, e_id)** (concat → dense → logit) while **`semanticScore`** stays **`cosine(u, e_sem)`** — the **hybrid** layer still blends that semantic term with **`neuralScore`** via `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT` (tune after large architecture changes).
 
-**Architecture decisions (ADR-028):**
+**Production head (reduced MLP — committee rationale summarized here):**
 
 - **Reduced architecture** — moved from `Dense[256→128→64→1]` (~65k params) to `Dense[64→1]` (~25k params). The previous ratio of ~60:1 (params:samples) caused severe overfitting; the new ~39:1 ratio with L2 regularization enables genuine generalization.
 - **L2 regularization** `1e-4` on the dense layer — prevents memorization of the small synthetic dataset.
@@ -267,7 +283,7 @@ clientProfileVector = mean([embed(product_1), embed(product_2), ..., embed(produ
 
 This creates a dense 384-dimensional representation of the client's taste in embedding space — far more expressive than one-hot encoding. Purchasing a new product incrementally shifts the profile vector in the direction of that product's semantic neighborhood.
 
-### Batch Prediction (ADR-007)
+### Batch prediction (single `tf.tensor2d` forward pass)
 
 All candidate products are scored in a **single TF.js forward pass** using batched tensor operations:
 
@@ -280,7 +296,7 @@ const scoreArray = scores.dataSync()  // Float32Array, sync-safe in tfjs-node
 
 This reduces recommendation latency from ~500ms–2s (serial) to ~20–50ms (batched) for a typical 30–100 product candidate pool.
 
-### Atomic Model Swap (ADR-006)
+### Atomic model swap (`ModelStore.setModel`)
 
 `ModelStore` is the single source of truth for the trained model in memory. Training completes fully before `setModel()` is called — a single synchronous JavaScript reference assignment that is atomic in the Node.js event loop. In-flight `/recommend` requests hold the old model reference for their duration via closure; the next request picks up the new model. Zero-downtime model replacement with no mutex needed.
 
@@ -288,7 +304,7 @@ This reduces recommendation latency from ~500ms–2s (serial) to ~20–50ms (bat
 
 ## Neural architecture benchmark (CLI)
 
-Offline script in **`ai-service`** to compare alternative **dense** heads (extra hidden layers / widths) against the **production baseline** (`Dense[64,L2] → Dropout → Dense[1]`, ADR-028) using the **same** training data pipeline as `ModelTrainer`: HTTP fetch from `api-service`, embeddings from Neo4j, `buildTrainingDataset()` with the same negative sampling and seeds.
+Offline script in **`ai-service`** to compare alternative **dense** heads (extra hidden layers / widths) against the **production baseline** (`Dense[64,L2] → Dropout → Dense[1]` — see **Neural Network Architecture** above) using the **same** training data pipeline as `ModelTrainer`: HTTP fetch from `api-service`, embeddings from Neo4j, `buildTrainingDataset()` with the same negative sampling and seeds.
 
 **What it does not do:** start the Fastify server, call `POST /model/train`, or overwrite the deployed model under `/tmp/model`. Each candidate architecture is trained in memory, evaluated, and disposed.
 
@@ -333,7 +349,7 @@ npm run benchmark:neural-arch -- --out ./.benchmarks/nn-arch.json --profiles bas
 |---------|------------------------|------|
 | `baseline` | 64 → Dropout(0.2) → 1 | Current production head (`buildNeuralModel('baseline')` in `ModelTrainer`). |
 | `deep64_32` | 64 → Dropout → 32 → Dropout → 1 | One extra narrow hidden layer. |
-| `deep128_64` | 128 → Dropout(0.25) → 64 → Dropout → 1 | Wider + deeper (watch **params : samples** ratio vs ADR-028). |
+| `deep128_64` | 128 → Dropout(0.25) → 64 → Dropout → 1 | Wider + deeper (watch **params : samples** ratio vs the production baseline above). |
 
 Implementation: `ai-service/src/ml/neuralModelFactory.ts`. Orchestration and metrics: `ai-service/src/benchmark/neuralArchBenchmark.ts` (`runNeuralArchBenchmark`). Entrypoint: `ai-service/src/scripts/neural-arch-benchmark-cli.ts`.
 
@@ -343,12 +359,12 @@ Top-level fields include **`generatedAt`**, **`gitCommit`** (if `git rev-parse` 
 
 Per run, useful fields for decisions:
 
-- **`trainableParams`**, **`trainingSamples`**, **`paramSampleRatio`** — capacity vs dataset size (contrast with ADR-028).
+- **`trainableParams`**, **`trainingSamples`**, **`paramSampleRatio`** — capacity vs dataset size (contrast with the production baseline).
 - **`finalValLoss`**, **`finalValAccuracy`**, **`trainValLossGap`** — training uses the same `classWeight` as production; **early stopping monitors `val_loss`** (unlike the HTTP trainer, which still keys off training loss).
 - **`valMetrics`**: **`aucRoc`**, **`aucPr`**, **`brier`**, **`accuracyAt05`** on the held-out stratified validation rows (binary `(client, product)` labels).
 - **`precisionAt5`**: same **ranking** protocol as training-time evaluation (temporal split on purchase list per client, top-5 among non-train products).
 
-**How to read results:** strong **`valMetrics`** but lower **`precisionAt5`** on deeper models often means the pointwise classifier improved while **list-wise ranking** that matters for `/recommend` did not — keep the baseline until an ADR records a deliberate switch and hybrid weights are revisited (see ADR-016).
+**How to read results:** strong **`valMetrics`** but lower **`precisionAt5`** on deeper models often means the pointwise classifier improved while **list-wise ranking** that matters for `/recommend` did not — keep the baseline until you deliberately promote a new head and re-tune **`NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`**.
 
 ---
 
@@ -356,13 +372,13 @@ Per run, useful fields for decisions:
 
 The training dataset is built by `buildTrainingDataset()` — a pure function in `training-utils.ts` that applies four layers of quality control before a single sample reaches the model.
 
-### Negative Sampling Pipeline (ADR-027 + ADR-031 + ADR-032)
+### Negative sampling pipeline (hard mining + soft-negative filters)
 
 ```mermaid
 flowchart TD
     START([All Products]) --> FILTER1["Remove already purchased\nby this client"]
-    FILTER1 --> FILTER2["ADR-031: Remove soft negatives\nby brand — same category+supplier\nas any positive product"]
-    FILTER2 --> FILTER3["ADR-032: Remove soft negatives\nby cosine similarity —\nmaxCosineSim(candidate, any_positive)\n> SOFT_NEGATIVE_SIM_THRESHOLD (default 0.65)"]
+    FILTER1 --> FILTER2["Filter 1: Remove soft negatives\nby brand — same category+supplier\nas any positive product"]
+    FILTER2 --> FILTER3["Filter 2: Remove soft negatives\nby cosine similarity —\nmaxCosineSim(candidate, any_positive)\n> SOFT_NEGATIVE_SIM_THRESHOLD (default 0.65)"]
     FILTER3 --> POOL["Negative Pool\n(clean negatives only)"]
     POOL --> MINE["Hard Negative Mining\n≥2 negatives from different\ncategory than positive\nper slot N=4"]
     MINE --> SAMPLE["Final Dataset\nnegativeSamplingRatio: 4\n(1 positive : 4 negatives)"]
@@ -385,7 +401,7 @@ This is formally known as **False Negative Contamination**, documented in ANCE (
 
 **Two complementary filters are applied additively:**
 
-**ADR-031 — Exclusion by (category + supplier):** Deterministic, zero-hyperparameter. Products sharing `category AND supplierName` with any purchased product are excluded from the negative pool. O(1) lookup per candidate.
+**Exclusion by (category + supplier):** Deterministic, zero-hyperparameter. Products sharing `category AND supplierName` with any purchased product are excluded from the negative pool. O(1) lookup per candidate.
 
 ```typescript
 const positiveCategorySupplierPairs = new Set(
@@ -398,7 +414,7 @@ const softPositiveIdsByBrand = new Set(
 )
 ```
 
-**ADR-032 — Exclusion by cosine similarity (ANCE-simplified):** Catches products from different suppliers in the same category that are semantically close in embedding space (e.g., `food/Nestlé` after purchases of `food/Unilever` — soups, sauces, and broths share similar descriptions). If `maxCosineSimilarity(candidate, any_positive) > SOFT_NEGATIVE_SIM_THRESHOLD`, the candidate is excluded.
+**Exclusion by cosine similarity (ANCE-style):** Catches products from different suppliers in the same category that are semantically close in embedding space (e.g., `food/Nestlé` after purchases of `food/Unilever` — soups, sauces, and broths share similar descriptions). If `maxCosineSimilarity(candidate, any_positive) > SOFT_NEGATIVE_SIM_THRESHOLD`, the candidate is excluded.
 
 ```typescript
 const threshold = parseFloat(process.env.SOFT_NEGATIVE_SIM_THRESHOLD ?? '0.65')
@@ -414,7 +430,7 @@ const softPositiveIdsBySimilarity = new Set(
 
 `SOFT_NEGATIVE_SIM_THRESHOLD` is an env var (default `0.65`) — adjustable to demonstrate pedagogically that **data quality hyperparameters have the same impact as model hyperparameters**.
 
-### Hard Negative Mining (ADR-027)
+### Hard negative mining
 
 After soft negative exclusion, at least 2 of the 4 negative slots per positive are filled with products from **different categories** than the positive. This forces the network to learn inter-category discrimination — without it, category-specific purchase signals (e.g., "client likes beverages") are diluted by unrelated negatives.
 
@@ -445,7 +461,7 @@ graph LR
     class FS,RANK output
 ```
 
-**Why hybrid is better than neural-only (ADR-016, validated by Technical Committee):**
+**Why hybrid beats neural-only** (committee evaluation + Tree-of-Thought / self-consistency on weight choice):
 
 | Scenario | Neural Only | Hybrid |
 |----------|-------------|--------|
@@ -461,9 +477,9 @@ Weights are configurable via `NEURAL_WEIGHT` and `SEMANTIC_WEIGHT` env vars. The
 
 ---
 
-## M17 — Recency-aware profile & ranking
+## Recency-aware profile & ranking
 
-Milestone **[M17](.specs/features/m17-phased-recency-ranking-signals/spec.md)** rolls out recency in **orthogonal phases** ([ADR-062](.specs/features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md)): **P1** re-ranks candidates after the hybrid score; **P2** changes how the **client profile vector** is built so training and inference stay aligned ([ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)). Score transparency for the UI lives in [ADR-063](.specs/features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md) / [ADR-064](.specs/features/m17-phased-recency-ranking-signals/adr-064-rankingconfig-zustand-recommendation-slice.md). **Phase 3** (temporal attention inside the MLP) is planned, not implemented yet.
+Recency is rolled out in **orthogonal phases**: **P1** re-ranks candidates after the hybrid score (optional `RECENCY_RERANK_WEIGHT`). **P2** defines how the **client profile vector** **p** is built from purchases (and cart) so **training, `POST /recommend`, `POST /recommend/from-cart`, and offline `precisionAtK` share the same code path** (`aggregateClientProfileEmbeddings` in `ai-service/src/profile/clientProfileAggregation.ts`). **API transparency:** successful recommend responses include **`rankingConfig`** (weights, pooling mode fields) and optional per-row breakdown terms for the UI. **Phase 3** (temporal attention **inside** the ranking MLP) is **planned, not implemented** yet.
 
 Operational detail and env defaults: [`ai-service/README.md`](ai-service/README.md).
 
@@ -471,7 +487,7 @@ Operational detail and env defaults: [`ai-service/README.md`](ai-service/README.
 
 ```mermaid
 flowchart LR
-    subgraph P2["M17 P2 — profile vector p"]
+    subgraph P2["P2 — profile vector p"]
         HIST["📦 Confirmed purchases\nembedding + lastPurchase"]
         CART["🛒 Cart items\nΔ = 0 days"]
         AGG["⚙️ aggregateClientProfileEmbeddings\nmean · exp · attention_light · attention_learned"]
@@ -487,7 +503,7 @@ flowchart LR
         S --> FS
     end
 
-    subgraph P1["M17 P1 — re-rank (optional)"]
+    subgraph P1["P1 — re-rank (optional)"]
         ANC["📌 Anchor embeddings\nlast N confirmed buys"]
         RS["rankScore = finalScore\n+ w_r · max_k cos(cand, anchor_k)"]
         ANC --> RS
@@ -510,7 +526,7 @@ flowchart LR
 
 ### P2 — Exponential profile pooling (`PROFILE_POOLING_MODE=exp`)
 
-The **client profile** is the vector **p** passed into the MLP (concatenated with each candidate embedding) and into **semantic** cosine similarity. Implementation is a **single** TypeScript function shared by **training dataset construction**, **`POST /recommend`**, **`POST /recommend/from-cart`**, and offline **`precisionAtK`** — `aggregateClientProfileEmbeddings` in `ai-service/src/profile/clientProfileAggregation.ts` ([ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)).
+The **client profile** is the vector **p** passed into the MLP (concatenated with each candidate embedding) and into **semantic** cosine similarity. Implementation is a **single** TypeScript function shared by **training dataset construction**, **`POST /recommend`**, **`POST /recommend/from-cart`**, and offline **`precisionAtK`** — `aggregateClientProfileEmbeddings` in `ai-service/src/profile/clientProfileAggregation.ts`.
 
 | Mode | Behaviour |
 |------|-----------|
@@ -538,11 +554,11 @@ Successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` retur
 
 See [`.env.example`](.env.example): **`RECENCY_RERANK_WEIGHT`**, **`RECENCY_ANCHOR_COUNT`**, **`PROFILE_POOLING_MODE`**, **`PROFILE_POOLING_HALF_LIFE_DAYS`**.
 
-**M21 — pooling & cabeça neural:** além de `mean` / `exp`, o deploy pode usar **`attention_light`** (softmax só sobre recência) ou **`attention_learned`** (pesos aprendidos + JSON). O modo de **treino da rede** (BCE vs pairwise) é independente — ver [M21 — Profile pooling and neural head](#m21--profile-pooling-and-neural-head).
+**Profile pooling & neural loss:** beyond `mean` / `exp`, the deploy can use **`attention_light`** (softmax over recency only) or **`attention_learned`** (learned logits + JSON). **How the MLP is trained** (BCE vs pairwise) is orthogonal — see [Profile pooling and neural head](#profile-pooling-and-neural-head).
 
 ---
 
-## M21 — Profile pooling and neural head
+## Profile pooling and neural head
 
 Esta secção resume **dois eixos ortogonais** que confundem-se facilmente:
 
@@ -625,33 +641,33 @@ flowchart LR
 
 ---
 
-## M22 — Hybrid dual item tower (delivered)
+## Module C — Item representation (dense + sparse)
 
-**Milestone M22** ([**ADR-074**](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [**spec**](.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md), [**design**](.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md), implemented in `ai-service`) adds a **second item pathway** alongside the legacy dense path: the **user tower** (profile **u** from M17/M21 pooling) is unchanged; the **item** side can either stay **768-d concat** (`e_sem ‖ u`) or switch to a **multi-input fusion** `f(u, e_sem, e_struct, e_id)` with **sparse catalog priors** and optional **SKU memorisation**. The **hybrid** layer from [ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md) — `semanticScore = cosine(u, e_sem)` plus weighted `neuralScore` — **remains**; M22 only changes how **`neuralScore`** is produced.
+**Module C** (implemented in `ai-service`) adds a **second item pathway** alongside the legacy dense path: the **user** side (profile **u** from [recency / pooling](#recency-aware-profile--ranking) and [Profile pooling and neural head](#profile-pooling-and-neural-head)) is unchanged; the **item** side can either stay **768-d concat** (`e_sem ‖ u`) or switch to **multi-input fusion** `f(u, e_sem, e_struct, e_id)` with **sparse catalog priors** and optional **SKU memorisation**. The **hybrid** contract is unchanged: **`semanticScore = cosine(u, e_sem)`** plus weighted **`neuralScore`** — Module C only changes **how `neuralScore` is produced**.
 
 ### Two neural modes (what operators should compare)
 
-| Layer | **Baseline (default, “single tower” item + M21 profile)** | **M22 (“dual” item: dense semantic + sparse towers)** |
+| Layer | **Baseline (default, single item concat + profile pooling)** | **Module C (“dual” item: dense semantic + sparse towers)** |
 |--------|-----------------------------------------------------------|--------------------------------------------------------|
-| **Profile `u`** | `aggregateClientProfileEmbeddings` — **`mean`**, **`exp`**, **`attention_light`**, or **`attention_learned`** ([M21 / ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)) | **Identical** — M22 does not replace pooling; train and inference still share the same profile builder. |
+| **Profile `u`** | `aggregateClientProfileEmbeddings` — **`mean`**, **`exp`**, **`attention_light`**, or **`attention_learned`** (see [Profile pooling and neural head](#profile-pooling-and-neural-head)) | **Identical** — Module C does not replace pooling; train and inference still share the same profile builder. |
 | **Item into the MLP** | One vector **`[e_sem ‖ u]`** (768-d) → dense MLP → logit | **`concat(e_sem, u, e_struct, e_id)`** → dense MLP → logit; **(B)** = separate embeddings for brand, category, subcategory, `price_bucket`; **(C)** = separate **`product_id`** table (never shared with **B**). |
 | **Semantic branch** | **`cosine(u, e_sem)`** for `semanticScore` | **Unchanged** — still pure HF geometry vs the client profile. |
-| **Cold start on structure** | Brand/category/price only implicit via negatives / co-purchase signal | **Explicit gradients** on discrete catalog signals (**B**), so new brands/categories get a learnable prior even with few SKU-level events ([spec problem statement](.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md)). |
+| **Cold start on structure** | Brand/category/price only implicit via negatives / co-purchase signal | **Explicit gradients** on discrete catalog signals (**B**), so new brands/categories get a learnable prior even with few SKU-level events. |
 | **`M22_IDENTITY=true`** | N/A | **(C)** on: per-id memorisation tends to **boost repeat or familiar SKUs** seen in training vocab; **off** → single OOV row for **C** (no per-SKU lift). **Requires** `M22_STRUCTURAL=true` (boot fail-fast if violated). |
 | **Artifacts** | `model.json` + `neural-head.json` | **Also** **`m22-item-manifest.json`** (vocabs, `priceBinEdges`, `identityEnabled`, `vocabSizes`) so serving matches training token→index maps. |
-| **Promotion** | `precisionAt5` vs tolerance | **Same gate** — M22 is not exempt from offline quality discipline ([M20/M21](.specs/features/m21-ranking-evolution-committee-decisions/spec.md)). |
+| **Promotion** | `precisionAt5` vs tolerance | **Same gate** — Module C is not exempt from offline **`precisionAt5`** discipline vs `MODEL_PROMOTION_TOLERANCE`. |
 
-**Naming “dual tower”:** in recommender literature “two-tower” often means **user tower × item tower**. Here, **M22** keeps one **user** vector **u** and splits the **item** side into **dense semantic (A)** plus **sparse structural (B)** and optional **identity (C)** — three **item** channels fused before the neural scalar, not a second user network.
+**Naming “dual tower”:** in recommender literature “two-tower” often means **user tower × item tower**. Here, **Module C** keeps one **user** vector **u** and splits the **item** side into **dense semantic (A)** plus **sparse structural (B)** and optional **identity (C)** — three **item** channels fused before the neural scalar, not a second user network.
 
 ### Inference decision (which path runs?)
 
 ```mermaid
 flowchart TD
-  Q1{"M22_ENABLED ∧\nM22_STRUCTURAL?"}
+  Q1{"Module C env:\nM22_ENABLED ∧\nM22_STRUCTURAL?"}
   Q1 -->|No| P768["768-d baseline\nmodel.predict concat"]
   Q1 -->|Yes| Q2{"Loaded checkpoint\nhas valid m22-item-manifest\n+ architecture m22?"}
   Q2 -->|No| WARN["⚠️ Log warning"] --> P768
-  Q2 -->|Yes| PM22["Multi-input M22\npredictM22HybridScores"]
+  Q2 -->|Yes| PM22["Multi-input path\npredictM22HybridScores"]
   P768 --> HYB["toHybridNeuralScalar → neuralScore"]
   PM22 --> HYB
   HYB --> FIN["finalScore = w_n·neural +\nw_s·semantic\n(same as baseline)"]
@@ -669,24 +685,24 @@ flowchart TD
 
 ### What you gain (summary)
 
-- **Stronger cold start on catalog axes** (brand, manufacturer/supplier field, category stack, price band) without stuffing those tokens into the HF encoder (**M22-09**).
-- **Optional memorisation** (**C**) decoupled from structural priors (**M22-08**) — when enabled, the model can prefer **known SKUs** without conflating “same category” with “same product id”.
+- **Stronger cold start on catalog axes** (brand, manufacturer/supplier field, category stack, price band) without stuffing those tokens into the HF encoder.
+- **Optional memorisation** (**C**) **decoupled** from structural priors (**B**) — when enabled, the model can prefer **known SKUs** without conflating “same category” with “same product id”.
 - **Safe default:** flags off ⇒ **bit-identical training shape** to legacy 7-arg dataset path (regression tests); env-only flip without retrain still **loads baseline weights** and falls back at inference (see diagram above).
 
 ### How to enable and use (operator checklist)
 
 1. **Configure** `ai-service` process: `M22_ENABLED=true`, `M22_STRUCTURAL=true`; set `M22_IDENTITY=true` only if you want **(C)** (requires structural). See [`.env.example`](.env.example) and [`docker-compose.yml`](docker-compose.yml) — variables are passed into the `ai-service` container.
 2. **Restart** `ai-service` so env and fail-fast validation run (`assertM22EnvCombinationsOrThrow`).
-3. Run a **full train** (`POST /api/v1/model/train` with admin key or your cron path) so **`ModelTrainer`** builds the **M22** graph, writes **`m22-item-manifest.json`**, and promotes if `precisionAt5` passes the gate.
+3. Run a **full train** (`POST /api/v1/model/train` with admin key or your cron path) so **`ModelTrainer`** builds the Module C graph, writes **`m22-item-manifest.json`**, and promotes if `precisionAt5` passes the gate.
 4. **Confirm** the active checkpoint directory contains **`m22-item-manifest.json`** next to `model.json` (otherwise you are still on the 768-d path at inference).
-5. **Tune** `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT` after major architecture changes (same procedure as ADR-016); optional offline slice: `computePrecisionAt5ColdStartCategorySlice` in `ai-service/src/ml/rankingEval.ts`.
-6. **Rollback:** `M22_ENABLED=false`, restart; repoint `/tmp/model/current` (or volume) to a **pre-M22** symlink if you need an instant revert.
+5. **Tune** `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT` after major architecture changes; optional offline slice: `computePrecisionAt5ColdStartCategorySlice` in `ai-service/src/ml/rankingEval.ts`.
+6. **Rollback:** `M22_ENABLED=false`, restart; repoint `/tmp/model/current` (or volume) to a **pre–Module C** checkpoint symlink if you need an instant revert.
 
-Full env tables and rollback notes: **[`ai-service/README.md`](ai-service/README.md)** (sections M21 + M22).
+Full env tables and rollback notes: **[`ai-service/README.md`](ai-service/README.md)** (profile pooling + Module C env sections).
 
 ### Design choice — Tree-of-Thoughts + Self-Consistency (why not “one sparse blob”?)
 
-[Design § Fase 1–3](.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md) runs an explicit **ToT**: path **A** (ADR-074 literal — **B** and **C** disjoint, `f` after HF) vs **B** (shared projection for B+C — rejected: breaks **M22-08**) vs **C** (infer structure from text only — rejected: drifts from catalog truth). **Self-consistency:** committee + spec converge on **A** as the only admissible node; implementation follows that node ([ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md) committee record).
+An explicit **ToT** compared: path **A** (**B** and **C** disjoint embedding tables, fusion **`f`** after the HF encoder) vs **B** (shared projection for B+C — **rejected**: would collapse the separation between structural prior and per-SKU memory) vs **C** (infer structure only from text — **rejected**: drifts from catalog ground truth). **Self-consistency** across review rounds converged on **A** as the only admissible design; the shipped code follows **A**.
 
 | Via | Role | Implementation sketch |
 |-----|------|----------------------|
@@ -694,13 +710,13 @@ Full env tables and rollback notes: **[`ai-service/README.md`](ai-service/README
 | **B — Structural prior** | Brand, category, taxonomy, price band — **no** `product_id` here | Separate embedding tables → concatenated **e_struct** (manifest vocabularies + stable **price_bin_edges**). |
 | **C — Identity (optional)** | Memorise interactions per **`product_id`** | Separate embedding table from **B**; **OOV** index when unknown or when **`M22_IDENTITY=false`**. Extractor keeps **`idKey`** disjoint from structural keys (`itemSparseFeatureExtractor.ts`). |
 
-Further detail: [.specs/features/m22-hybrid-dual-item-tower-cold-start/](.specs/features/m22-hybrid-dual-item-tower-cold-start/) · [roadmap](.specs/project/ROADMAP.md) · exported diagram copy: [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
+Further reading in-repo (no `.specs` required): [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
 
-### End-to-end flow — user tower (M21) + dual item tower (M22) + hybrid
+### End-to-end flow — user profile + Module C item path + hybrid
 
 ```mermaid
 flowchart TB
-  subgraph UT["👤 User tower — M17 / M21"]
+  subgraph UT["👤 User tower — pooling + recency"]
     HIST["📦 Purchases + embeddings\n+ Δ days"] --> AGG["aggregateClientProfileEmbeddings"]
     CART["🛒 Cart merged\nΔ = 0"] --> AGG
     AGG --> PMODE{"PROFILE_POOLING_MODE"}
@@ -855,7 +871,7 @@ graph TB
 
 The `api-service` recommendation proxy (`GET /api/v1/recommend/{clientId}`) wraps the call to `ai-service` with a **Resilience4j circuit breaker**. If `ai-service` is unavailable or slow, the fallback returns top-selling products by country from a short-TTL Caffeine cache (1-minute TTL), ensuring the API never returns an error to the frontend due to AI service downtime.
 
-### Fire-and-Forget Product Sync — Java Virtual Threads (ADR-015)
+### Fire-and-forget product sync — Java virtual threads
 
 When a new product is created via `POST /api/v1/products`, the `api-service` must notify the `ai-service` to create the Neo4j node and generate its embedding — without blocking the 201 response.
 
@@ -878,7 +894,7 @@ public void notifyProductCreated(ProductDetailDTO product) {
 
 Why not Reactor: this is a servlet-stack project. Using `.subscribe()` would mix two threading models at a call site that reads synchronously to the developer (CUPID-I violation). Virtual threads are semantically obvious, visible in thread dumps via JFR/VisualVM, and testable with standard Mockito — no `CountDownLatch` tricks needed.
 
-### Caffeine In-Memory Cache — API Service (ADR-003)
+### Caffeine in-memory cache — API service
 
 Programmatic `CaffeineCacheManager` configuration with two named caches and different TTLs:
 
@@ -889,7 +905,7 @@ Programmatic `CaffeineCacheManager` configuration with two named caches and diff
 
 `recordStats()` enabled — cache hit/miss rates exposed automatically via Micrometer at `/actuator/metrics`.
 
-### Training Read Cache Bypass (ADR-052)
+### Training read cache bypass (`Cache-Control: no-cache`)
 
 `ModelTrainer` always sends `Cache-Control: no-cache` when fetching training data from `api-service`.
 This prevents cold-start cache poisoning: if `api-service` became healthy before the seed completed,
@@ -918,7 +934,7 @@ The `ai-service` is not directly accessible from the browser. All AI calls from 
 
 ## Async Training: 202 + Polling Pattern
 
-Training a neural model can take 12–60 seconds. Synchronous HTTP responses would time out across proxies. The system implements the **202 Accepted + job polling** pattern (ADR-012):
+Training a neural model can take 12–60 seconds. Synchronous HTTP responses would time out across proxies. The system implements the **202 Accepted + job polling** pattern (async train without blocking HTTP):
 
 ```mermaid
 sequenceDiagram
@@ -961,7 +977,7 @@ sequenceDiagram
 - Job history capped at 20 entries in-memory (`MAX_JOBS = 20`)
 - Frontend `useRetrainJob` hook uses **adaptive polling**: 1-second interval while `status === "queued"`, 2-second interval during `running` — stops after 3 consecutive poll failures (`consecutiveErrors` circuit breaker)
 
-### Admin Key Security (ADR-014)
+### Admin key security (scoped Fastify plugin)
 
 Admin-protected endpoints (`POST /model/train`, `POST /embeddings/generate`) are wrapped in a **scoped Fastify plugin** with a single `addHook('onRequest', adminKeyHook)` that applies only within the plugin's encapsulation scope. The internal `POST /embeddings/sync-product` endpoint (called by api-service, not the browser) is registered outside the plugin — zero whitelist maintenance needed when adding new internal endpoints.
 
@@ -975,7 +991,7 @@ X-Admin-Key: wrong             → 401 Unauthorized
 
 ## Model Versioning & Rollback
 
-`VersionedModelStore` extends `ModelStore` with filesystem-backed versioning (ADR-013):
+`VersionedModelStore` extends `ModelStore` with filesystem-backed versioning (symlink `current`, promotion gate):
 
 ```mermaid
 flowchart TD
@@ -996,7 +1012,7 @@ flowchart TD
 ```
 
 - **Promotion gate:** A new model only becomes `current` if its `precisionAt5` is ≥ the previous model's. Regressions are saved to history but never deployed.
-- **Startup recovery (M12):** after `listen()`, whenever `AUTO_HEAL_MODEL=true`, `StartupRecoveryService` runs in the background: it **always** checks Neo4j for products **without** `embedding` and calls `generateEmbeddings` if needed (even when a model is already on disk — fixes mixed-volume drift). **Retrain** (probe → `TrainingJobRegistry.enqueue` / `waitFor`) runs **only** when no model was loaded from `loadCurrent()`.
+- **Startup recovery:** after `listen()`, whenever `AUTO_HEAL_MODEL=true`, `StartupRecoveryService` runs in the background: it **always** checks Neo4j for products **without** `embedding` and calls `generateEmbeddings` if needed (even when a model is already on disk — fixes mixed-volume drift). **Retrain** (probe → `TrainingJobRegistry.enqueue` / `waitFor`) runs **only** when no model was loaded from `loadCurrent()`.
 - **Readiness contract:** `/health` stays liveness-only (`200`), while `/ready` is `200` only when `embeddingService.isReady && modelStore.getModel() !== null && !startupRecoveryService.isBlockingReadiness()`.
 - **Blocked semantics:** if seed/training data is missing, service remains alive with `/ready=503` and explicit blocked reason in logs (no crash, no tight retry loop).
 - **Docker persistence:** The `ai-model-data` volume preserves trained models across container restarts and `docker compose down`.
@@ -1017,7 +1033,7 @@ It calls `TrainingJobRegistry.enqueue()` inside `setImmediate` — never blocks 
 
 ## Production-Grade Patterns
 
-### TensorFlow.js Async Boundary (ADR-008)
+### TensorFlow.js async boundary (`tf.tidy`)
 
 `tf.tidy()` does not support async operations. All I/O (Neo4j queries, HTTP calls) completes **before** entering the TF.js tensor computation block. This prevents tensor memory leaks from async calls that escape the tidy scope:
 
@@ -1036,9 +1052,9 @@ const scores = tf.tidy(() => {
 })
 ```
 
-### Profile vector and Neo4j reads (supersedes demo-buy ADR-021)
+### Profile vector and Neo4j reads (demo-buy removed)
 
-The product path uses **confirmed purchases** (and optionally **cart items**) to build the client profile vector; `RecommendationService` scores the catalog via a single internal path (`recommendFromVector`). The legacy **`POST /api/v1/demo-buy`** API and its Neo4j write helpers were **removed** from this codebase — any old `BOUGHT {is_demo: true}` edges are ignored by read queries (`coalesce(r.is_demo, false) = false`) until operators delete them; see `scripts/neo4j-delete-demo-bought-edges.cypher` and `.specs/project/STATE.md`.
+The product path uses **confirmed purchases** (and optionally **cart items**) to build the client profile vector; `RecommendationService` scores the catalog via a single internal path (`recommendFromVector`). The legacy **`POST /api/v1/demo-buy`** API and its Neo4j write helpers were **removed** from this codebase — any old `BOUGHT {is_demo: true}` edges are ignored by read queries (`coalesce(r.is_demo, false) = false`) until operators delete them; see `scripts/neo4j-delete-demo-bought-edges.cypher`.
 
 ### Neo4j Driver Singleton
 
@@ -1108,7 +1124,7 @@ flowchart LR
 
 ### Snapshot Orchestration
 
-`AnalysisPanel` orchestrates snapshot capture via a **discriminated union** type (`analysisSlice`, ADR-029):
+`AnalysisPanel` orchestrates snapshot capture via a **discriminated union** type (`analysisSlice` — four phases: `empty` → `initial` → `demo` → `retrained`):
 
 ```typescript
 type AnalysisState =
@@ -1128,7 +1144,7 @@ Capture triggers:
 - `demo` → captured when the cart / analysis flow updates the “with cart” snapshot (see frontend `analysisSlice`; no `demo-buy` HTTP call)
 - `retrained` → captured when `useRetrainJob.status === 'done'`
 
-### FLIP Animation — Catalog Reorder (ADR-017)
+### FLIP animation — catalog reorder
 
 When clicking "✨ Sort by AI", product cards animate to their new ranked positions using the **FLIP technique** (First–Last–Invert–Play) without `flushSync` — which is an anti-pattern in React 18 Concurrent Mode:
 
@@ -1145,9 +1161,9 @@ Adding items to the cart and refreshing recommendations:
 2. The service loads **non-demo** purchase embeddings from Neo4j, merges **cart product** embeddings, mean-pools them into `clientProfileVector`, then runs the same scoring path as `POST /api/v1/recommend`
 3. Checkout persists real `BOUGHT` edges via the `api-service` → sync path (no `is_demo` flag on that flow)
 
-The old **demo-buy** HTTP surface was removed; optional cleanup of legacy `is_demo` edges is documented under **Ops** in `.specs/project/STATE.md`.
+The old **demo-buy** HTTP surface was removed; optional cleanup of legacy `is_demo` edges uses `scripts/neo4j-delete-demo-bought-edges.cypher` as documented above.
 
-### Progress Bar — GPU-Composited (ADR-024)
+### Progress bar — GPU-composited (`scaleX`)
 
 The training progress bar uses `transform: scaleX(epoch/totalEpochs)` instead of `width` — the former is GPU-composited and never triggers layout recalculation:
 
@@ -1165,7 +1181,7 @@ The training progress bar uses `transform: scaleX(epoch/totalEpochs)` instead of
 
 ## State Management
 
-The frontend uses **Zustand with domain-specific slices** (ADR-019) instead of React Contexts:
+The frontend uses **Zustand with domain-specific slices** instead of React Contexts:
 
 ```mermaid
 graph TB
@@ -1338,9 +1354,9 @@ With 52 products and clients buying ~10 on average, the model sees ~80% negative
 
 ---
 
-## Architecture Decision Records
+## Architecture decision index
 
-All architectural decisions are documented in `.specs/features/` with context, alternatives considered, and consequences:
+The table below lists **ADR-###** identifiers as **short mnemonics** for decisions already described in this README and in code comments. **You do not need any `.specs/` folder** to operate or extend the system; maintainers may keep parallel design notes elsewhere if they choose.
 
 | ADR | Feature | Decision |
 |-----|---------|---------|
@@ -1385,7 +1401,7 @@ All architectural decisions are documented in `.specs/features/` with context, a
 | ADR-071 | M21 | Neural head (BCE vs pairwise) and pure fusion boundary |
 | ADR-072 | M21 | Defer learned logits inside `attention_light`; path for learned pooling |
 | ADR-073 | M21 | Attention-learned JSON pooling (`attention_learned`) |
-| ADR-074 | M22 | Hybrid item tower — semantic / structural prior / optional identity (`m22-item-manifest.json`) |
+| ADR-074 | Module C | Hybrid item path — semantic / structural prior / optional identity (`m22-item-manifest.json`) |
 
 ---
 

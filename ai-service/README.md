@@ -2,7 +2,7 @@
 
 Fastify + TensorFlow.js hybrid recommender backed by Neo4j (catalog, embeddings, `BOUGHT` history).
 
-## M20 / ADR-067 — Checkout sync vs training enqueue
+## Checkout sync vs training enqueue (`CHECKOUT_ENQUEUE_TRAINING`)
 
 | Env | Default | Meaning |
 |-----|---------|---------|
@@ -10,13 +10,13 @@ Fastify + TensorFlow.js hybrid recommender backed by Neo4j (catalog, embeddings,
 
 **Compose / `.env`:** set the **same** value on **`api-service`** and **`ai-service`** — `api-service` maps it to `expectedTrainingTriggered` on checkout; `ai-service` gates enqueue. If they diverge, the UI may poll for training that never started.
 
-## M21 T1 — Pairwise ranking loss (`NEURAL_LOSS_MODE`, ADR-071)
+## Pairwise ranking loss (`NEURAL_LOSS_MODE`)
 
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `NEURAL_LOSS_MODE` | `bce` | `bce` = legacy **binary cross-entropy** with a **sigmoid** output head (unchanged behaviour). `pairwise` = **linear** output head + pairwise ranking loss on stacked (positive, negative) rows; each saved version writes `neural-head.json` beside `model.json`. |
 
-**Inference and eval** use the **saved head** from `neural-head.json`, not the env: `ranking_linear` logits are mapped with **sigmoid** into the same `(0,1)` scalar space as the hybrid path. If the manifest is **missing** (pre-M21 models), the head defaults to **`bce_sigmoid`**.
+**Inference and eval** use the **saved head** from `neural-head.json`, not the env: `ranking_linear` logits are mapped with **sigmoid** into the same `(0,1)` scalar space as the hybrid path. If the manifest is **missing** (older checkpoints without `neural-head.json`), the head defaults to **`bce_sigmoid`**.
 
 **Rollback:** set `NEURAL_LOSS_MODE=bce`, restore the previous `current` model symlink (or an earlier promoted version), restart the service.
 
@@ -33,11 +33,11 @@ Setting only `NEURAL_LOSS_MODE=pairwise` is **not** enough by itself:
 
 You still need the usual training prerequisites (Neo4j `BOUGHT` / embeddings, `API_SERVICE_URL` reachable, etc.).
 
-## M22 — Hybrid sparse item tower (`M22_*`, ADR-074)
+## Module C — Hybrid sparse item tower (`M22_*`)
 
-For a **baseline vs M22** comparison (profile pooling unchanged; what changes in the item MLP), operator checklist, and ToT/design rationale, see the repository root **[README.md — M22](../README.md#m22--hybrid-dual-item-tower-delivered)**.
+For **baseline vs Module C** (profile pooling unchanged; what changes in the item MLP), operator checklist, and Tree-of-Thought / self-consistency rationale, see the repository root **[README.md — Module C](../README.md#module-c--item-representation-dense--sparse)**.
 
-Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem, e_struct, e_id)** before the neural logit: **(A)** HF `e_sem` (384-d), **(B)** structural prior via **disjoint** embedding tables (brand, category, subcategory, `price_bucket`), **(C)** optional `product_id` memorisation (**separate** table from B). `semanticScore` (ADR-016) stays **cosine(profile, e_sem)**; the hybrid blend still uses `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`.
+Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem, e_struct, e_id)** before the neural logit: **(A)** HF `e_sem` (384-d), **(B)** structural prior via **disjoint** embedding tables (brand, category, subcategory, `price_bucket`), **(C)** optional `product_id` memorisation (**separate** table from B). **`semanticScore`** stays **`cosine(profile, e_sem)`**; the hybrid blend still uses **`NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`**.
 
 | Env | Default | Meaning |
 |-----|---------|---------|
@@ -45,13 +45,13 @@ Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem
 | `M22_STRUCTURAL` | **`false`** | Enables **(B)** (manifest + multi-input TF model). Effective only with **`M22_ENABLED=true`**. |
 | `M22_IDENTITY` | **`false`** | Enables **(C)**. **Requires `M22_STRUCTURAL=true`** or the service **refuses to start**. When off, the identity table is a single OOV slot. |
 
-**Rollback:** set `M22_ENABLED=false`, restart; repoint `current` to a pre-M22 checkpoint if needed. Promotion still uses **`precisionAt5`** vs `MODEL_PROMOTION_TOLERANCE`.
+**Rollback:** set `M22_ENABLED=false`, restart; repoint `current` to a checkpoint trained without Module C if needed. Promotion still uses **`precisionAt5`** vs `MODEL_PROMOTION_TOLERANCE`.
 
-**Sidecar:** promoted **m22** checkpoints write **`m22-item-manifest.json`** beside `model.json`. If env requests M22 but the loaded model is baseline or the manifest is invalid, a warning is logged and inference falls back to the **768-d** path.
+**Sidecar:** promoted Module C checkpoints write **`m22-item-manifest.json`** beside `model.json`. If env requests Module C but the loaded model is baseline or the manifest is invalid, a warning is logged and inference falls back to the **768-d** path.
 
-**Cold-start eval slice:** `computePrecisionAt5ColdStartCategorySlice` in `src/ml/rankingEval.ts` (global `precision@5` plus category cold slice; optional M22 scoring when a bundle is passed).
+**Cold-start eval slice:** `computePrecisionAt5ColdStartCategorySlice` in `src/ml/rankingEval.ts` (global `precision@5` plus category cold slice; optional Module C scoring when a bundle is passed).
 
-### Flow (M21 T1 — train vs infer)
+### Flow (pairwise train vs infer)
 
 ```mermaid
 flowchart TB
@@ -85,15 +85,15 @@ flowchart TB
   class MAP,OUT actNode
 ```
 
-**M17 roadmap:** **P1** (re-rank + `rankingConfig` / ADR-063) and **P2** (shared profile pooling / ADR-065) are implemented below. **Not in this service yet:** ADR-062 **Phase 3** (temporal attention in the MLP) — see [.specs/features/m17-phased-recency-ranking-signals/spec.md](../.specs/features/m17-phased-recency-ranking-signals/spec.md).
+**Recency phases:** **P1** (re-rank + `rankingConfig`) and **P2** (shared profile pooling for train and serving) are implemented below. **P3** — temporal attention **inside** the ranking MLP — is **not implemented** in this service yet (see [Recency-aware profile & ranking](../README.md#recency-aware-profile--ranking) in the root README).
 
-## M17 P2 — Profile pooling (`PROFILE_POOLING_*`, ADR-065)
+## Profile pooling — P2 (`PROFILE_POOLING_*`)
 
 Training (`buildTrainingDataset`) and inference (`recommend` / `recommendFromCart`) build the **client profile vector** with one shared function: `aggregateClientProfileEmbeddings` (`src/profile/clientProfileAggregation.ts`).
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `PROFILE_POOLING_MODE` | **`attention_learned`** | `mean` = legacy arithmetic mean. `exp` = exponential decay weights. **`attention_light`** = softmax só sobre recência (M21 A). **`attention_learned`** = softmax sobre **\(w\cdot e + b - \lambda\Delta/\tau\)** com **`w`/`b`/`λ`** lidos de JSON (M21). |
+| `PROFILE_POOLING_MODE` | **`attention_learned`** | `mean` = legacy arithmetic mean. `exp` = exponential decay weights. **`attention_light`** = softmax só sobre recência (see section below). **`attention_learned`** = softmax sobre **\(w\cdot e + b - \lambda\Delta/\tau\)** com **`w`/`b`/`λ`** lidos de JSON. |
 | `PROFILE_POOLING_HALF_LIFE_DAYS` | `30` | Half-life in days for `exp` and for **attention** modes \(\tau\); ignored for `mean`. Must be finite and **> 0**. |
 
 **Training snapshot:** per-client \(T_{\mathrm{ref}}\) is the max normalized order date in the fetched `orders` payload; each product’s purchase time is the max date for that product in the snapshot.
@@ -106,22 +106,22 @@ Training (`buildTrainingDataset`) and inference (`recommend` / `recommendFromCar
 
 After changing pooling mode to `exp`, **retrain** the MLP so the gradient matches inference.
 
-## M21 A — Light attention profile pooling (`attention_light`, M21-04 — M21-06)
+## Light attention profile pooling (`attention_light`)
 
-Set **`PROFILE_POOLING_MODE=attention_light`** to use a **softmax** over recency logits \(-\Delta_i / \tau\) with \(\tau = H/\ln 2\) and **`PROFILE_POOLING_HALF_LIFE_DAYS`** \(H\). **Training, `POST /recommend`, `recommendFromCart`, and offline `precisionAt5`** share the same `aggregateClientProfileEmbeddings` + injected `ProfilePoolingRuntime` (ADR-065 + M21 design).
+Set **`PROFILE_POOLING_MODE=attention_light`** to use a **softmax** over recency logits \(-\Delta_i / \tau\) with \(\tau = H/\ln 2\) and **`PROFILE_POOLING_HALF_LIFE_DAYS`** \(H\). **Training, `POST /recommend`, `recommendFromCart`, and offline `precisionAt5`** share the same `aggregateClientProfileEmbeddings` + injected `ProfilePoolingRuntime`.
 
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `PROFILE_POOLING_ATTENTION_TEMPERATURE` | *(empty)* | **Omit or `inf`:** uniform softmax weights ⇒ **arithmetic mean** over the selected purchase window (safe default when exploring the mode). **Finite \(T>0\):** sharper weights; **`T=1`** matches **`exp`** normalization when all purchases are kept (`PROFILE_POOLING_ATTENTION_MAX_ENTRIES=0`). |
 | `PROFILE_POOLING_ATTENTION_MAX_ENTRIES` | `0` | **`0`** = use all purchases. **`N>0`** = keep only the **N** most recent purchases (smallest \(\Delta\)) before softmax. |
 
-**M21-06 (regressão):** With **`PROFILE_POOLING_MODE=mean`** or **`exp`** (legacy deploy), behaviour and offline metrics **SHALL** match the pre-M21 baseline within the same float tolerance as before. With **`attention_light`** and **empty temperature** (uniform) on the **same** purchase multiset, the profile vector matches **`mean`** on that multiset (see unit tests).
+**Regression:** With **`PROFILE_POOLING_MODE=mean`** or **`exp`** (legacy deploy), behaviour and offline metrics **SHALL** match the legacy baseline within the same float tolerance as before. With **`attention_light`** and **empty temperature** (uniform) on the **same** purchase multiset, the profile vector matches **`mean`** on that multiset (see unit tests).
 
 **Rollback:** set `PROFILE_POOLING_MODE=mean` (or `exp`), restart, retrain if you had switched training away from legacy.
 
 **`rankingConfig`:** when mode is **`attention_light`** or **`attention_learned`**, responses may include **`profilePoolingAttentionTemperature`** (`null` = uniform / infinite), **`profilePoolingAttentionMaxEntries`**, and **`profilePoolingAttentionLearned`** for the learned mode.
 
-## M21 — Learned attention pooling (`attention_learned`, ADR-073)
+## Learned attention pooling (`attention_learned`)
 
 **Separate from `attention_light`:** use **`PROFILE_POOLING_MODE=attention_learned`** when you want logits
 
@@ -145,7 +145,7 @@ with **`w`** same length as the purchase embedding (e.g. 384), **`b`** scalar, o
 
 **Cron:** `ENABLE_DAILY_TRAIN=false` disables the **02:00** training enqueue; schedule override: **`DAILY_TRAIN_CRON`** (default `0 2 * * *`). Optional second job **`ATTENTION_LEARNED_REFRESH_CRON`** (e.g. `30 2 * * 1,4` for Mon/Thu 02:30) only refreshes the attention JSON (no full MLP retrain). **`ATTENTION_LEARNED_NEGATIVES_PER_POSITIVE`** (default `2`) affects dataset size for both boot-time generator and admin refresh.
 
-Same **`PROFILE_POOLING_ATTENTION_TEMPERATURE`** and **`PROFILE_POOLING_ATTENTION_MAX_ENTRIES`** as M21 A. **Retrain** the ranking MLP after changing pooling mode away from what was used during its last train (ADR-065).
+Same **`PROFILE_POOLING_ATTENTION_TEMPERATURE`** and **`PROFILE_POOLING_ATTENTION_MAX_ENTRIES`** as light attention above. **Retrain** the ranking MLP after changing pooling mode away from what was used during its last train so gradients match serving.
 
 ### CLI alternativo (`train:attention-pooling`)
 
@@ -169,7 +169,7 @@ Flags: `--epochs`, `--batch-size`, `--validation-split`, `--l2`, `--lambda` (wri
 
 Implementation: `src/services/attentionLearnedJsonGenerator.ts` (runtime + boot), `src/ml/attentionPoolingTrainDataset.ts`, `src/ml/trainAttentionPoolingWeights.ts`, `src/scripts/train-attention-pooling-cli.ts`.
 
-## M17 P1 — Recency re-rank (ADR-062)
+## Recency re-rank — P1 (`RECENCY_*`)
 
 `finalScore` remains **only** `NEURAL_WEIGHT * neuralScore + SEMANTIC_WEIGHT * semanticScore` on eligible catalog rows (after M16 eligibility: cart, `recently_purchased` window, `no_embedding` excluded from the neural batch).
 
@@ -185,11 +185,11 @@ where `recencySimilarity` is the **maximum** cosine similarity between the candi
 
 **API:** when the boost is active, ranked eligible items include optional `recencySimilarity` and `rankScore`. Consumers that sort client-side by `finalScore` alone should switch to the response **order** or to `rankScore` when recency re-rank is enabled.
 
-**Response envelope (M17 ADR-063):** successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` return `recommendations` together with **`rankingConfig`**: `{ neuralWeight, semanticWeight, recencyRerankWeight }` and optional P2/M21 fields `{ profilePoolingMode?, profilePoolingHalfLifeDays?, profilePoolingAttentionTemperature?, profilePoolingAttentionMaxEntries?, profilePoolingAttentionLearned? }`. Ranked eligible rows may also include `hybridNeuralTerm`, `hybridSemanticTerm`, and `recencyBoostTerm` for UI breakdown.
+**Response envelope:** successful `POST /api/v1/recommend` and `POST /api/v1/recommend/from-cart` return `recommendations` together with **`rankingConfig`**: `{ neuralWeight, semanticWeight, recencyRerankWeight }` and optional pooling fields `{ profilePoolingMode?, profilePoolingHalfLifeDays?, profilePoolingAttentionTemperature?, profilePoolingAttentionMaxEntries?, profilePoolingAttentionLearned? }`. Ranked eligible rows may also include `hybridNeuralTerm`, `hybridSemanticTerm`, and `recencyBoostTerm` for UI breakdown.
 
-**Staging / metrics:** when turning weights above zero, record an offline or staging baseline (`precisionAt5`, etc.) before tuning (success criteria in the M17 spec).
+**Staging / metrics:** when turning weights above zero, record an offline or staging baseline (`precisionAt5`, etc.) before tuning.
 
-## M18 — Client HTTP payload (AD-055 / CSL-01)
+## Client HTTP payload — filtered recommendation rows
 
 `POST /api/v1/recommend`, `POST /api/v1/recommend/from-cart`, and `POST /api/v1/recommend` with `eligibilityOnly: true` serialize **filtered** recommendation rows:
 
