@@ -35,6 +35,8 @@ You still need the usual training prerequisites (Neo4j `BOUGHT` / embeddings, `A
 
 ## M22 — Hybrid sparse item tower (`M22_*`, ADR-074)
 
+For a **baseline vs M22** comparison (profile pooling unchanged; what changes in the item MLP), operator checklist, and ToT/design rationale, see the repository root **[README.md — M22](../README.md#m22--hybrid-dual-item-tower-delivered)**.
+
 Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem, e_struct, e_id)** before the neural logit: **(A)** HF `e_sem` (384-d), **(B)** structural prior via **disjoint** embedding tables (brand, category, subcategory, `price_bucket`), **(C)** optional `product_id` memorisation (**separate** table from B). `semanticScore` (ADR-016) stays **cosine(profile, e_sem)**; the hybrid blend still uses `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`.
 
 | Env | Default | Meaning |

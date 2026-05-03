@@ -627,23 +627,72 @@ flowchart LR
 
 ## M22 — Hybrid dual item tower (delivered)
 
-**Milestone M22** (accepted **[ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md)**, implemented in `ai-service` 2026-05-02) refines **item** representation beyond a single dense product vector: it separates **semantic similarity** (text), **catalog / market structure** (discrete fields), and **per-SKU memorisation**, then fuses them with the **user tower**. This improves **cold start** for brands and categories new to the client without collapsing “popular in category” and “this exact SKU” into one sparse blob — the committee explicitly **rejected** a single mixed sparse tower for that reason.
+**Milestone M22** ([**ADR-074**](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [**spec**](.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md), [**design**](.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md), implemented in `ai-service`) adds a **second item pathway** alongside the legacy dense path: the **user tower** (profile **u** from M17/M21 pooling) is unchanged; the **item** side can either stay **768-d concat** (`e_sem ‖ u`) or switch to a **multi-input fusion** `f(u, e_sem, e_struct, e_id)` with **sparse catalog priors** and optional **SKU memorisation**. The **hybrid** layer from [ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md) — `semanticScore = cosine(u, e_sem)` plus weighted `neuralScore` — **remains**; M22 only changes how **`neuralScore`** is produced.
 
-**Does not replace M21:** profile pooling modes, `NEURAL_LOSS_MODE`, and hybrid weights remain orthogonal — see [`ai-service/README.md`](ai-service/README.md).
+### Two neural modes (what operators should compare)
+
+| Layer | **Baseline (default, “single tower” item + M21 profile)** | **M22 (“dual” item: dense semantic + sparse towers)** |
+|--------|-----------------------------------------------------------|--------------------------------------------------------|
+| **Profile `u`** | `aggregateClientProfileEmbeddings` — **`mean`**, **`exp`**, **`attention_light`**, or **`attention_learned`** ([M21 / ADR-065](.specs/features/m17-phased-recency-ranking-signals/adr-065-m17-p2-shared-profile-pooling-and-temporal-alignment.md)) | **Identical** — M22 does not replace pooling; train and inference still share the same profile builder. |
+| **Item into the MLP** | One vector **`[e_sem ‖ u]`** (768-d) → dense MLP → logit | **`concat(e_sem, u, e_struct, e_id)`** → dense MLP → logit; **(B)** = separate embeddings for brand, category, subcategory, `price_bucket`; **(C)** = separate **`product_id`** table (never shared with **B**). |
+| **Semantic branch** | **`cosine(u, e_sem)`** for `semanticScore` | **Unchanged** — still pure HF geometry vs the client profile. |
+| **Cold start on structure** | Brand/category/price only implicit via negatives / co-purchase signal | **Explicit gradients** on discrete catalog signals (**B**), so new brands/categories get a learnable prior even with few SKU-level events ([spec problem statement](.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md)). |
+| **`M22_IDENTITY=true`** | N/A | **(C)** on: per-id memorisation tends to **boost repeat or familiar SKUs** seen in training vocab; **off** → single OOV row for **C** (no per-SKU lift). **Requires** `M22_STRUCTURAL=true` (boot fail-fast if violated). |
+| **Artifacts** | `model.json` + `neural-head.json` | **Also** **`m22-item-manifest.json`** (vocabs, `priceBinEdges`, `identityEnabled`, `vocabSizes`) so serving matches training token→index maps. |
+| **Promotion** | `precisionAt5` vs tolerance | **Same gate** — M22 is not exempt from offline quality discipline ([M20/M21](.specs/features/m21-ranking-evolution-committee-decisions/spec.md)). |
+
+**Naming “dual tower”:** in recommender literature “two-tower” often means **user tower × item tower**. Here, **M22** keeps one **user** vector **u** and splits the **item** side into **dense semantic (A)** plus **sparse structural (B)** and optional **identity (C)** — three **item** channels fused before the neural scalar, not a second user network.
+
+### Inference decision (which path runs?)
+
+```mermaid
+flowchart TD
+  Q1{"M22_ENABLED ∧\nM22_STRUCTURAL?"}
+  Q1 -->|No| P768["768-d baseline\nmodel.predict concat"]
+  Q1 -->|Yes| Q2{"Loaded checkpoint\nhas valid m22-item-manifest\n+ architecture m22?"}
+  Q2 -->|No| WARN["⚠️ Log warning"] --> P768
+  Q2 -->|Yes| PM22["Multi-input M22\npredictM22HybridScores"]
+  P768 --> HYB["toHybridNeuralScalar → neuralScore"]
+  PM22 --> HYB
+  HYB --> FIN["finalScore = w_n·neural +\nw_s·semantic\n(same as baseline)"]
+
+  classDef q fill:#FFE66D,stroke:#333,stroke-width:2px,color:#1a1a1a
+  classDef base fill:#A8DADC,stroke:#1864AB,stroke-width:2px,color:#0B1F33
+  classDef m22 fill:#95E1D3,stroke:#087F5B,stroke-width:2px,color:#003300
+  classDef out fill:#90EE90,stroke:#2F6B2F,stroke-width:2px,color:#003300
+
+  class Q1,Q2 q
+  class P768,WARN base
+  class PM22 m22
+  class HYB,FIN out
+```
+
+### What you gain (summary)
+
+- **Stronger cold start on catalog axes** (brand, manufacturer/supplier field, category stack, price band) without stuffing those tokens into the HF encoder (**M22-09**).
+- **Optional memorisation** (**C**) decoupled from structural priors (**M22-08**) — when enabled, the model can prefer **known SKUs** without conflating “same category” with “same product id”.
+- **Safe default:** flags off ⇒ **bit-identical training shape** to legacy 7-arg dataset path (regression tests); env-only flip without retrain still **loads baseline weights** and falls back at inference (see diagram above).
+
+### How to enable and use (operator checklist)
+
+1. **Configure** `ai-service` process: `M22_ENABLED=true`, `M22_STRUCTURAL=true`; set `M22_IDENTITY=true` only if you want **(C)** (requires structural). See [`.env.example`](.env.example) and [`docker-compose.yml`](docker-compose.yml) — variables are passed into the `ai-service` container.
+2. **Restart** `ai-service` so env and fail-fast validation run (`assertM22EnvCombinationsOrThrow`).
+3. Run a **full train** (`POST /api/v1/model/train` with admin key or your cron path) so **`ModelTrainer`** builds the **M22** graph, writes **`m22-item-manifest.json`**, and promotes if `precisionAt5` passes the gate.
+4. **Confirm** the active checkpoint directory contains **`m22-item-manifest.json`** next to `model.json` (otherwise you are still on the 768-d path at inference).
+5. **Tune** `NEURAL_WEIGHT` / `SEMANTIC_WEIGHT` after major architecture changes (same procedure as ADR-016); optional offline slice: `computePrecisionAt5ColdStartCategorySlice` in `ai-service/src/ml/rankingEval.ts`.
+6. **Rollback:** `M22_ENABLED=false`, restart; repoint `/tmp/model/current` (or volume) to a **pre-M22** symlink if you need an instant revert.
+
+Full env tables and rollback notes: **[`ai-service/README.md`](ai-service/README.md)** (sections M21 + M22).
+
+### Design choice — Tree-of-Thoughts + Self-Consistency (why not “one sparse blob”?)
+
+[Design § Fase 1–3](.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md) runs an explicit **ToT**: path **A** (ADR-074 literal — **B** and **C** disjoint, `f` after HF) vs **B** (shared projection for B+C — rejected: breaks **M22-08**) vs **C** (infer structure from text only — rejected: drifts from catalog truth). **Self-consistency:** committee + spec converge on **A** as the only admissible node; implementation follows that node ([ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md) committee record).
 
 | Via | Role | Implementation sketch |
 |-----|------|----------------------|
 | **A — Semantic** | Content similarity; rich-text cold start | **e_sem** — 384-d HuggingFace embedding (same as legacy item branch). |
 | **B — Structural prior** | Brand, category, taxonomy, price band — **no** `product_id` here | Separate embedding tables → concatenated **e_struct** (manifest vocabularies + stable **price_bin_edges**). |
 | **C — Identity (optional)** | Memorise interactions per **`product_id`** | Separate embedding table from **B**; **OOV** index when unknown or when **`M22_IDENTITY=false`**. Extractor keeps **`idKey`** disjoint from structural keys (`itemSparseFeatureExtractor.ts`). |
-
-**Environment (defaults = pre-M22 behaviour):** `M22_ENABLED`, `M22_STRUCTURAL`, `M22_IDENTITY` — **`M22_IDENTITY` requires `M22_STRUCTURAL`** (fail-fast at boot). Promotion gate unchanged: **`precisionAt5`**.
-
-**Artifacts:** promoted checkpoints may ship **`m22-item-manifest.json`** (vocabs, `vocabSizes`, `identityEnabled`, `priceBinEdges`). If env asks for M22 but the loaded checkpoint is baseline or the manifest is invalid, the service logs a warning and falls back to the **768-d** path.
-
-**Offline evaluation:** cold-start category slice + optional M22 scoring in `ai-service/src/ml/rankingEval.ts`.
-
-**Design rationale — Tree-of-Thoughts + Self-Consistency:** [ADR-074](.specs/features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md) records a **multi-role committee** (architecture, Staff serving/data, QA, DL RecSys). Each role evaluated **alternative decompositions** (e.g. single sparse tower vs separated **B/C**) in parallel — analogous to **Tree-of-Thought** branching — and the **unanimous** approval after separating vocabs and projections mirrors **Self-Consistency** aggregation toward a stable decision. The same pattern informed **[ADR-016](.specs/features/m4-neural-recommendation/adr-016-hybrid-score-weight-calibration.md)** hybrid weights (60/40) via expert deliberation.
 
 Further detail: [.specs/features/m22-hybrid-dual-item-tower-cold-start/](.specs/features/m22-hybrid-dual-item-tower-cold-start/) · [roadmap](.specs/project/ROADMAP.md) · exported diagram copy: [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
 
