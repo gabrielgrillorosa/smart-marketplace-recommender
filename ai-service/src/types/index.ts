@@ -185,6 +185,8 @@ export interface RecommendationResult {
   eligible: boolean
   eligibilityReason: EligibilityReasonCode
   suppressionUntil: string | null
+  /** ISO 8601 última compra confirmada para este cliente+SKU; `null` se nunca comprou. */
+  lastPurchaseAt: string | null
 }
 
 // M7 — Production Readiness types

@@ -36,6 +36,7 @@ interface RawRecommendItem {
   eligible?: boolean;
   eligibilityReason?: string;
   suppressionUntil?: string | null;
+  lastPurchaseAt?: string | null;
 }
 
 interface RawRecommendResponse {
@@ -151,6 +152,10 @@ export function adaptRecommendations(raw: unknown): {
         ? Number(item.recencyBoostTerm)
         : undefined;
 
+    const rawLp = item.lastPurchaseAt;
+    const lastPurchaseAt =
+      typeof rawLp === 'string' && rawLp.length > 0 ? rawLp : null;
+
     return {
       product,
       finalScore,
@@ -165,6 +170,7 @@ export function adaptRecommendations(raw: unknown): {
       eligible,
       eligibilityReason: item.eligibilityReason ?? (eligible ? 'eligible' : 'unknown'),
       suppressionUntil: item.suppressionUntil ?? null,
+      lastPurchaseAt,
     };
   });
 

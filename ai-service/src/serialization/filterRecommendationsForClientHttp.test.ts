@@ -13,6 +13,7 @@ const base = (): Omit<RecommendationResult, 'eligible' | 'eligibilityReason'> =>
   semanticScore: null,
   matchReason: null,
   suppressionUntil: null,
+  lastPurchaseAt: null,
 })
 
 describe('filterRecommendationsForClientHttp (M18)', () => {

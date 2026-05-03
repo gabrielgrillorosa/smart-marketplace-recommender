@@ -3,11 +3,14 @@
 import { useMemo, useState } from 'react';
 import type { Cart, Product } from '@/lib/types';
 import type { CartIntegrityIssue } from '@/lib/cart-integrity';
+import { formatLastPurchasePtBr } from '@/lib/formatLastPurchase';
 import { cn } from '@/lib/utils';
 
 interface CartSummaryBarProps {
   cart: Cart | null;
   productsById: Record<string, Product>;
+  /** ISO por productId — compra confirmada anterior (Neo4j / recommend). */
+  lastPurchaseByProductId?: ReadonlyMap<string, string>;
   integrityIssues: CartIntegrityIssue[];
   checkoutPending: boolean;
   checkoutError: string | null;
@@ -22,6 +25,7 @@ function formatCurrency(value: number): string {
 export function CartSummaryBar({
   cart,
   productsById,
+  lastPurchaseByProductId,
   integrityIssues,
   checkoutPending,
   checkoutError,
@@ -50,14 +54,30 @@ export function CartSummaryBar({
 
   const itemChips = (
     <div className="flex flex-wrap gap-2">
-      {(items ?? []).map((item) => (
-        <span
-          key={item.productId}
-          className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700"
-        >
-          {(productsById[item.productId]?.name ?? item.productId)} x{item.quantity}
-        </span>
-      ))}
+      {(items ?? []).map((item) => {
+        const lp = lastPurchaseByProductId?.get(item.productId);
+        const lpLabel = lp ? formatLastPurchasePtBr(lp) : null;
+        return (
+          <span
+            key={item.productId}
+            className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700"
+          >
+            <span>
+              {(productsById[item.productId]?.name ?? item.productId)} x{item.quantity}
+            </span>
+            {lpLabel ? (
+              <span
+                className="text-slate-500"
+                title={`Última compra: ${lpLabel}`}
+                aria-label={`Comprado anteriormente em ${lpLabel}`}
+                data-testid={`cart-chip-purchased-${item.productId}`}
+              >
+                ✓
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
     </div>
   );
 

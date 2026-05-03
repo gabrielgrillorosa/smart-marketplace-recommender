@@ -16,6 +16,7 @@ import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
 import { useCatalogOrdering } from '@/lib/hooks/useCatalogOrdering';
 import { useRecommendationFetcher } from '@/lib/hooks/useRecommendationFetcher';
 import { useRecommendations } from '@/lib/hooks/useRecommendations';
+import { formatLastPurchasePtBr } from '@/lib/formatLastPurchase';
 import { useAppStore } from '@/store';
 import {
   addCartItem,
@@ -100,6 +101,9 @@ export function CatalogPanel() {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [prefetchEligibilityMap, setPrefetchEligibilityMap] = useState<Map<string, EligibilityItem>>(() => new Map());
+  const [prefetchLastPurchaseMap, setPrefetchLastPurchaseMap] = useState<Map<string, string | null>>(
+    () => new Map()
+  );
   const lastRequestedOrderedSessionRef = useRef<string | null>(null);
 
   const { selectedClient } = useSelectedClient();
@@ -160,6 +164,7 @@ export function CatalogPanel() {
   useEffect(() => {
     if (!selectedClient) {
       setPrefetchEligibilityMap(new Map());
+      setPrefetchLastPurchaseMap(new Map());
       return;
     }
     const cid = selectedClient.id;
@@ -178,13 +183,20 @@ export function CatalogPanel() {
         if (cancelled) return;
         const { results } = adaptRecommendations(raw);
         const m = new Map<string, EligibilityItem>();
+        const lp = new Map<string, string | null>();
         for (const r of results) {
           m.set(r.product.id, eligibilityFromRecommendation(r));
+          const iso = r.lastPurchaseAt;
+          lp.set(r.product.id, typeof iso === 'string' && iso.length > 0 ? iso : null);
         }
         setPrefetchEligibilityMap(m);
+        setPrefetchLastPurchaseMap(lp);
       })
       .catch(() => {
-        if (!cancelled) setPrefetchEligibilityMap(new Map());
+        if (!cancelled) {
+          setPrefetchEligibilityMap(new Map());
+          setPrefetchLastPurchaseMap(new Map());
+        }
       });
     return () => {
       cancelled = true;
@@ -239,6 +251,20 @@ export function CatalogPanel() {
     () => mergeRecommendationEligibility(prefetchEligibilityMap, recommendations),
     [prefetchEligibilityMap, recommendations]
   );
+
+  const mergedLastPurchaseByProductId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [id, v] of prefetchLastPurchaseMap) {
+      if (v) m.set(id, v);
+    }
+    for (const r of recommendations) {
+      const iso = r.lastPurchaseAt;
+      if (typeof iso === 'string' && iso.length > 0) {
+        m.set(r.product.id, iso);
+      }
+    }
+    return m;
+  }, [prefetchLastPurchaseMap, recommendations]);
 
   const scoreMap = useMemo(() => {
     const m = new Map<string, ProductDetailScoreSummary>();
@@ -470,6 +496,12 @@ export function CatalogPanel() {
       const eligBadge = resolveEligibilityBadge(product.id, mergedEligibilityMap, cartProductIds, {
         suppressRecentPurchaseOutsideRanking: !rankingModeActive,
       });
+      const lastIso = mergedLastPurchaseByProductId.get(product.id);
+      const eligRow = mergedEligibilityMap.get(product.id);
+      const purchaseHistorySubtitle =
+        lastIso && (!eligRow || eligRow.eligible || eligRow.reason !== 'recently_purchased')
+          ? formatLastPurchasePtBr(lastIso)
+          : null;
       const showScoreBadge = Boolean(scores) && !eligBadge;
       const inFooterRecent = rankingModeActive && footerRecentIds.has(product.id);
       return (
@@ -479,6 +511,7 @@ export function CatalogPanel() {
           scoreBadge={showScoreBadge ? scores : undefined}
           eligibilityBadge={eligBadge}
           ineligibleRanking={Boolean(inFooterRecent && eligBadge)}
+          purchaseHistorySubtitle={purchaseHistorySubtitle}
           isInCart={isInCart}
           isCartActionLoading={cartItemLoading[loadingKey] ?? false}
           showCartAction
@@ -500,6 +533,7 @@ export function CatalogPanel() {
       mergedEligibilityMap,
       rankingModeActive,
       footerRecentIds,
+      mergedLastPurchaseByProductId,
     ]
   );
 
@@ -581,6 +615,7 @@ export function CatalogPanel() {
       <CartSummaryBar
         cart={cartForClient}
         productsById={productsById}
+        lastPurchaseByProductId={mergedLastPurchaseByProductId}
         integrityIssues={integrityIssues}
         checkoutPending={checkoutPending}
         checkoutError={checkoutError}
@@ -651,6 +686,9 @@ export function CatalogPanel() {
           if (row.reason === 'recently_purchased' && !rankingModeActive) return undefined;
           return 'Este item está fora do ranking por regras de elegibilidade.';
         })()}
+        lastPurchaseAt={
+          selectedProduct ? mergedLastPurchaseByProductId.get(selectedProduct.id) ?? null : null
+        }
         onClose={() => setSelectedProduct(null)}
       />
     </div>

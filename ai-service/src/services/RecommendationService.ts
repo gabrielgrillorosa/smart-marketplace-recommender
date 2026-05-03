@@ -144,7 +144,8 @@ function toRecommendationItem(
   meta: { eligible: boolean; reason: EligibilityReasonCode; suppressionUntil: string | null },
   scores: HybridScores | null,
   exposeRecencyRankFields: boolean,
-  rankingConfig: RankingConfig
+  rankingConfig: RankingConfig,
+  lastPurchaseAt: string | null
 ): RecommendationResult {
   const item: RecommendationResult = {
     id: row.id,
@@ -159,6 +160,7 @@ function toRecommendationItem(
     eligible: meta.eligible,
     eligibilityReason: meta.reason,
     suppressionUntil: meta.suppressionUntil,
+    lastPurchaseAt,
   }
   if (scores) {
     item.hybridNeuralTerm = rankingConfig.neuralWeight * scores.neuralScore
@@ -235,7 +237,8 @@ export class RecommendationService {
     const rc = this.getRankingConfig()
     return catalogRows.map((row) => {
       const meta = computeEligibility(row, cartIds, lastPurchaseMap, this.recentPurchaseWindowDays, now)
-      return toRecommendationItem(row, meta, null, false, rc)
+      const lastPurchaseAt = lastPurchaseMap.get(row.id) ?? null
+      return toRecommendationItem(row, meta, null, false, rc, lastPurchaseAt)
     })
   }
 
@@ -363,7 +366,9 @@ export class RecommendationService {
     if (scorable.length === 0) {
       const ineligibleOnly = metas
         .filter((m) => !m.meta.eligible)
-        .map((m) => toRecommendationItem(m.row, m.meta, null, false, rankingConfig))
+        .map((m) =>
+          toRecommendationItem(m.row, m.meta, null, false, rankingConfig, lastPurchaseMap.get(m.row.id) ?? null)
+        )
         .sort((a, b) => a.name.localeCompare(b.name))
       if (emptyCatalogReason) {
         this.logger?.info({ clientId, reason: 'no_eligible_candidates', ineligibleCount: ineligibleOnly.length })
@@ -452,11 +457,20 @@ export class RecommendationService {
     const top = scored.slice(0, cappedLimit)
     const ineligibleTrail = metas
       .filter((m) => !m.meta.eligible)
-      .map((m) => toRecommendationItem(m.row, m.meta, null, false, rankingConfig))
+      .map((m) =>
+        toRecommendationItem(m.row, m.meta, null, false, rankingConfig, lastPurchaseMap.get(m.row.id) ?? null)
+      )
       .sort((a, b) => a.name.localeCompare(b.name))
 
     const ranked: RecommendationResult[] = top.map((t) =>
-      toRecommendationItem(t.row, t.meta, t.scores, exposeRecency, rankingConfig)
+      toRecommendationItem(
+        t.row,
+        t.meta,
+        t.scores,
+        exposeRecency,
+        rankingConfig,
+        lastPurchaseMap.get(t.row.id) ?? null
+      )
     )
     const merged = [...ranked, ...ineligibleTrail]
 

@@ -58,6 +58,8 @@ export interface RecommendationResult {
   eligible?: boolean;
   eligibilityReason?: string;
   suppressionUntil?: string | null;
+  /** ISO 8601 última compra confirmada (cliente+SKU); ausente ou null se desconhecido. */
+  lastPurchaseAt?: string | null;
 }
 
 export interface RagChunk {

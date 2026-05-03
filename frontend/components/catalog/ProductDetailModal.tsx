@@ -2,6 +2,7 @@
 
 import type { ProductDetail, RankingConfig } from '@/lib/types';
 import type { ProductDetailScoreSummary } from './ScoreBadge';
+import { formatLastPurchasePtBr } from '@/lib/formatLastPurchase';
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,8 @@ interface ProductDetailModalProps {
   scoreSummary?: ProductDetailScoreSummary;
   rankingConfig?: RankingConfig | null;
   eligibilityNote?: string;
+  /** ISO 8601 — última compra confirmada; só renderiza secção extra quando definido. */
+  lastPurchaseAt?: string | null;
   onClose: () => void;
 }
 
@@ -57,6 +60,7 @@ export function ProductDetailModal({
   scoreSummary,
   rankingConfig,
   eligibilityNote,
+  lastPurchaseAt,
   onClose,
 }: ProductDetailModalProps) {
   const wr = rankingConfig?.recencyRerankWeight ?? 0;
@@ -184,6 +188,16 @@ export function ProductDetailModal({
                   ) : null}
                 </div>
               )}
+              {lastPurchaseAt ? (
+                <div
+                  className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800"
+                  role="status"
+                  data-testid="product-detail-last-purchase"
+                >
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Última compra</p>
+                  <p className="mt-0.5">{formatLastPurchasePtBr(lastPurchaseAt)}</p>
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2">
                 <Badge variant="secondary">{product.category}</Badge>
                 <Badge variant="outline">{product.supplier}</Badge>

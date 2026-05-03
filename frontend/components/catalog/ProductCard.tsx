@@ -24,6 +24,8 @@ interface ProductCardProps {
   eligibilityBadge?: EligibilityBadgeModel | null;
   /** M16 — ranking mode ineligible styling (badge area only). */
   ineligibleRanking?: boolean;
+  /** Fora da janela de supressão: texto curto «última compra» (evita duplicar badge âmbar). */
+  purchaseHistorySubtitle?: string | null;
   isInCart?: boolean;
   isCartActionLoading?: boolean;
   onAddToCart?: () => void;
@@ -38,6 +40,7 @@ export function ProductCard({
   scoreBadge,
   eligibilityBadge,
   ineligibleRanking,
+  purchaseHistorySubtitle,
   isInCart,
   isCartActionLoading,
   onAddToCart,
@@ -49,7 +52,8 @@ export function ProductCard({
     Boolean(scoreBadge) ||
     Boolean(eligibilityBadge) ||
     product.similarityScore !== undefined ||
-    isInCart;
+    isInCart ||
+    Boolean(purchaseHistorySubtitle);
   const disabledReasonId = cartActionDisabledReason ? `catalog-add-cart-reason-${product.id}` : undefined;
   const disabledReasonClass = cartActionDisabledReason?.includes('Indisponível')
     ? 'text-amber-700'
@@ -94,6 +98,14 @@ export function ProductCard({
                   no carrinho
                 </Badge>
               )}
+              {purchaseHistorySubtitle ? (
+                <span
+                  className="max-w-[9rem] truncate text-right text-[10px] font-medium text-slate-500"
+                  title={`Última compra: ${purchaseHistorySubtitle}`}
+                >
+                  ✓ {purchaseHistorySubtitle}
+                </span>
+              ) : null}
             </div>
           )}
         </div>

@@ -21,6 +21,7 @@ export const fixtureRecommendResponse = {
       eligible: true,
       eligibilityReason: 'eligible',
       suppressionUntil: null,
+      lastPurchaseAt: null,
     } as RecommendationResult,
     {
       id: 'prod-002',
@@ -35,6 +36,7 @@ export const fixtureRecommendResponse = {
       eligible: true,
       eligibilityReason: 'eligible',
       suppressionUntil: null,
+      lastPurchaseAt: null,
     } as RecommendationResult,
   ],
 }
