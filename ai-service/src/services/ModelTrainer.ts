@@ -158,6 +158,16 @@ export class ModelTrainer {
       const temporal = buildClientPurchaseTemporalMap(orders)
       const clientOrderMap = temporal.clientPurchasedProducts
 
+      let ordersWithParsableDate = 0
+      for (const o of orders) {
+        if (normalizeOrderDateFromApi(o.orderDate)) ordersWithParsableDate++
+      }
+      console.info(
+        `[ModelTrainer] Training data snapshot: orders=${orders.length} (parsableOrderDate=${ordersWithParsableDate}), ` +
+          `clients=${clients.length}, clientsWithTRef=${temporal.tRefIsoByClient.size}, ` +
+          `products=${products.length}, productsWithEmbeddings=${productEmbeddingMap.size}`
+      )
+
       const trainM22Structural = this.m22Env.enabled && this.m22Env.structural
       const m22Manifest = trainM22Structural
         ? buildM22ManifestFromProducts(products, {
@@ -271,6 +281,13 @@ export class ModelTrainer {
           model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
         }
       }
+
+      const archLabel: 'm22' | 'baseline' = useM22 ? 'm22' : 'baseline'
+      console.info(
+        `[ModelTrainer] Training checkpoint architecture: ${archLabel} ` +
+          `(${useM22 ? 'M22 hybrid multi-input' : 'baseline 768-d concat'}) — ` +
+          `${trainingSamples} rows, ${EPOCHS} epochs, head=${this.neuralLossMode}`
+      )
 
       let finalLoss = 0
       let finalAccuracy = 0

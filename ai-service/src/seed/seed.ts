@@ -129,16 +129,18 @@ async function seedPostgres(client: PoolClient, logger: InternalLogger): Promise
     );
     if ((res.rowCount ?? 0) > 0) {
       ordersInserted++;
-      for (const item of order.items) {
-        const itemRes = await client.query(
-          `INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (id) DO NOTHING
-           RETURNING id`,
-          [item.id, order.id, item.product_id, item.quantity, item.unit_price]
-        );
-        itemsInserted += itemRes.rowCount ?? 0;
-      }
+    }
+    // Always upsert line items: if the order row already existed (conflict) but items were
+    // missing — e.g. partial DB wipe — we still repair order_items (idempotent).
+    for (const item of order.items) {
+      const itemRes = await client.query(
+        `INSERT INTO order_items (id, order_id, product_id, quantity, unit_price)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING id`,
+        [item.id, order.id, item.product_id, item.quantity, item.unit_price]
+      );
+      itemsInserted += itemRes.rowCount ?? 0;
     }
   }
   logger.log(`Orders: ${ordersInserted} inserted, ${orders.length - ordersInserted} skipped`);
@@ -338,6 +340,12 @@ export async function isAlreadySeeded(pool: Pool, driver: Driver): Promise<boole
   const pgRes = await pool.query(`SELECT COUNT(*)::int AS c FROM products`);
   const pgCount: number = pgRes.rows[0].c;
   if (pgCount === 0) return false;
+
+  // Catalog-only PG (products without purchase history) used to pass this check and skip
+  // AutoSeed — training then saw ~0 orders. Require at least one order line.
+  const itemsRes = await pool.query(`SELECT COUNT(*)::int AS c FROM order_items`);
+  const orderItemCount: number = itemsRes.rows[0].c;
+  if (orderItemCount === 0) return false;
 
   const session = driver.session();
   try {

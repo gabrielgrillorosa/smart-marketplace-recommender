@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { M22ItemManifest } from '../ml/m22Manifest.js'
 import { VersionedModelStore, FsPort } from '../services/VersionedModelStore.js'
 import type { TrainingResult } from '../types/index.js'
 
@@ -14,6 +15,21 @@ const makeResult = (overrides: Partial<TrainingResult> = {}): TrainingResult => 
   neuralHeadKind: 'bce_sigmoid',
   ...overrides,
 })
+
+const minimalM22Manifest: M22ItemManifest = {
+  schemaVersion: '1',
+  priceBinEdges: [0, 100],
+  structuralEnabled: true,
+  identityEnabled: false,
+  vocabs: {
+    brand: ['__OOV__'],
+    category: ['__OOV__'],
+    subcategory: ['__OOV__'],
+    priceBucket: ['__OOV__'],
+    productId: ['__OOV__'],
+  },
+  vocabSizes: { brand: 1, category: 1, subcategory: 1, priceBucket: 1, productId: 1 },
+}
 
 const makeFakeModel = () => ({
   save: vi.fn(async () => {}),
@@ -53,12 +69,14 @@ describe('VersionedModelStore', () => {
       const model = makeFakeModel()
       const result = makeResult({ precisionAt5: 0.5 })
 
-      await store.saveVersioned(
+      const out = await store.saveVersioned(
         model as unknown as import('@tensorflow/tfjs-node').LayersModel,
         result,
         { triggeredBy: 'manual' }
       )
 
+      expect(out.promoted).toBe(true)
+      expect(out.rejectReason).toBeUndefined()
       expect(fsPort.symlink).toHaveBeenCalled()
       const governance = store.getGovernanceStatus()
       expect(governance.lastTrainingResult).toBe('promoted')
@@ -91,6 +109,33 @@ describe('VersionedModelStore', () => {
       expect(governance.lastOrderId).toBe('order-1')
     })
 
+    it('promotes candidate when architecture differs from active checkpoint — skips P@5 gate', async () => {
+      await store.saveVersioned(
+        makeFakeModel() as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({ precisionAt5: 0.85, modelArchitecture: 'baseline' }),
+        { triggeredBy: 'manual' }
+      )
+
+      expect(store.getModelArchitecture()).toBe('baseline')
+
+      const symlinkBefore = (fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length
+
+      const promoteOut = await store.saveVersioned(
+        makeFakeModel() as unknown as import('@tensorflow/tfjs-node').LayersModel,
+        makeResult({
+          precisionAt5: 0.35,
+          modelArchitecture: 'm22',
+          m22ItemManifest: minimalM22Manifest,
+        }),
+        { triggeredBy: 'manual' }
+      )
+
+      expect(promoteOut.promoted).toBe(true)
+      expect((fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length).toBe(symlinkBefore + 1)
+      expect(store.getModelArchitecture()).toBe('m22')
+      expect(store.getGovernanceStatus().lastTrainingResult).toBe('promoted')
+    })
+
     it('rejects candidate below currentPrecisionAt5 - tolerance and records decision metadata', async () => {
       const promotedModel = makeFakeModel()
       await store.saveVersioned(
@@ -101,12 +146,14 @@ describe('VersionedModelStore', () => {
 
       const symlinkCallCount = (fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length
       const weakerCandidate = makeFakeModel()
-      await store.saveVersioned(
+      const rejectOut = await store.saveVersioned(
         weakerCandidate as unknown as import('@tensorflow/tfjs-node').LayersModel,
         makeResult({ precisionAt5: 0.75 }),
         { triggeredBy: 'checkout', orderId: 'order-2' }
       )
 
+      expect(rejectOut.promoted).toBe(false)
+      expect(rejectOut.rejectReason).toBe('candidate_below_tolerance_gate')
       expect((fsPort.symlink as ReturnType<typeof vi.fn>).mock.calls.length).toBe(symlinkCallCount)
 
       const governance = store.getGovernanceStatus()

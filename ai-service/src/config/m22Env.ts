@@ -3,6 +3,8 @@
  * Defaults reproduce pre-M22 behaviour until M22_ENABLED is explicitly set.
  */
 
+import type { ModelArchitectureKind } from '../types/index.js'
+
 export type M22EnvFlags = {
   enabled: boolean
   structural: boolean
@@ -42,6 +44,11 @@ export function assertM22EnvCombinationsOrThrow(flags: M22EnvFlags): void {
       '[ai-service] Invalid M22 env: M22_IDENTITY=true requires M22_STRUCTURAL=true. Refuse to start.'
     )
   }
+}
+
+/** Matches `ModelTrainer` train path: M22 structural dataset only when master + structural are on. */
+export function desiredModelArchitectureFromM22Env(flags: M22EnvFlags): ModelArchitectureKind {
+  return flags.enabled && flags.structural ? 'm22' : 'baseline'
 }
 
 export function logM22EnvSummary(flags: M22EnvFlags): void {

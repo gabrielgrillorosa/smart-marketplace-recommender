@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { M22_ENV_OFF } from '../config/m22Env.js'
+import type { ModelArchitectureKind } from '../types/index.js'
 import { StartupRecoveryService } from './StartupRecoveryService.js'
 
 type ModelRef = { current: object | null }
@@ -6,15 +8,20 @@ type ModelRef = { current: object | null }
 const makeDeps = (opts: {
   autoHealModel?: boolean
   modelPresent?: boolean
+  loadedArchitecture?: ModelArchitectureKind
+  m22Env?: import('../config/m22Env.js').M22EnvFlags
   missingEmbeddingsCount?: number
   hasTrainingData?: boolean
   activeJobId?: string
   trainingStatus?: 'done' | 'failed'
+  /** When `trainingStatus` is `failed`: exception vs governance rejection (`promoted: false`). */
+  failedJobKind?: 'train-exception' | 'governance-rejection'
 } = {}) => {
   const modelRef: ModelRef = { current: opts.modelPresent ? {} : null }
 
   const versionedModelStore = {
     getModel: vi.fn(() => modelRef.current),
+    getModelArchitecture: vi.fn(() => opts.loadedArchitecture ?? 'baseline'),
   }
 
   const neo4jRepository = {
@@ -56,10 +63,14 @@ const makeDeps = (opts: {
       if (status === 'done') {
         modelRef.current = {}
       }
-      return {
+      const job: { jobId: string; status: 'queued' | 'running' | 'done' | 'failed'; promoted?: boolean } = {
         jobId,
         status,
       }
+      if (status === 'failed' && opts.failedJobKind === 'governance-rejection') {
+        job.promoted = false
+      }
+      return job
     }),
   }
 
@@ -76,6 +87,7 @@ const makeDeps = (opts: {
     neo4jRepository: neo4jRepository as never,
     modelTrainer: modelTrainer as never,
     trainingJobRegistry: trainingJobRegistry as never,
+    m22Env: opts.m22Env ?? M22_ENV_OFF,
     logger,
   })
 
@@ -127,7 +139,7 @@ describe('StartupRecoveryService', () => {
 
     await deps.service.scheduleRecovery()
 
-    expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present' })
+    expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present-compatible' })
     expect(deps.service.isBlockingReadiness()).toBe(false)
     expect(deps.neo4jRepository.getProductsWithoutEmbedding).toHaveBeenCalled()
     expect(deps.embeddingService.generateEmbeddings).not.toHaveBeenCalled()
@@ -143,7 +155,7 @@ describe('StartupRecoveryService', () => {
     expect(deps.embeddingService.generateEmbeddings).toHaveBeenCalledOnce()
     expect(deps.trainingJobRegistry.enqueue).not.toHaveBeenCalled()
     expect(deps.trainingJobRegistry.waitFor).not.toHaveBeenCalled()
-    expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present' })
+    expect(deps.service.getState()).toEqual({ phase: 'idle', reason: 'model-present-compatible' })
     expect(deps.service.isBlockingReadiness()).toBe(false)
   })
 
@@ -191,6 +203,52 @@ describe('StartupRecoveryService', () => {
         phase: 'completed',
         jobId: 'job-active',
       })
+    )
+  })
+
+  it('when checkpoint is baseline but env requires M22: enqueues retrain', async () => {
+    const deps = makeDeps({
+      modelPresent: true,
+      missingEmbeddingsCount: 0,
+      m22Env: { enabled: true, structural: true, identity: false },
+      loadedArchitecture: 'baseline',
+    })
+
+    await deps.service.scheduleRecovery()
+
+    expect(deps.trainingJobRegistry.enqueue).toHaveBeenCalled()
+    expect(deps.service.getState().phase).toBe('completed')
+  })
+
+  it('when checkpoint is M22 but env is baseline-only: enqueues retrain', async () => {
+    const deps = makeDeps({
+      modelPresent: true,
+      missingEmbeddingsCount: 0,
+      m22Env: M22_ENV_OFF,
+      loadedArchitecture: 'm22',
+    })
+
+    await deps.service.scheduleRecovery()
+
+    expect(deps.trainingJobRegistry.enqueue).toHaveBeenCalled()
+  })
+
+  it('when governance rejects promotion but a checkpoint remains loaded: completes recovery (ready)', async () => {
+    const deps = makeDeps({
+      modelPresent: true,
+      missingEmbeddingsCount: 0,
+      m22Env: { enabled: true, structural: true, identity: false },
+      loadedArchitecture: 'baseline',
+      trainingStatus: 'failed',
+      failedJobKind: 'governance-rejection',
+    })
+
+    await deps.service.scheduleRecovery()
+
+    expect(deps.service.getState().phase).toBe('completed')
+    expect(deps.service.isBlockingReadiness()).toBe(false)
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('not promoted (governance)')
     )
   })
 

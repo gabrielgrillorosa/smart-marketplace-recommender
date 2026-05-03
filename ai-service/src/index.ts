@@ -108,6 +108,7 @@ export async function start(): Promise<void> {
       neo4jRepository: repo,
       modelTrainer,
       trainingJobRegistry,
+      m22Env: ENV.M22_ENV,
       logger: fastify.log,
       trainingDataProbeAttempts: 6,
       trainingDataProbeDelayMs: 5_000,
@@ -211,8 +212,8 @@ export async function start(): Promise<void> {
     await autoSeedService.runIfNeeded()
 
     // Step 10: Start accepting traffic and schedule self-healing only after listen().
-    // When AUTO_HEAL_MODEL: always run StartupRecovery (gap-fill embeddings in Neo4j even if a model
-    // is already on disk; enqueue train only when no model is loaded).
+    // When AUTO_HEAL_MODEL: gap-fill embeddings even when a model exists; enqueue train when no model
+    // or when loaded checkpoint architecture does not match `M22_*` desired architecture.
     await listenAndScheduleRecovery(fastify, {
       autoHealModel: ENV.AUTO_HEAL_MODEL,
       embeddingService,

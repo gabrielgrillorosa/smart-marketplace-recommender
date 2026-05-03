@@ -117,11 +117,16 @@ export interface TrainJobResponse {
 }
 
 export interface TrainStatusResponse {
+  jobId?: string;
   status: 'queued' | 'running' | 'done' | 'failed';
-  epoch: number;
-  totalEpochs: number;
-  loss: number | null;
-  eta: number | null;
+  epoch?: number;
+  totalEpochs?: number;
+  loss?: number | null;
+  eta?: number | null;
+  /** Present when terminal (ai-service TrainingJob). */
+  error?: string;
+  /** Whether governance promoted the new checkpoint to `current`. */
+  promoted?: boolean;
 }
 
 export interface PurchaseSummary {

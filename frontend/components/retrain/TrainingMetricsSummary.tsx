@@ -24,6 +24,19 @@ function dash(value: string | number | undefined | null): string {
   return String(value);
 }
 
+/** Labels for `VersionedModelStore` / governance reason codes (API may send raw snake_case). */
+function formatGovernanceReason(reason: string): string {
+  const map: Record<string, string> = {
+    candidate_below_tolerance_gate:
+      'Candidato abaixo do limiar de P@5 (com tolerância configurada)',
+    no_current_precision_baseline: 'Primeira promoção sem linha de base P@5 anterior',
+    candidate_within_tolerance_band: 'Dentro da banda de tolerância frente ao modelo activo',
+    architecture_change_skip_numeric_gate:
+      'Mudança de arquitectura — P@5 não comparável; promoção sem gate numérico',
+  };
+  return map[reason] ?? reason;
+}
+
 /**
  * Tabela de métricas do último treino / estado do modelo.
  * Mantém-se sempre visível quando há `status` da API (usa «—» para campos ausentes).
@@ -38,6 +51,8 @@ export function TrainingMetricsSummary({ status, metricsSyncActive }: TrainingMe
       </p>
     );
   }
+
+  const decision = status.lastDecision;
 
   const rows: { label: string; value: string }[] = [
     { label: 'Estado (serviço)', value: formatModelStatus(status.status) },
@@ -68,6 +83,17 @@ export function TrainingMetricsSummary({ status, metricsSyncActive }: TrainingMe
           : '—',
     },
   ];
+
+  if (decision && decision.accepted === false) {
+    rows.push(
+      { label: 'Promoção do último candidato', value: 'Não promovido — mantém-se o checkpoint activo' },
+      { label: 'Motivo (governação)', value: formatGovernanceReason(decision.reason) },
+      {
+        label: 'P@5 (activo vs candidato)',
+        value: `${decision.currentPrecisionAt5.toFixed(4)} vs ${decision.candidatePrecisionAt5.toFixed(4)} (tol. ${decision.tolerance.toFixed(4)})`,
+      }
+    );
+  }
 
   return (
     <section

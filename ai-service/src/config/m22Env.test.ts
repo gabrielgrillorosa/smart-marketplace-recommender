@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { assertM22EnvCombinationsOrThrow, parseM22EnvFlags } from './m22Env.js'
+import {
+  assertM22EnvCombinationsOrThrow,
+  desiredModelArchitectureFromM22Env,
+  parseM22EnvFlags,
+} from './m22Env.js'
 
 describe('M22 env', () => {
   it('parses defaults as all false', () => {
@@ -17,6 +21,21 @@ describe('M22 env', () => {
         identity: true,
       })
     ).toThrow(/M22_IDENTITY/)
+  })
+
+  it('desiredModelArchitectureFromM22Env matches trainer gate (enabled && structural => m22)', () => {
+    expect(desiredModelArchitectureFromM22Env({ enabled: true, structural: true, identity: false })).toBe(
+      'm22'
+    )
+    expect(desiredModelArchitectureFromM22Env({ enabled: true, structural: false, identity: false })).toBe(
+      'baseline'
+    )
+    expect(desiredModelArchitectureFromM22Env({ enabled: false, structural: true, identity: false })).toBe(
+      'baseline'
+    )
+    expect(desiredModelArchitectureFromM22Env({ enabled: false, structural: false, identity: false })).toBe(
+      'baseline'
+    )
   })
 
   it('allows identity with structural', () => {

@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from 'fastify'
+import { desiredModelArchitectureFromM22Env, type M22EnvFlags } from '../config/m22Env.js'
 import { Neo4jUnavailableError, Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { TrainingJobRegistry } from './TrainingJobRegistry.js'
 import {
@@ -17,7 +18,7 @@ export type StartupRecoveryBlockedReason =
   | 'training-failed'
 
 export type StartupRecoveryState =
-  | { phase: 'idle'; reason: 'not-started' | 'model-present' | 'disabled' }
+  | { phase: 'idle'; reason: 'not-started' | 'model-present-compatible' | 'disabled' }
   | { phase: 'scheduled' }
   | { phase: 'embedding' }
   | { phase: 'training'; jobId: string }
@@ -31,6 +32,8 @@ interface StartupRecoveryServiceOptions {
   neo4jRepository: Neo4jRepository
   modelTrainer: ModelTrainer
   trainingJobRegistry: TrainingJobRegistry
+  /** Declared architecture from `M22_*` — must match loaded checkpoint or recovery enqueues training. */
+  m22Env: M22EnvFlags
   logger?: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'>
   scheduleTask?: (fn: () => void) => void
   trainingDataProbeAttempts?: number
@@ -99,11 +102,18 @@ export class StartupRecoveryService {
       }
 
       if (this.options.versionedModelStore.getModel() !== null) {
-        this.options.logger?.info(
-          '[StartupRecovery] Model already loaded — skipped retrain after embedding check'
+        const desired = desiredModelArchitectureFromM22Env(this.options.m22Env)
+        const loaded = this.options.versionedModelStore.getModelArchitecture()
+        if (loaded === desired) {
+          this.options.logger?.info(
+            `[StartupRecovery] Loaded checkpoint (${loaded}) matches M22_* desired architecture (${desired}) — skipped retrain after embedding check`
+          )
+          this.state = { phase: 'idle', reason: 'model-present-compatible' }
+          return
+        }
+        this.options.logger?.warn(
+          `[StartupRecovery] Checkpoint architecture (${loaded}) does not match env-desired (${desired}) — scheduling retrain`
         )
-        this.state = { phase: 'idle', reason: 'model-present' }
-        return
       }
 
       const probe = await this.probeTrainingDataAvailability()
@@ -125,9 +135,22 @@ export class StartupRecoveryService {
       const terminalJob = await this.options.trainingJobRegistry.waitFor(jobId)
       const modelWasRecovered = this.options.versionedModelStore.getModel() !== null
 
-      if (!terminalJob || terminalJob.status === 'failed' || !modelWasRecovered) {
+      if (!terminalJob || !modelWasRecovered) {
         this.state = { phase: 'blocked', reason: 'training-failed', jobId }
         return
+      }
+
+      if (terminalJob.status === 'failed') {
+        const governanceOnlyRejection = terminalJob.promoted === false
+        if (governanceOnlyRejection) {
+          this.options.logger?.warn(
+            '[StartupRecovery] Retrain completed but new checkpoint was not promoted (governance). ' +
+              'Keeping the currently loaded model; service may remain on baseline until the next successful promotion.'
+          )
+        } else {
+          this.state = { phase: 'blocked', reason: 'training-failed', jobId }
+          return
+        }
       }
 
       this.state = { phase: 'completed', jobId, recoveredAt: new Date().toISOString() }

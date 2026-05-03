@@ -203,6 +203,8 @@ export interface TrainingJob {
   error?: string
   startedAt?: string
   completedAt?: string
+  /** Present when terminal: whether governance promoted the new checkpoint to `current`. */
+  promoted?: boolean
 }
 
 export interface ModelHistoryEntry {

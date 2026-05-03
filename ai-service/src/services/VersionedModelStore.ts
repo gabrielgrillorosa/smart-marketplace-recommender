@@ -65,6 +65,12 @@ export interface SaveVersionedContext {
   orderId?: string
 }
 
+export interface SaveVersionedOutcome {
+  promoted: boolean
+  /** Set when `promoted` is false (governance / precision gate). */
+  rejectReason?: string
+}
+
 export class VersionedModelStore extends ModelStore {
   private currentVersion: string | null = null
   private lastTrainingResult: LastTrainingResult | null = null
@@ -80,7 +86,7 @@ export class VersionedModelStore extends ModelStore {
     model: tf.LayersModel,
     result: TrainingResult,
     context: SaveVersionedContext
-  ): Promise<void> {
+  ): Promise<SaveVersionedOutcome> {
     await this.fsPort.mkdir(MODEL_DIR, { recursive: true })
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -110,11 +116,26 @@ export class VersionedModelStore extends ModelStore {
     const hasCurrentPrecision = status.status === 'trained' && typeof status.precisionAt5 === 'number'
     const currentPrecisionAt5 = hasCurrentPrecision ? status.precisionAt5 ?? 0 : 0
 
+    const candidateArch: ModelArchitectureKind =
+      result.modelArchitecture ?? (result.m22ItemManifest ? 'm22' : 'baseline')
+    const loadedArch = this.getModelArchitecture()
+
+    /** P@5 is only comparable across training jobs with the same checkpoint architecture. */
+    const architectureDiffers =
+      hasCurrentPrecision && loadedArch !== candidateArch
+
     let accepted = false
     let reason = 'no_current_precision_baseline'
 
     if (!hasCurrentPrecision) {
       accepted = true
+    } else if (architectureDiffers) {
+      accepted = true
+      reason = 'architecture_change_skip_numeric_gate'
+      console.info(
+        `[VersionedModelStore] Promoting without P@5 gate: architecture ${loadedArch} → ${candidateArch} ` +
+          '(offline metrics are not comparable across architectures)'
+      )
     } else if (candidatePrecisionAt5 >= currentPrecisionAt5 - tolerance) {
       accepted = true
       reason = 'candidate_within_tolerance_band'
@@ -164,6 +185,7 @@ export class VersionedModelStore extends ModelStore {
         `${JSON.stringify(persisted, null, 2)}\n`,
         'utf8'
       )
+      console.info(`[VersionedModelStore] Promoted checkpoint architecture=${arch} (${filename})`)
     } else {
       this.lastTrainingResult = 'rejected'
       this.lastDecision = {
@@ -180,6 +202,10 @@ export class VersionedModelStore extends ModelStore {
     }
 
     await this.pruneHistory()
+    return {
+      promoted: accepted,
+      rejectReason: accepted ? undefined : reason,
+    }
   }
 
   private async _loadM22ManifestSafe(modelDir: string): Promise<M22ItemManifest | null> {

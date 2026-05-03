@@ -108,11 +108,22 @@ export class TrainingJobRegistry {
 
     try {
       const result = await this.modelTrainer.train()
-      await this.versionedModelStore.saveVersioned(result.model, result, context)
+      const outcome = await this.versionedModelStore.saveVersioned(result.model, result, context)
+      if (!outcome.promoted) {
+        const detail = outcome.rejectReason ? ` (${outcome.rejectReason})` : ''
+        this._updateJob(jobId, {
+          status: 'failed',
+          completedAt: new Date().toISOString(),
+          error: `Training completed but checkpoint was not promoted to current${detail}`,
+          promoted: false,
+        })
+        return
+      }
       this._updateJob(jobId, {
         status: 'done',
         completedAt: new Date().toISOString(),
         loss: result.finalLoss,
+        promoted: true,
       })
       try {
         await this.afterTrainSuccess?.()

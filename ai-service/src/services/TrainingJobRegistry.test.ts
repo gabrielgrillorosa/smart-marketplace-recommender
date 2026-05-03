@@ -29,7 +29,7 @@ const makeTrainer = (opts: { isTraining?: boolean; shouldFail?: boolean } = {}) 
 }
 
 const makeVersionedModelStore = () => ({
-  saveVersioned: vi.fn(async () => {}),
+  saveVersioned: vi.fn(async () => ({ promoted: true })),
   markTrainingFailed: vi.fn(),
 })
 
@@ -91,6 +91,39 @@ describe('TrainingJobRegistry', () => {
     })
 
     expect(queued.status).toBe('queued')
+  })
+
+  it('job transitions queued → running → failed when governance rejects promotion', async () => {
+    const rejectingStore = {
+      saveVersioned: vi.fn(async () => ({
+        promoted: false,
+        rejectReason: 'candidate_below_tolerance_gate',
+      })),
+      markTrainingFailed: vi.fn(),
+    }
+    const rejectingRegistry = new TrainingJobRegistry(
+      trainer as unknown as import('../services/ModelTrainer.js').ModelTrainer,
+      rejectingStore as unknown as import('../services/VersionedModelStore.js').VersionedModelStore,
+    )
+
+    const { jobId } = rejectingRegistry.enqueue()
+
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        const job = rejectingRegistry.getJob(jobId)
+        if (job?.status === 'failed') {
+          clearInterval(check)
+          resolve()
+        }
+      }, 10)
+    })
+
+    const job = rejectingRegistry.getJob(jobId)
+    expect(job?.status).toBe('failed')
+    expect(job?.promoted).toBe(false)
+    expect(job?.error).toContain('not promoted')
+    expect(job?.error).toContain('candidate_below_tolerance_gate')
+    expect(job?.completedAt).toBeTruthy()
   })
 
   it('job transitions queued → running → done when train() resolves', async () => {
