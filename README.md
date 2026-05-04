@@ -33,22 +33,6 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 
 ---
 
-### Reader map (no `.specs` folder required)
-
-You do **not** need the internal `.specs/` tree to run or understand this system. This README and [`ai-service/README.md`](ai-service/README.md) are self-contained.
-
-**Module C** is the product name for the optional **dual item path**: dense semantic embeddings **(A)**, sparse catalog priors **(B)** (brand, category, subcategory, price bucket), and optional per-`product_id` memorisation **(C)**, fused with the profile vector **u** before the neural logit. The implementation still uses **`M22_*` environment variables** and **`m22-item-manifest.json`** beside promoted checkpoints — those identifiers are historical names in code and Docker, not a requirement to read any ADR file.
-
-| Reader term | Code / env | Role |
-|-------------|------------|------|
-| **Module C** | `M22_ENABLED`, `M22_STRUCTURAL`, `M22_IDENTITY`, `predictM22HybridScores`, `m22-item-manifest.json` | Fusion `f(u, e_sem, e_struct, e_id)` for the neural branch; **`semanticScore`** remains **`cosine(u, e_sem)`**. |
-| Recency (phased) | `RECENCY_*`, `PROFILE_POOLING_*` | **P1:** optional re-rank after hybrid score. **P2:** one shared profile builder for training, `/recommend`, and eval. **P3:** temporal attention inside the MLP — **not implemented** yet. |
-| Hybrid blend | `NEURAL_WEIGHT`, `SEMANTIC_WEIGHT` | Weighted sum of neural and semantic scalars (defaults 60/40). |
-
-The **Architecture decision index** at the end lists **ADR-###** labels as one-line mnemonics for traceability only (no links into `.specs`).
-
----
-
 ## Overview
 
 Smart Marketplace Recommender solves the cold-start and relevance problems in B2B marketplace recommendation — where traditional collaborative filtering fails because purchase history is sparse and product descriptions matter as much as behavioral patterns.
@@ -631,36 +615,36 @@ See [`.env.example`](.env.example): **`RECENCY_RERANK_WEIGHT`**, **`RECENCY_ANCH
 
 ## Profile pooling and neural head
 
-Esta secção resume **dois eixos ortogonais** que confundem-se facilmente:
+This section summarizes **two orthogonal axes** that are often mixed together:
 
-| Eixo | Variável principal | O que muda |
+| Axis | Primary variable | What changes |
 |------|-------------------|------------|
-| **Vector do cliente p** (antes do MLP) | `PROFILE_POOLING_MODE` | Como compras anteriores (e carrinho) são agregadas num único vector 384d. |
-| **Como a rede aprende o score neural** | `NEURAL_LOSS_MODE` (+ manifesto em disco) | Cabeça **BCE + sigmoide** vs **linear + loss pairwise**; em inferência usa-se `neural-head.json` junto ao checkpoint. |
+| **Client vector p** (before the MLP) | `PROFILE_POOLING_MODE` | How previous purchases (and cart items) are aggregated into a single 384d vector. |
+| **How the network learns the neural score** | `NEURAL_LOSS_MODE` (+ on-disk manifest) | **BCE + sigmoid** head vs **linear + pairwise ranking loss**; inference uses `neural-head.json` from the checkpoint. |
 
-Detalhe operacional e envs: [`ai-service/README.md`](ai-service/README.md), [`.env.example`](.env.example).
+Operational details and environment variables: [`ai-service/README.md`](ai-service/README.md), [`.env.example`](.env.example).
 
-### Modos de profile pooling (`PROFILE_POOLING_MODE`)
+### Profile pooling modes (`PROFILE_POOLING_MODE`)
 
-Todos passam pela mesma função **`aggregateClientProfileEmbeddings`** (`ai-service/src/profile/clientProfileAggregation.ts`) — treino, `POST /recommend`, `POST /recommend/from-cart` e avaliação offline partilham o mesmo runtime injectado (`ProfilePoolingRuntime`).
+All modes use the same function **`aggregateClientProfileEmbeddings`** (`ai-service/src/profile/clientProfileAggregation.ts`) — training, `POST /recommend`, `POST /recommend/from-cart`, and offline evaluation share the same injected runtime (`ProfilePoolingRuntime`).
 
-| Modo | Nome no env | Ideia |
+| Mode | Env name | Core idea |
 |------|--------------|--------|
-| **Média** | `mean` | Média aritmética dos embeddings das compras na janela — legado, pesos uniformes. |
-| **Exponencial** | `exp` | Média ponderada por **`exp(−Δ/τ)`** com **τ = H / ln 2**, **H** = `PROFILE_POOLING_HALF_LIFE_DAYS`; compras recentes pesam mais. |
-| **Attention light** | `attention_light` | Softmax sobre logits de **recência** (−Δ/τ); temperatura opcional (`PROFILE_POOLING_ATTENTION_*`). Temperatura infinita / omitida ⇒ pesos uniformes na janela (**equivalente à média** sobre o mesmo multiconjunto). |
-| **Attention learned** | `attention_learned` | Softmax com logits **`w·e + b − λΔ/τ`** (pesos **`w`**, bias **`b`**, **`λ`**) lidos de JSON gerido pelo serviço; recarrega após treino bem-sucedido quando aplicável. |
+| **Mean** | `mean` | Arithmetic mean of purchase embeddings in the window — legacy behavior with uniform weights. |
+| **Exponential** | `exp` | Weighted mean using **`exp(−Δ/τ)`**, with **τ = H / ln 2** and **H** = `PROFILE_POOLING_HALF_LIFE_DAYS`; recent purchases get higher weight. |
+| **Attention light** | `attention_light` | Softmax over **recency** logits (−Δ/τ), with optional temperature (`PROFILE_POOLING_ATTENTION_*`). Infinite/omitted temperature => uniform weights in the window (**equivalent to mean** over the same multiset). |
+| **Attention learned** | `attention_learned` | Softmax with logits **`w·e + b − λΔ/τ`** (weights **`w`**, bias **`b`**, **`λ`**) loaded from service-managed JSON; reloaded after successful training when applicable. |
 
 ```mermaid
 flowchart TD
-    START([🧩 Compras + embeddings\n+ recência Δ]) --> MODE{PROFILE_POOLING_MODE}
+    START([🧩 Purchases + embeddings\n+ recency Δ]) --> MODE{PROFILE_POOLING_MODE}
 
-    MODE -->|mean| M["📊 Média aritmética\npesos uniformes"]
-    MODE -->|exp| E["📉 Peso exp−Δ/τ\nhalf-life H"]
-    MODE -->|attention_light| AL["🔆 Softmax só recência\n−Δ/τ · T opcional"]
-    MODE -->|attention_learned| ALR["🎯 Softmax aprendida\nw·e + b − λΔ/τ\n+ JSON em disco"]
+    MODE -->|mean| M["📊 Arithmetic mean\nuniform weights"]
+    MODE -->|exp| E["📉 exp−Δ/τ weighting\nhalf-life H"]
+    MODE -->|attention_light| AL["🔆 Recency-only softmax\n−Δ/τ · optional T"]
+    MODE -->|attention_learned| ALR["🎯 Learned softmax\nw·e + b − λΔ/τ\n+ on-disk JSON"]
 
-    M --> P["👤 Vector perfil p\n384d"]
+    M --> P["👤 Client vector p\n384d"]
     E --> P
     AL --> P
     ALR --> P
@@ -678,22 +662,22 @@ flowchart TD
     class P out
 ```
 
-### Cabeça de treino: BCE vs pairwise (`NEURAL_LOSS_MODE`)
+### Training head: BCE vs pairwise (`NEURAL_LOSS_MODE`)
 
-- **`NEURAL_LOSS_MODE=bce`** (por omissão): cabeça com **sigmoide** e **binary cross-entropy** sobre pares (cliente, produto) como classificação binária — métricas tipo **accuracy** e **loss** são as habituais para BCE.
-- **`NEURAL_LOSS_MODE=pairwise`**: última camada **linear** + **loss de ranking** sobre linhas empilhadas positivo/negativo; **não** comparar numericamente loss/accuracy com corridas BCE. Foque **P@5** e ordem relativa.
-- **Inferência:** cada versão promovida grava **`neural-head.json`** (`bce_sigmoid` vs `ranking_linear`). O `RecommendationService` mapeia o output bruto para o mesmo intervalo híbrido (ex. sigmoid em logits lineares). Modelos antigos sem manifesto assumem **BCE**.
+- **`NEURAL_LOSS_MODE=bce`** (default): sigmoid head with **binary cross-entropy** over (client, product) pairs as binary classification. Metrics such as **accuracy** and **loss** follow standard BCE interpretation.
+- **`NEURAL_LOSS_MODE=pairwise`**: final **linear** layer with **pairwise ranking loss** over stacked positive/negative rows. Do **not** compare loss/accuracy numerically against BCE runs; focus on **P@5** and relative ordering.
+- **Inference:** each promoted version stores **`neural-head.json`** (`bce_sigmoid` vs `ranking_linear`). `RecommendationService` maps raw output to the same hybrid scalar range (for example, sigmoid over linear logits). Legacy checkpoints without a manifest default to **BCE** semantics.
 
 ```mermaid
 flowchart LR
-    subgraph Treino
+    subgraph Training
       ENV["NEURAL_LOSS_MODE\nbce · pairwise"] --> MT["ModelTrainer\ncompile + fit"]
       MT --> ART["Checkpoint +\nneural-head.json"]
     end
 
-    subgraph Inferência
-      ART --> RD["Ler cabeça activa"]
-      RD --> MAP["toHybridNeuralScalar\nlogit → escalar híbrido"]
+    subgraph Inference
+      ART --> RD["Read active head"]
+      RD --> MAP["toHybridNeuralScalar\nlogit → hybrid scalar"]
       MAP --> HYB["0.6·neural + 0.4·semantic"]
     end
 
@@ -708,7 +692,7 @@ flowchart LR
     class RD,MAP,HYB inf
 ```
 
-**Frontend:** a coluna de métricas mostra **«Cabeça do modelo»** com o mesmo significado que `GET /model/status` → `neuralHeadKind`.
+**Frontend:** the metrics column shows **"Model head"**, matching `GET /model/status` -> `neuralHeadKind`.
 
 ---
 
@@ -781,7 +765,7 @@ An explicit **ToT** compared: path **A** (**B** and **C** disjoint embedding tab
 | **B — Structural prior** | Brand, category, taxonomy, price band — **no** `product_id` here | Separate embedding tables → concatenated **e_struct** (manifest vocabularies + stable **price_bin_edges**). |
 | **C — Identity (optional)** | Memorise interactions per **`product_id`** | Separate embedding table from **B**; **OOV** index when unknown or when **`M22_IDENTITY=false`**. Extractor keeps **`idKey`** disjoint from structural keys (`itemSparseFeatureExtractor.ts`). |
 
-Further reading in-repo (no `.specs` required): [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
+Further in-repo reading: [docs/diagrams/m22-m21-neural-ranking-architecture.md](docs/diagrams/m22-m21-neural-ranking-architecture.md).
 
 ### End-to-end flow — user profile + Module C item path + hybrid
 
@@ -1427,7 +1411,7 @@ With 52 products and clients buying ~10 on average, the model sees ~80% negative
 
 ## Architecture decision index
 
-The table below lists **ADR-###** identifiers as **short mnemonics** for decisions already described in this README and in code comments. **You do not need any `.specs/` folder** to operate or extend the system; maintainers may keep parallel design notes elsewhere if they choose.
+The table below lists **ADR-###** identifiers as **short mnemonics** for decisions already described in this README and in code comments.
 
 | ADR | Feature | Decision |
 |-----|---------|---------|
