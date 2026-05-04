@@ -1,5 +1,4 @@
 import * as tf from '@tensorflow/tfjs-node'
-import { execSync } from 'node:child_process'
 import { Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { fetchTrainingData } from '../services/training-data-fetch.js'
 import { buildTrainingDataset, seedFromClientIds } from '../services/training-utils.js'
@@ -7,62 +6,12 @@ import { buildClientPurchaseTemporalMap } from '../services/training-temporal-ma
 import { buildNeuralModel, type NeuralArchProfile } from '../ml/neuralModelFactory.js'
 import { summarizeBinaryMetrics } from '../ml/binaryClassificationMetrics.js'
 import { computePrecisionAtK } from '../ml/rankingEval.js'
+import { ALL_POOLING_MODES, readValLogs, stratifiedTrainValIndices, tryGitHead } from './benchmarkShared.js'
+import { buildProfilePoolingRuntimeFromEnv } from '../config/profilePoolingEnv.js'
+import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 
 const EPOCHS = 30
 const BATCH_SIZE = 16
-
-function lcgNext(state: number): number {
-  return (state * 1664525 + 1013904223) & 0xffffffff
-}
-
-function shuffleInPlace(arr: number[], seed: number): void {
-  let state = seed
-  for (let i = arr.length - 1; i > 0; i--) {
-    state = lcgNext(state)
-    const j = Math.abs(state) % (i + 1)
-    ;[arr[i], arr[j]] = [arr[j], arr[i]]
-  }
-}
-
-function stratifiedTrainValIndices(
-  labels: number[],
-  valFraction: number,
-  seed: number
-): { train: number[]; val: number[] } {
-  const idx0: number[] = []
-  const idx1: number[] = []
-  for (let i = 0; i < labels.length; i++) {
-    if (labels[i] === 0) idx0.push(i)
-    else idx1.push(i)
-  }
-
-  function splitClass(classIdx: number[], s: number): { train: number[]; val: number[] } {
-    if (classIdx.length === 0) return { train: [], val: [] }
-    const sh = [...classIdx]
-    shuffleInPlace(sh, s)
-    if (sh.length === 1) return { train: [...sh], val: [] }
-    const nVal = Math.max(1, Math.min(sh.length - 1, Math.round(sh.length * valFraction)))
-    return { val: sh.slice(0, nVal), train: sh.slice(nVal) }
-  }
-
-  const a = splitClass(idx0, seed)
-  const b = splitClass(idx1, seed + 1_000_003)
-  return {
-    train: [...a.train, ...b.train],
-    val: [...a.val, ...b.val],
-  }
-}
-
-function tryGitHead(candidates: string[]): string | null {
-  for (const cwd of candidates) {
-    try {
-      return execSync('git rev-parse HEAD', { encoding: 'utf8', cwd }).trim()
-    } catch {
-      /* try next */
-    }
-  }
-  return null
-}
 
 function predictProbsSync(model: tf.LayersModel, xs: tf.Tensor2D): number[] {
   return tf.tidy(() => {
@@ -71,16 +20,9 @@ function predictProbsSync(model: tf.LayersModel, xs: tf.Tensor2D): number[] {
   })
 }
 
-function readValLogs(logs: tf.Logs | undefined): { valLoss: number | undefined; valAcc: number | undefined } {
-  if (!logs) return { valLoss: undefined, valAcc: undefined }
-  const valLoss = typeof logs.val_loss === 'number' ? logs.val_loss : undefined
-  const valAccRaw = logs.val_acc ?? logs.val_accuracy
-  const valAcc = typeof valAccRaw === 'number' ? valAccRaw : undefined
-  return { valLoss, valAcc }
-}
-
 export interface BenchmarkRunRow {
   profile: NeuralArchProfile
+  poolingMode: ProfilePoolingMode
   trainableParams: number
   trainingSamples: number
   trainRows: number
@@ -109,20 +51,25 @@ export interface BenchmarkReport {
     batchSize: number
     classWeight: Record<string, number>
     valFraction: number
+    poolingMode: ProfilePoolingMode
+    poolingHalfLifeDays: number
+    poolingModesTested: ProfilePoolingMode[]
   }
   runs: BenchmarkRunRow[]
 }
 
-const DEFAULT_PROFILES: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64']
+const DEFAULT_PROFILES: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
 
 export async function runNeuralArchBenchmark(options: {
   apiServiceUrl: string
   neo4jRepo: Neo4jRepository
   profiles?: NeuralArchProfile[]
+  poolingModes?: ProfilePoolingMode[]
   valFraction?: number
   gitCwdCandidates?: string[]
 }): Promise<BenchmarkReport> {
   const profiles = options.profiles ?? DEFAULT_PROFILES
+  const poolingModes = options.poolingModes ?? [buildProfilePoolingRuntimeFromEnv(process.env).mode]
   const valFraction = options.valFraction ?? 0.2
   const gitCandidates = options.gitCwdCandidates ?? [process.cwd(), `${process.cwd()}/../..`]
 
@@ -135,39 +82,42 @@ export async function runNeuralArchBenchmark(options: {
   const temporal = buildClientPurchaseTemporalMap(orders)
 
   const datasetSeed = seedFromClientIds(clients)
-  const { inputVectors, labels } = buildTrainingDataset(
-    clients,
-    temporal.clientPurchasedProducts,
-    productEmbeddingMap,
-    products,
-    {
-      negativeSamplingRatio: 4,
-      seed: datasetSeed,
-      useClassWeight: true,
-    },
-    temporal,
-    { mode: 'mean', halfLifeDays: 30 }
-  )
-
-  if (inputVectors.length === 0) {
-    throw new Error('No training samples — cannot benchmark')
-  }
-  if (inputVectors[0]?.length !== 768) {
-    throw new Error(`Expected input dimension 768, got ${inputVectors[0]?.length ?? 0}`)
-  }
-
-  const { train, val } = stratifiedTrainValIndices(labels, valFraction, datasetSeed + 42)
-  if (val.length === 0) {
-    throw new Error('Validation split is empty — increase data or lower valFraction')
-  }
-
-  const valLabels = val.map((i) => labels[i]!)
-  const nValPos = valLabels.filter((y) => y === 1).length
-  const nValNeg = valLabels.length - nValPos
-
   const runs: BenchmarkRunRow[] = []
+  for (const poolingMode of poolingModes) {
+    const poolingRuntime = buildProfilePoolingRuntimeFromEnv({
+      ...process.env,
+      PROFILE_POOLING_MODE: poolingMode,
+    })
+    const { inputVectors, labels } = buildTrainingDataset(
+      clients,
+      temporal.clientPurchasedProducts,
+      productEmbeddingMap,
+      products,
+      {
+        negativeSamplingRatio: 4,
+        seed: datasetSeed,
+        useClassWeight: true,
+      },
+      temporal,
+      poolingRuntime
+    )
 
-  for (const profile of profiles) {
+    if (inputVectors.length === 0) {
+      throw new Error('No training samples — cannot benchmark')
+    }
+    if (inputVectors[0]?.length !== 768) {
+      throw new Error(`Expected input dimension 768, got ${inputVectors[0]?.length ?? 0}`)
+    }
+
+    const { train, val } = stratifiedTrainValIndices(labels, valFraction, datasetSeed + 42)
+    if (val.length === 0) {
+      throw new Error('Validation split is empty — increase data or lower valFraction')
+    }
+
+    const valLabels = val.map((i) => labels[i]!)
+    const nValPos = valLabels.filter((y) => y === 1).length
+    const nValNeg = valLabels.length - nValPos
+    for (const profile of profiles) {
     const notes: string[] = []
     if (nValPos === 0 || nValNeg === 0) {
       notes.push('Validation set missing a class — AUC metrics omitted')
@@ -250,7 +200,7 @@ export async function runNeuralArchBenchmark(options: {
 
     let precisionAt5 = 0
     try {
-      precisionAt5 = computePrecisionAtK(clients, orders, productEmbeddingMap, model)
+      precisionAt5 = computePrecisionAtK(clients, orders, productEmbeddingMap, model, 5, poolingRuntime)
     } catch (e) {
       notes.push(`precisionAt5 failed: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -265,6 +215,7 @@ export async function runNeuralArchBenchmark(options: {
 
     runs.push({
       profile,
+      poolingMode: poolingRuntime.mode,
       trainableParams,
       trainingSamples: inputVectors.length,
       trainRows: trainIdx.length,
@@ -282,6 +233,7 @@ export async function runNeuralArchBenchmark(options: {
       precisionAt5,
       notes,
     })
+    }
   }
 
   return {
@@ -298,6 +250,12 @@ export async function runNeuralArchBenchmark(options: {
       batchSize: BATCH_SIZE,
       classWeight: { 0: 1, 1: 4 },
       valFraction,
+      poolingMode: poolingModes[0] ?? ALL_POOLING_MODES[0],
+      poolingHalfLifeDays: buildProfilePoolingRuntimeFromEnv({
+        ...process.env,
+        PROFILE_POOLING_MODE: poolingModes[0] ?? ALL_POOLING_MODES[0],
+      }).halfLifeDays,
+      poolingModesTested: poolingModes,
     },
     runs,
   }

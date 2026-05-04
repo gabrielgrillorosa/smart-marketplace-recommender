@@ -95,7 +95,8 @@ export async function start(): Promise<void> {
       ENV.SEMANTIC_WEIGHT,
       profilePoolingHolder,
       ENV.NEURAL_LOSS_MODE,
-      ENV.M22_ENV
+      ENV.M22_ENV,
+      ENV.NEURAL_ARCH_PROFILE
     )
 
     // Step 6: TrainingJobRegistry

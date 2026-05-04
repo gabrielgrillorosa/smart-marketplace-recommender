@@ -1,5 +1,6 @@
 import * as tf from '@tensorflow/tfjs-node'
 import type { M22EnvFlags } from '../config/m22Env.js'
+import type { NeuralArchProfile } from '../ml/neuralModelFactory.js'
 import { ModelStore } from './ModelStore.js'
 import { BoughtSyncEdge, Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { EmbeddingService } from './EmbeddingService.js'
@@ -71,7 +72,8 @@ export class ModelTrainer {
     private readonly semanticWeight: number,
     private readonly profilePooling: ProfilePoolingRuntimeHolder,
     private readonly neuralLossMode: NeuralLossMode = 'bce',
-    private readonly m22Env: M22EnvFlags
+    private readonly m22Env: M22EnvFlags,
+    private readonly neuralArchProfile: NeuralArchProfile
   ) {}
 
   get isTraining(): boolean {
@@ -246,7 +248,7 @@ export class ModelTrainer {
           trainingSamples = pr.length
           m22FitTensors = m22InputTensorListFromRows(pr)
           ys = tf.ones([trainingSamples, 1])
-          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'pairwise')
+          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'pairwise', this.neuralArchProfile)
           model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
         } else {
           trainingSamples = rows.length
@@ -255,7 +257,7 @@ export class ModelTrainer {
             labels.map((l) => [l]),
             [trainingSamples, 1]
           )
-          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'bce')
+          model = buildM22HybridNeuralModel(m22Manifest.vocabSizes, 'bce', this.neuralArchProfile)
           model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
         }
       } else {
@@ -268,7 +270,7 @@ export class ModelTrainer {
           trainingSamples = rows.length
           xs = tf.tensor2d(rows, [trainingSamples, 768])
           ys = tf.ones([trainingSamples, 1])
-          model = buildNeuralModel('baseline', 'pairwise')
+          model = buildNeuralModel(this.neuralArchProfile, 'pairwise')
           model.compile({ optimizer: 'adam', loss: pairwiseRankingLoss, metrics: [] })
         } else {
           trainingSamples = inputVectors.length
@@ -277,7 +279,7 @@ export class ModelTrainer {
             labels.map((l) => [l]),
             [trainingSamples, 1]
           )
-          model = buildNeuralModel('baseline', 'bce')
+          model = buildNeuralModel(this.neuralArchProfile, 'bce')
           model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] })
         }
       }

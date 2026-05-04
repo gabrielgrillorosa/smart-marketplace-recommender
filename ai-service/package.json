@@ -12,6 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "benchmark:neural-arch": "npm run build && node dist/scripts/neural-arch-benchmark-cli.js",
+    "benchmark:m22": "npm run build && node dist/scripts/m22-arch-benchmark-cli.js",
+    "benchmark:matrix": "npm run build && node dist/scripts/benchmark-matrix-cli.js",
     "train:attention-pooling": "ts-node src/scripts/train-attention-pooling-cli.ts",
     "lint": "eslint 'src/**/*.ts'"
   },

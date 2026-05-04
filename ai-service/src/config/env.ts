@@ -2,6 +2,7 @@ import { parseRecencyAnchorCount, parseRecencyRerankWeight } from './recencyRera
 import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } from './profilePoolingEnv.js'
 import { parseNeuralLossMode } from './neuralLossEnv.js'
 import { parseM22EnvFlags, assertM22EnvCombinationsOrThrow, logM22EnvSummary } from './m22Env.js'
+import { parseNeuralArchProfileEnv } from './neuralArchEnv.js'
 
 const missingVars: string[] = []
 
@@ -95,6 +96,8 @@ if (PROFILE_POOLING_RUNTIME.mode === 'attention_learned') {
 
 const NEURAL_LOSS_MODE = parseNeuralLossMode(process.env.NEURAL_LOSS_MODE)
 console.info(`[ai-service] NEURAL_LOSS_MODE=${NEURAL_LOSS_MODE}`)
+const NEURAL_ARCH_PROFILE = parseNeuralArchProfileEnv(process.env.NEURAL_ARCH_PROFILE)
+console.info(`[ai-service] NEURAL_ARCH_PROFILE=${NEURAL_ARCH_PROFILE}`)
 
 const M22_ENV = Object.freeze(parseM22EnvFlags(process.env))
 assertM22EnvCombinationsOrThrow(M22_ENV)
@@ -135,5 +138,6 @@ export const ENV = Object.freeze({
   PROFILE_POOLING_ATTENTION_MAX_ENTRIES: PROFILE_POOLING_RUNTIME.attentionMaxEntries ?? 0,
   PROFILE_POOLING_RUNTIME,
   NEURAL_LOSS_MODE,
+  NEURAL_ARCH_PROFILE,
   M22_ENV,
 })

@@ -1,0 +1,104 @@
+{
+  "generatedAt": "2026-05-04T00:01:46.541Z",
+  "gitCommit": "2ccdcc29025302a0552695dc8a0efed1692597ce",
+  "apiServiceUrl": "http://127.0.0.1:8080",
+  "dataCounts": {
+    "clients": 20,
+    "products": 92,
+    "orders": 130
+  },
+  "hyperparams": {
+    "epochs": 30,
+    "batchSize": 16,
+    "classWeight": {
+      "0": 1,
+      "1": 4
+    },
+    "valFraction": 0.2,
+    "poolingMode": "attention_learned",
+    "poolingHalfLifeDays": 30
+  },
+  "runs": [
+    {
+      "scenario": "a",
+      "trainableParams": 51993,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "durationMs": 12009,
+      "bestEpoch": 17,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.6043548583984375,
+      "finalTrainAccuracy": 0.8675214052200317,
+      "finalValLoss": 0.4505753219127655,
+      "finalValAccuracy": 0.79756098985672,
+      "trainValLossGap": 0.153779536485672,
+      "valMetrics": {
+        "aucRoc": 0.8296470588235294,
+        "aucPr": 0.7103091013457699,
+        "brier": 0.14219728988932528,
+        "accuracyAt05": 0.7975609756097561,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.2780487804878049
+      },
+      "precisionAt5": 0.45,
+      "precisionAt5ColdSlice": 0,
+      "precisionAt5ColdClients": 0,
+      "precisionAt5GlobalClients": 20
+    },
+    {
+      "scenario": "ab",
+      "trainableParams": 51993,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "durationMs": 15829,
+      "bestEpoch": 30,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.534777045249939,
+      "finalTrainAccuracy": 0.8772894144058228,
+      "finalValLoss": 0.3975209593772888,
+      "finalValAccuracy": 0.8512195348739624,
+      "trainValLossGap": 0.13725608587265015,
+      "valMetrics": {
+        "aucRoc": 0.8502081447963801,
+        "aucPr": 0.7371137458067095,
+        "brier": 0.11713695279097712,
+        "accuracyAt05": 0.8512195121951219,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.22926829268292684
+      },
+      "precisionAt5": 0.6,
+      "precisionAt5ColdSlice": 0,
+      "precisionAt5ColdClients": 0,
+      "precisionAt5GlobalClients": 20
+    },
+    {
+      "scenario": "abc",
+      "trainableParams": 52729,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "durationMs": 15497,
+      "bestEpoch": 30,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.505389392375946,
+      "finalTrainAccuracy": 0.8876678943634033,
+      "finalValLoss": 0.403465211391449,
+      "finalValAccuracy": 0.8658536672592163,
+      "trainValLossGap": 0.10192418098449707,
+      "valMetrics": {
+        "aucRoc": 0.8250497737556561,
+        "aucPr": 0.7116314000008745,
+        "brier": 0.11191385517998273,
+        "accuracyAt05": 0.8658536585365854,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.18536585365853658
+      },
+      "precisionAt5": 0.5,
+      "precisionAt5ColdSlice": 0,
+      "precisionAt5ColdClients": 0,
+      "precisionAt5GlobalClients": 20
+    }
+  ]
+}

@@ -1,21 +1,33 @@
 /**
- * CLI: offline comparison of neural architectures (no model save, no HTTP server).
+ * CLI: offline benchmark for M22 scenarios A / A+B / A+B+C.
  *
  * Requires: API_SERVICE_URL, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
  *
  * Usage:
- *   npm run benchmark:neural-arch -- --out ./.benchmarks/nn-arch.json
- *   npm run benchmark:neural-arch -- --profiles baseline,deep64_32
+ *   npm run benchmark:m22 -- --out ./.benchmarks/m22-arch.json
+ *   npm run benchmark:m22 -- --scenarios ab,abc --val-fraction 0.2
  */
 import neo4j from 'neo4j-driver'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { ENV } from '../config/env.js'
 import { Neo4jRepository } from '../repositories/Neo4jRepository.js'
-import { runNeuralArchBenchmark } from '../benchmark/neuralArchBenchmark.js'
+import { runM22ArchBenchmark } from '../benchmark/m22ArchBenchmark.js'
 import type { NeuralArchProfile } from '../ml/neuralModelFactory.js'
 import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 
+type M22BenchmarkScenario = 'a' | 'ab' | 'abc'
+function parseProfiles(arg: string | undefined): NeuralArchProfile[] | undefined {
+  if (arg == null || arg === '') return undefined
+  const allowed: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
+  const list = arg.split(',').map((s) => s.trim()) as NeuralArchProfile[]
+  for (const p of list) {
+    if (!allowed.includes(p)) {
+      throw new Error(`Invalid profile "${p}". Use: ${allowed.join(', ')}`)
+    }
+  }
+  return list
+}
 function parsePoolingModes(arg: string | undefined): ProfilePoolingMode[] | undefined {
   if (arg == null || arg === '') return undefined
   const allowed: ProfilePoolingMode[] = ['mean', 'exp', 'attention_light', 'attention_learned']
@@ -28,13 +40,13 @@ function parsePoolingModes(arg: string | undefined): ProfilePoolingMode[] | unde
   return list
 }
 
-function parseProfiles(arg: string | undefined): NeuralArchProfile[] | undefined {
+function parseScenarios(arg: string | undefined): M22BenchmarkScenario[] | undefined {
   if (arg == null || arg === '') return undefined
-  const allowed: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
-  const list = arg.split(',').map((s) => s.trim()) as NeuralArchProfile[]
-  for (const p of list) {
-    if (!allowed.includes(p)) {
-      throw new Error(`Invalid profile "${p}". Use: ${allowed.join(', ')}`)
+  const allowed: M22BenchmarkScenario[] = ['a', 'ab', 'abc']
+  const list = arg.split(',').map((s) => s.trim()) as M22BenchmarkScenario[]
+  for (const s of list) {
+    if (!allowed.includes(s)) {
+      throw new Error(`Invalid scenario "${s}". Use: ${allowed.join(', ')}`)
     }
   }
   return list
@@ -42,11 +54,13 @@ function parseProfiles(arg: string | undefined): NeuralArchProfile[] | undefined
 
 function parseArgs(argv: string[]): {
   out?: string
+  scenarios?: M22BenchmarkScenario[]
   profiles?: NeuralArchProfile[]
   poolingModes?: ProfilePoolingMode[]
   valFraction?: number
 } {
   let out: string | undefined
+  let scenarios: M22BenchmarkScenario[] | undefined
   let profiles: NeuralArchProfile[] | undefined
   let poolingModes: ProfilePoolingMode[] | undefined
   let valFraction: number | undefined
@@ -54,6 +68,8 @@ function parseArgs(argv: string[]): {
     const a = argv[i]
     if (a === '--out' && argv[i + 1]) {
       out = argv[++i]
+    } else if (a === '--scenarios' && argv[i + 1]) {
+      scenarios = parseScenarios(argv[++i])
     } else if (a === '--profiles' && argv[i + 1]) {
       profiles = parseProfiles(argv[++i])
     } else if (a === '--pooling-modes' && argv[i + 1]) {
@@ -65,11 +81,11 @@ function parseArgs(argv: string[]): {
       }
     }
   }
-  return { out, profiles, poolingModes, valFraction }
+  return { out, scenarios, profiles, poolingModes, valFraction }
 }
 
 async function main(): Promise<void> {
-  const { out, profiles, poolingModes, valFraction } = parseArgs(process.argv)
+  const { out, scenarios, profiles, poolingModes, valFraction } = parseArgs(process.argv)
   const apiUrl = ENV.API_SERVICE_URL
   if (!apiUrl) {
     console.error('API_SERVICE_URL is not set. Export it to point at the API service.')
@@ -84,10 +100,11 @@ async function main(): Promise<void> {
   const repo = new Neo4jRepository(driver)
 
   try {
-    console.info('[neural-arch-benchmark] Starting run…')
-    const report = await runNeuralArchBenchmark({
+    console.info('[m22-arch-benchmark] Starting run…')
+    const report = await runM22ArchBenchmark({
       apiServiceUrl: apiUrl,
       neo4jRepo: repo,
+      scenarios,
       profiles,
       poolingModes,
       valFraction,
@@ -97,7 +114,7 @@ async function main(): Promise<void> {
     if (out) {
       mkdirSync(dirname(out), { recursive: true })
       writeFileSync(out, json, 'utf8')
-      console.info(`[neural-arch-benchmark] Wrote ${out}`)
+      console.info(`[m22-arch-benchmark] Wrote ${out}`)
     }
   } finally {
     await driver.close()
@@ -105,6 +122,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  console.error('[neural-arch-benchmark] Failed:', err)
+  console.error('[m22-arch-benchmark] Failed:', err)
   process.exit(1)
 })

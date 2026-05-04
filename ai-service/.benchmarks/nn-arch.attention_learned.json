@@ -1,0 +1,161 @@
+{
+  "generatedAt": "2026-05-04T01:43:42.358Z",
+  "gitCommit": "2ccdcc29025302a0552695dc8a0efed1692597ce",
+  "apiServiceUrl": "http://127.0.0.1:8080",
+  "dataCounts": {
+    "clients": 20,
+    "products": 92,
+    "orders": 130
+  },
+  "hyperparams": {
+    "epochs": 30,
+    "batchSize": 16,
+    "classWeight": {
+      "0": 1,
+      "1": 4
+    },
+    "valFraction": 0.2,
+    "poolingMode": "attention_learned",
+    "poolingHalfLifeDays": 30,
+    "poolingModesTested": [
+      "attention_learned"
+    ]
+  },
+  "runs": [
+    {
+      "profile": "baseline",
+      "poolingMode": "attention_learned",
+      "trainableParams": 49281,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 24.06298828125,
+      "durationMs": 11019,
+      "bestEpoch": 24,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.6065821647644043,
+      "finalTrainAccuracy": 0.8620268702507019,
+      "finalValLoss": 0.42679017782211304,
+      "finalValAccuracy": 0.8317072987556458,
+      "trainValLossGap": 0.17979198694229126,
+      "valMetrics": {
+        "aucRoc": 0.8390588235294117,
+        "aucPr": 0.700670942379347,
+        "brier": 0.1338728847167793,
+        "accuracyAt05": 0.8317073170731707,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.24390243902439024
+      },
+      "precisionAt5": 0.55,
+      "notes": []
+    },
+    {
+      "profile": "deep64_32",
+      "poolingMode": "attention_learned",
+      "trainableParams": 51329,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 25.06298828125,
+      "durationMs": 14135,
+      "bestEpoch": 29,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.35410431027412415,
+      "finalTrainAccuracy": 0.9285714626312256,
+      "finalValLoss": 0.3373032808303833,
+      "finalValAccuracy": 0.8780487775802612,
+      "trainValLossGap": 0.016801029443740845,
+      "valMetrics": {
+        "aucRoc": 0.8817737556561086,
+        "aucPr": 0.7951082305672083,
+        "brier": 0.09561022800407164,
+        "accuracyAt05": 0.8780487804878049,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.22195121951219512
+      },
+      "precisionAt5": 0.65,
+      "notes": []
+    },
+    {
+      "profile": "deep128_64",
+      "poolingMode": "attention_learned",
+      "trainableParams": 106753,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 52.12548828125,
+      "durationMs": 15951,
+      "bestEpoch": 28,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.31837937235832214,
+      "finalTrainAccuracy": 0.9474970102310181,
+      "finalValLoss": 0.28882595896720886,
+      "finalValAccuracy": 0.9195122122764587,
+      "trainValLossGap": 0.02955341339111328,
+      "valMetrics": {
+        "aucRoc": 0.9100090497737556,
+        "aucPr": 0.8342154760063659,
+        "brier": 0.07274066907495785,
+        "accuracyAt05": 0.9195121951219513,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.18048780487804877
+      },
+      "precisionAt5": 0.6,
+      "notes": []
+    },
+    {
+      "profile": "deep256",
+      "poolingMode": "attention_learned",
+      "trainableParams": 238081,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 116.25048828125,
+      "durationMs": 14387,
+      "bestEpoch": 12,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.4883171021938324,
+      "finalTrainAccuracy": 0.8766788840293884,
+      "finalValLoss": 0.37886035442352295,
+      "finalValAccuracy": 0.8365853428840637,
+      "trainValLossGap": 0.10945674777030945,
+      "valMetrics": {
+        "aucRoc": 0.8779366515837104,
+        "aucPr": 0.7683094664734395,
+        "brier": 0.11724191864958189,
+        "accuracyAt05": 0.8365853658536585,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.25853658536585367
+      },
+      "precisionAt5": 0.45,
+      "notes": []
+    },
+    {
+      "profile": "deep512",
+      "poolingMode": "attention_learned",
+      "trainableParams": 566273,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 276.50048828125,
+      "durationMs": 24339,
+      "bestEpoch": 12,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.5157979130744934,
+      "finalTrainAccuracy": 0.8901098966598511,
+      "finalValLoss": 0.3787062168121338,
+      "finalValAccuracy": 0.8560975790023804,
+      "trainValLossGap": 0.13709169626235962,
+      "valMetrics": {
+        "aucRoc": 0.8962895927601809,
+        "aucPr": 0.7804895056494423,
+        "brier": 0.11477612976735432,
+        "accuracyAt05": 0.8560975609756097,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.2682926829268293
+      },
+      "precisionAt5": 0.6,
+      "notes": []
+    }
+  ]
+}

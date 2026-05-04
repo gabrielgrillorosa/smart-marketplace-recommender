@@ -33,7 +33,8 @@ function flatEmb(
  */
 export function buildM22HybridNeuralModel(
   vocabSizes: M22VocabSizes,
-  neuralLossMode: NeuralLossMode
+  neuralLossMode: NeuralLossMode,
+  profile: NeuralArchProfile = 'baseline'
 ): tf.LayersModel {
   const inSem = tf.input({ shape: [384], name: 'm22_sem' })
   const inUser = tf.input({ shape: [384], name: 'm22_user' })
@@ -61,15 +62,27 @@ export function buildM22HybridNeuralModel(
     .concatenate({ name: 'm22_f_concat' })
     .apply([inSem, inUser, eStruct, eId]) as tf.SymbolicTensor
 
-  let h: tf.SymbolicTensor = tf.layers
-    .dense({
-      units: 64,
-      activation: 'relu',
-      kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
-      name: 'm22_dense_64',
-    })
-    .apply(fused) as tf.SymbolicTensor
-  h = tf.layers.dropout({ rate: 0.2, name: 'm22_dropout' }).apply(h) as tf.SymbolicTensor
+  const hiddenByProfile: Record<NeuralArchProfile, number[]> = {
+    baseline: [64],
+    deep64_32: [64, 32],
+    deep128_64: [128, 64],
+    deep256: [256, 128, 64],
+    deep512: [512, 256, 128, 64],
+  }
+  const hiddenLayers = hiddenByProfile[profile]
+  let h: tf.SymbolicTensor = fused
+  hiddenLayers.forEach((units, idx) => {
+    h = tf.layers
+      .dense({
+        units,
+        activation: 'relu',
+        kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        name: `m22_dense_${units}_${idx}`,
+      })
+      .apply(h) as tf.SymbolicTensor
+    const dropoutRate = units >= 256 ? 0.25 : 0.2
+    h = tf.layers.dropout({ rate: dropoutRate, name: `m22_dropout_${idx}` }).apply(h) as tf.SymbolicTensor
+  })
 
   const outUnits = 1
   const outActivation = neuralLossMode === 'pairwise' ? 'linear' : 'sigmoid'
@@ -116,7 +129,7 @@ export function predictM22HybridScores(
 }
 
 /** Baseline matches production `ModelTrainer` / ADR-028. */
-export type NeuralArchProfile = 'baseline' | 'deep64_32' | 'deep128_64'
+export type NeuralArchProfile = 'baseline' | 'deep64_32' | 'deep128_64' | 'deep256' | 'deep512'
 
 function addOutputHead(model: tf.Sequential, neuralLossMode: NeuralLossMode): void {
   if (neuralLossMode === 'pairwise') {
@@ -174,6 +187,70 @@ export function buildNeuralModel(
         })
       )
       model.add(tf.layers.dropout({ rate: 0.25 }))
+      model.add(
+        tf.layers.dense({
+          units: 64,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
+      addOutputHead(model, neuralLossMode)
+      break
+    case 'deep256':
+      model.add(
+        tf.layers.dense({
+          units: 256,
+          activation: 'relu',
+          inputShape: [768],
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.25 }))
+      model.add(
+        tf.layers.dense({
+          units: 128,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
+      model.add(
+        tf.layers.dense({
+          units: 64,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
+      addOutputHead(model, neuralLossMode)
+      break
+    case 'deep512':
+      model.add(
+        tf.layers.dense({
+          units: 512,
+          activation: 'relu',
+          inputShape: [768],
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.25 }))
+      model.add(
+        tf.layers.dense({
+          units: 256,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.25 }))
+      model.add(
+        tf.layers.dense({
+          units: 128,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
       model.add(
         tf.layers.dense({
           units: 64,
