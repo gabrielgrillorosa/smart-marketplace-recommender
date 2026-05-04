@@ -13,6 +13,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Quickstart](#quickstart)
 - [Neural Network Architecture](#neural-network-architecture)
 - [Neural architecture benchmark (CLI)](#neural-architecture-benchmark-cli)
+- [Benchmark guide (baseline and M22)](#benchmark-guide-baseline-and-m22)
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
 - [Recency-aware profile & ranking](#recency-aware-profile--ranking)
@@ -365,6 +366,76 @@ Per run, useful fields for decisions:
 - **`precisionAt5`**: same **ranking** protocol as training-time evaluation (temporal split on purchase list per client, top-5 among non-train products).
 
 **How to read results:** strong **`valMetrics`** but lower **`precisionAt5`** on deeper models often means the pointwise classifier improved while **list-wise ranking** that matters for `/recommend` did not — keep the baseline until you deliberately promote a new head and re-tune **`NEURAL_WEIGHT` / `SEMANTIC_WEIGHT`**.
+
+---
+
+## Benchmark guide (baseline and M22)
+
+This repository now supports **two primary benchmark paths** in `ai-service`:
+
+1. **Baseline neural head benchmark** (`benchmark:neural-arch`) for the legacy concat path (`e_sem || u`).
+2. **M22 benchmark** (`benchmark:m22`) for scenarios `a`, `ab`, `abc` and architecture profiles (`baseline`, `deep64_32`, `deep128_64`, `deep256`, `deep512`).
+
+### 1) Baseline benchmark (`benchmark:neural-arch`)
+
+```bash
+cd ai-service
+npm run benchmark:neural-arch -- \
+  --pooling-modes mean,attention_light,attention_learned \
+  --out ./.benchmarks/nn-arch.grid.json
+```
+
+Generates per-profile runs (legacy path), including `precisionAt5`, `aucPr`, `aucRoc`, `brier`, and calibration fields.
+
+### 2) M22 benchmark (`benchmark:m22`)
+
+```bash
+cd ai-service
+npm run benchmark:m22 -- \
+  --scenarios a,ab,abc \
+  --profiles baseline,deep64_32,deep128_64,deep256,deep512 \
+  --pooling-modes mean,attention_light,attention_learned \
+  --out ./.benchmarks/m22-grid-full.json
+```
+
+For production decisions, **do not use scenario `a` alone** because it ignores structural and identity signals. Compare **`ab`** and **`abc`**.
+
+### Best M22 results (filtered to AB/ABC)
+
+| Pooling mode | Selected run | precisionAt5 | aucPr | brier | accuracy@0.5 | Why selected |
+|---|---|---:|---:|---:|---:|---|
+| `attention_learned` | `ab + deep256` | 0.65 | 0.8647 | 0.0739 | 0.9098 | Best ranking tie, stronger aucPr than other 0.65 runs. |
+| `attention_light` | `abc + deep128_64` | 0.70 | 0.8619 | 0.0617 | 0.9268 | Best global trade-off across ranking + calibration; chosen production candidate. |
+| `mean` | `ab + deep128_64` | 0.65 | 0.8573 | 0.0635 | 0.9317 | Same ranking as `deep512` but better calibration and far lower complexity. |
+
+Source artifacts:
+- `ai-service/.benchmarks/m22-grid-attention_learned.json`
+- `ai-service/.benchmarks/m22-grid-attention_light.json`
+- `ai-service/.benchmarks/m22-grid-mean.json`
+
+### Best baseline results (legacy path)
+
+| Pooling mode | Best baseline profile | precisionAt5 | aucPr | brier | accuracy@0.5 |
+|---|---|---:|---:|---:|---:|
+| `mean` | `deep256` | 0.70 | 0.7854 | 0.0818 | 0.9098 |
+| `attention_light` | `deep64_32` | 0.75 | 0.7641 | 0.1178 | 0.8415 |
+| `attention_learned` | `deep64_32` | 0.65 | 0.7951 | 0.0956 | 0.8780 |
+
+Source artifacts:
+- `ai-service/.benchmarks/nn-arch.mean.json`
+- `ai-service/.benchmarks/nn-arch.attention_light.json`
+- `ai-service/.benchmarks/nn-arch.attention_learned.json`
+
+### Why `abc + attention_light + deep128_64` is the chosen M22 candidate
+
+The selected run (`abc`, `attention_light`, `deep128_64`) is:
+
+- **High ranking quality**: `precisionAt5 = 0.70`, at the top of evaluated AB/ABC runs for the `attention_light` slice.
+- **Better probability quality** than nearby alternatives: stronger `aucPr` and lower `brier` indicate better class-separation and calibration stability.
+- **Healthier generalization signal**: `trainValLossGap = -0.0509` with high validation accuracy (`0.9268`) suggests robust fit without the large instability seen in heavier profiles.
+- **Balanced capacity**: ~112k parameters is enough to model semantic + structural + identity interactions without paying the variance/latency cost of the bigger heads.
+
+Even in comparisons where another candidate can have a local point metric edge, this configuration is preferred by **overall metric consistency** (ranking + discrimination + calibration + operational cost), which is the safer production criterion.
 
 ---
 
