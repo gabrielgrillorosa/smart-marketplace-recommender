@@ -10,7 +10,14 @@ import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 
 type M22BenchmarkScenario = 'a' | 'ab' | 'abc'
 
-const ALL_PROFILES: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
+const ALL_PROFILES: NeuralArchProfile[] = [
+  'baseline',
+  'deep64_32',
+  'deep128_64',
+  'deep128_64_32',
+  'deep256',
+  'deep512',
+]
 const ALL_POOLING: ProfilePoolingMode[] = ['mean', 'exp', 'attention_light', 'attention_learned']
 const ALL_SCENARIOS: M22BenchmarkScenario[] = ['a', 'ab', 'abc']
 

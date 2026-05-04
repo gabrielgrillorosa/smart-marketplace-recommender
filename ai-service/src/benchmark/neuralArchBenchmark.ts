@@ -58,7 +58,14 @@ export interface BenchmarkReport {
   runs: BenchmarkRunRow[]
 }
 
-const DEFAULT_PROFILES: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
+const DEFAULT_PROFILES: NeuralArchProfile[] = [
+  'baseline',
+  'deep64_32',
+  'deep128_64',
+  'deep128_64_32',
+  'deep256',
+  'deep512',
+]
 
 export async function runNeuralArchBenchmark(options: {
   apiServiceUrl: string

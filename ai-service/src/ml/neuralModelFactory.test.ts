@@ -3,6 +3,17 @@ import * as tf from '@tensorflow/tfjs-node'
 import { buildNeuralModel, buildM22HybridNeuralModel, predictM22HybridScores } from './neuralModelFactory.js'
 
 describe('buildNeuralModel', () => {
+  it('builds deep128_64_32 with three hidden Dense layers', () => {
+    const m = buildNeuralModel('deep128_64_32', 'bce')
+    const json = m.toJSON(null, false) as { config?: { layers?: { class_name?: string; config?: { units?: number } }[] } }
+    const layers = json.config?.layers ?? []
+    const denseUnits = layers
+      .filter((layer) => layer.class_name === 'Dense')
+      .map((layer) => layer.config?.units)
+    expect(denseUnits).toEqual([128, 64, 32, 1])
+    m.dispose()
+  })
+
   it('ends with sigmoid when loss mode is bce (legacy)', () => {
     const m = buildNeuralModel('baseline', 'bce')
     const json = m.toJSON(null, false) as { config?: { layers?: { config?: { activation?: string } }[] } }

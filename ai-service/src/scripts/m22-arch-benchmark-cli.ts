@@ -19,7 +19,7 @@ import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 type M22BenchmarkScenario = 'a' | 'ab' | 'abc'
 function parseProfiles(arg: string | undefined): NeuralArchProfile[] | undefined {
   if (arg == null || arg === '') return undefined
-  const allowed: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
+  const allowed: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep128_64_32', 'deep256', 'deep512']
   const list = arg.split(',').map((s) => s.trim()) as NeuralArchProfile[]
   for (const p of list) {
     if (!allowed.includes(p)) {

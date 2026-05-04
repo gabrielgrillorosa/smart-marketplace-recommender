@@ -3,6 +3,8 @@ import { ModelStore } from '../services/ModelStore.js'
 import { VersionedModelStore } from '../services/VersionedModelStore.js'
 import { CronScheduler } from '../services/CronScheduler.js'
 import { TrainingJobRegistry } from '../services/TrainingJobRegistry.js'
+import { parseNeuralArchProfileEnv } from '../config/neuralArchEnv.js'
+import { buildProfilePoolingRuntimeFromEnv } from '../config/profilePoolingEnv.js'
 
 interface ModelRoutesOptions extends FastifyPluginOptions {
   modelTrainer?: never
@@ -17,6 +19,8 @@ export async function modelRoutes(
   options: ModelRoutesOptions
 ): Promise<void> {
   const { modelStore, cronScheduler, versionedModelStore, registry } = options
+  const runtimePooling = buildProfilePoolingRuntimeFromEnv(process.env)
+  const runtimeArchProfile = parseNeuralArchProfileEnv(process.env.NEURAL_ARCH_PROFILE)
 
   fastify.get('/model/status', async (_request, reply) => {
     const base = modelStore.getEnrichedStatus()
@@ -29,10 +33,26 @@ export async function modelRoutes(
     }
     const activeJobId = registry?.getActiveJobId()
     const status = activeJobId ? 'training' : base.status
+    const withRuntimeFallback = {
+      ...base,
+      modelArchitectureProfile: base.modelArchitectureProfile ?? runtimeArchProfile,
+      poolingMode: base.poolingMode ?? runtimePooling.mode,
+      poolingHalfLifeDays: base.poolingHalfLifeDays ?? runtimePooling.halfLifeDays,
+      poolingAttentionTemperature:
+        base.poolingAttentionTemperature ??
+        (runtimePooling.mode === 'attention_light' || runtimePooling.mode === 'attention_learned'
+          ? (runtimePooling.attentionTemperature ?? null)
+          : undefined),
+      poolingAttentionMaxEntries:
+        base.poolingAttentionMaxEntries ??
+        (runtimePooling.mode === 'attention_light' || runtimePooling.mode === 'attention_learned'
+          ? (runtimePooling.attentionMaxEntries ?? 0)
+          : undefined),
+    }
 
     if (!versionedModelStore) {
       return reply.code(200).send({
-        ...base,
+        ...withRuntimeFallback,
         status,
         currentVersion: governance.currentVersion,
         lastTrainingResult: governance.lastTrainingResult,
@@ -46,7 +66,7 @@ export async function modelRoutes(
     const currentModel = governance.currentVersion ?? models.find((m) => m.accepted)?.filename
 
     const enriched = {
-      ...base,
+      ...withRuntimeFallback,
       status,
       currentModel,
       models,

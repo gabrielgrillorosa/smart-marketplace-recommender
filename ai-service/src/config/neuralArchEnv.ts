@@ -4,6 +4,7 @@ const ALLOWED_NEURAL_ARCH_PROFILES: NeuralArchProfile[] = [
   'baseline',
   'deep64_32',
   'deep128_64',
+  'deep128_64_32',
   'deep256',
   'deep512',
 ]

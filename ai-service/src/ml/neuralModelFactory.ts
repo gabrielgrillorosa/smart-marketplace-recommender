@@ -66,6 +66,7 @@ export function buildM22HybridNeuralModel(
     baseline: [64],
     deep64_32: [64, 32],
     deep128_64: [128, 64],
+    deep128_64_32: [128, 64, 32],
     deep256: [256, 128, 64],
     deep512: [512, 256, 128, 64],
   }
@@ -129,7 +130,7 @@ export function predictM22HybridScores(
 }
 
 /** Baseline matches production `ModelTrainer` / ADR-028. */
-export type NeuralArchProfile = 'baseline' | 'deep64_32' | 'deep128_64' | 'deep256' | 'deep512'
+export type NeuralArchProfile = 'baseline' | 'deep64_32' | 'deep128_64' | 'deep128_64_32' | 'deep256' | 'deep512'
 
 function addOutputHead(model: tf.Sequential, neuralLossMode: NeuralLossMode): void {
   if (neuralLossMode === 'pairwise') {
@@ -190,6 +191,34 @@ export function buildNeuralModel(
       model.add(
         tf.layers.dense({
           units: 64,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
+      addOutputHead(model, neuralLossMode)
+      break
+    case 'deep128_64_32':
+      model.add(
+        tf.layers.dense({
+          units: 128,
+          activation: 'relu',
+          inputShape: [768],
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.25 }))
+      model.add(
+        tf.layers.dense({
+          units: 64,
+          activation: 'relu',
+          kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
+        })
+      )
+      model.add(tf.layers.dropout({ rate: 0.2 }))
+      model.add(
+        tf.layers.dense({
+          units: 32,
           activation: 'relu',
           kernelRegularizer: tf.regularizers.l2({ l2: L2 }),
         })

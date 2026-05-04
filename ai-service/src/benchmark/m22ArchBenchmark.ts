@@ -21,7 +21,14 @@ import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 const EPOCHS = 30
 const BATCH_SIZE = 16
 const DEFAULT_SCENARIOS: M22BenchmarkScenario[] = ['a', 'ab', 'abc']
-const DEFAULT_PROFILES: NeuralArchProfile[] = ['baseline', 'deep64_32', 'deep128_64', 'deep256', 'deep512']
+const DEFAULT_PROFILES: NeuralArchProfile[] = [
+  'baseline',
+  'deep64_32',
+  'deep128_64',
+  'deep128_64_32',
+  'deep256',
+  'deep512',
+]
 
 type M22BenchmarkScenario = 'a' | 'ab' | 'abc'
 
