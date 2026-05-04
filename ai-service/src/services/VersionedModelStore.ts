@@ -164,6 +164,11 @@ export class VersionedModelStore extends ModelStore {
         precisionAt5: candidatePrecisionAt5,
         neuralHeadKind: result.neuralHeadKind,
         modelArchitecture: arch,
+        modelArchitectureProfile: result.modelArchitectureProfile,
+        poolingMode: result.poolingMode,
+        poolingHalfLifeDays: result.poolingHalfLifeDays,
+        poolingAttentionTemperature: result.poolingAttentionTemperature,
+        poolingAttentionMaxEntries: result.poolingAttentionMaxEntries,
       }, {
         m22ItemManifest: result.m22ItemManifest ?? null,
         modelArchitecture: arch,
@@ -179,6 +184,11 @@ export class VersionedModelStore extends ModelStore {
         precisionAt5: candidatePrecisionAt5,
         neuralHeadKind: result.neuralHeadKind,
         modelArchitecture: arch,
+        modelArchitectureProfile: result.modelArchitectureProfile,
+        poolingMode: result.poolingMode,
+        poolingHalfLifeDays: result.poolingHalfLifeDays,
+        poolingAttentionTemperature: result.poolingAttentionTemperature,
+        poolingAttentionMaxEntries: result.poolingAttentionMaxEntries,
       }
       await fs.writeFile(
         path.join(modelDir, TRAINING_METADATA_FILENAME),
@@ -369,6 +379,11 @@ export class VersionedModelStore extends ModelStore {
         precisionAt5: disk.precisionAt5,
         neuralHeadKind: disk.neuralHeadKind ?? neuralHeadKind,
         modelArchitecture: disk.modelArchitecture,
+        modelArchitectureProfile: disk.modelArchitectureProfile,
+        poolingMode: disk.poolingMode,
+        poolingHalfLifeDays: disk.poolingHalfLifeDays,
+        poolingAttentionTemperature: disk.poolingAttentionTemperature,
+        poolingAttentionMaxEntries: disk.poolingAttentionMaxEntries,
       }
     }
     return {

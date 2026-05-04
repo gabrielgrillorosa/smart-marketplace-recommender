@@ -371,6 +371,7 @@ export class ModelTrainer {
 
       const durationMs = Date.now() - startMs
       this._isTraining = false
+      const pooling = this.profilePooling.get()
 
       return {
         status: 'trained',
@@ -385,6 +386,17 @@ export class ModelTrainer {
         model,
         m22ItemManifest: useM22 ? m22Manifest : null,
         modelArchitecture: useM22 ? 'm22' : 'baseline',
+        modelArchitectureProfile: this.neuralArchProfile,
+        poolingMode: pooling.mode,
+        poolingHalfLifeDays: pooling.halfLifeDays,
+        poolingAttentionTemperature:
+          pooling.mode === 'attention_light' || pooling.mode === 'attention_learned'
+            ? (pooling.attentionTemperature ?? null)
+            : undefined,
+        poolingAttentionMaxEntries:
+          pooling.mode === 'attention_light' || pooling.mode === 'attention_learned'
+            ? (pooling.attentionMaxEntries ?? 0)
+            : undefined,
       }
     } catch (err) {
       this._isTraining = false

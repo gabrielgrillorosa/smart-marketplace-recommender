@@ -1,7 +1,12 @@
 'use client';
 
 import type { ModelStatusResponse } from '@/lib/types';
-import { describeModelArchitectureForMetrics, describeNeuralHeadForMetrics } from '@/lib/neuralHeadLabels';
+import {
+  describeModelArchitectureForMetrics,
+  describeModelArchitectureProfileForMetrics,
+  describeNeuralHeadForMetrics,
+  describePoolingModeForMetrics,
+} from '@/lib/neuralHeadLabels';
 
 interface TrainingMetricsSummaryProps {
   status: ModelStatusResponse | null;
@@ -66,8 +71,33 @@ export function TrainingMetricsSummary({ status, metricsSyncActive }: TrainingMe
       value: dash(describeModelArchitectureForMetrics(status.modelArchitecture)),
     },
     {
+      label: 'Perfil da arquitectura',
+      value: dash(describeModelArchitectureProfileForMetrics(status.modelArchitectureProfile)),
+    },
+    {
       label: 'Cabeça do modelo',
       value: dash(describeNeuralHeadForMetrics(status.neuralHeadKind)),
+    },
+    {
+      label: 'Pooling / attention',
+      value: dash(describePoolingModeForMetrics(status.poolingMode)),
+    },
+    {
+      label: 'Half-life pooling (dias)',
+      value: status.poolingHalfLifeDays != null ? String(status.poolingHalfLifeDays) : '—',
+    },
+    {
+      label: 'Temperatura attention',
+      value:
+        status.poolingAttentionTemperature === null
+          ? 'uniforme'
+          : status.poolingAttentionTemperature != null
+            ? String(status.poolingAttentionTemperature)
+            : '—',
+    },
+    {
+      label: 'Janela attention (max)',
+      value: status.poolingAttentionMaxEntries != null ? String(status.poolingAttentionMaxEntries) : '—',
     },
     { label: 'Loss final', value: status.finalLoss != null ? status.finalLoss.toFixed(4) : '—' },
     { label: 'Accuracy', value: status.finalAccuracy != null ? status.finalAccuracy.toFixed(4) : '—' },

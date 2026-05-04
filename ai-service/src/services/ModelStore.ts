@@ -1,5 +1,7 @@
 import * as tf from '@tensorflow/tfjs-node'
 import type { M22ItemManifest } from '../ml/m22Manifest.js'
+import type { NeuralArchProfile } from '../ml/neuralModelFactory.js'
+import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 import type {
   ModelArchitectureKind,
   NeuralHeadKind,
@@ -25,6 +27,11 @@ export class ModelStore {
   private neuralHeadKind: NeuralHeadKind = 'bce_sigmoid'
   private m22ItemManifest: M22ItemManifest | null = null
   private modelArchitecture: ModelArchitectureKind = 'baseline'
+  private modelArchitectureProfile: NeuralArchProfile | undefined = undefined
+  private poolingMode: ProfilePoolingMode | undefined = undefined
+  private poolingHalfLifeDays: number | undefined = undefined
+  private poolingAttentionTemperature: number | null | undefined = undefined
+  private poolingAttentionMaxEntries: number | undefined = undefined
 
   getModel(): tf.LayersModel | null {
     return this.model
@@ -51,6 +58,11 @@ export class ModelStore {
     const head = {
       neuralHeadKind: this.neuralHeadKind,
       modelArchitecture: this.modelArchitecture,
+      modelArchitectureProfile: this.modelArchitectureProfile,
+      poolingMode: this.poolingMode,
+      poolingHalfLifeDays: this.poolingHalfLifeDays,
+      poolingAttentionTemperature: this.poolingAttentionTemperature,
+      poolingAttentionMaxEntries: this.poolingAttentionMaxEntries,
     }
 
     if (base.status === 'trained' && base.trainedAt) {
@@ -69,6 +81,11 @@ export class ModelStore {
     this.model = model
     this.neuralHeadKind = metadata.neuralHeadKind ?? 'bce_sigmoid'
     this.modelArchitecture = options?.modelArchitecture ?? metadata.modelArchitecture ?? 'baseline'
+    this.modelArchitectureProfile = metadata.modelArchitectureProfile
+    this.poolingMode = metadata.poolingMode
+    this.poolingHalfLifeDays = metadata.poolingHalfLifeDays
+    this.poolingAttentionTemperature = metadata.poolingAttentionTemperature
+    this.poolingAttentionMaxEntries = metadata.poolingAttentionMaxEntries
     this.m22ItemManifest = options?.m22ItemManifest ?? null
     if (this.modelArchitecture === 'm22' && !this.m22ItemManifest) {
       console.warn('[ModelStore] modelArchitecture=m22 but no m22ItemManifest — forcing baseline metadata')
@@ -98,5 +115,10 @@ export class ModelStore {
     this.neuralHeadKind = 'bce_sigmoid'
     this.m22ItemManifest = null
     this.modelArchitecture = 'baseline'
+    this.modelArchitectureProfile = undefined
+    this.poolingMode = undefined
+    this.poolingHalfLifeDays = undefined
+    this.poolingAttentionTemperature = undefined
+    this.poolingAttentionMaxEntries = undefined
   }
 }

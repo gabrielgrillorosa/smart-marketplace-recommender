@@ -28,6 +28,11 @@ describe('trainingMetadata', () => {
         durationMs: 5000,
         precisionAt5: 0.55,
         neuralHeadKind: 'ranking_linear',
+        modelArchitectureProfile: 'deep256',
+        poolingMode: 'attention_light',
+        poolingHalfLifeDays: 14,
+        poolingAttentionTemperature: 0.7,
+        poolingAttentionMaxEntries: 30,
       })
       const m = parsePersistedTrainingMetadataJson(text)
       expect(m).toMatchObject({
@@ -35,6 +40,11 @@ describe('trainingMetadata', () => {
         finalLoss: 0.12,
         trainingSamples: 240,
         neuralHeadKind: 'ranking_linear',
+        modelArchitectureProfile: 'deep256',
+        poolingMode: 'attention_light',
+        poolingHalfLifeDays: 14,
+        poolingAttentionTemperature: 0.7,
+        poolingAttentionMaxEntries: 30,
       })
     })
 

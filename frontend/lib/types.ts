@@ -185,6 +185,8 @@ export type NeuralHeadKind = 'bce_sigmoid' | 'ranking_linear';
 
 /** M22 — arquitectura do checkpoint activo (vs legado 768-d). */
 export type ModelArchitectureKind = 'baseline' | 'm22';
+export type NeuralArchProfile = 'baseline' | 'deep64_32' | 'deep128_64' | 'deep256' | 'deep512';
+export type ProfilePoolingMode = 'mean' | 'exp' | 'attention_light' | 'attention_learned';
 
 export interface ModelStatusResponse {
   status?: string;
@@ -197,6 +199,13 @@ export interface ModelStatusResponse {
   neuralHeadKind?: NeuralHeadKind;
   /** Arquitectura neural persistida: baseline (768-d concat) ou M22 (multi-input). */
   modelArchitecture?: ModelArchitectureKind;
+  /** Perfil MLP usado no treino que gerou o checkpoint activo. */
+  modelArchitectureProfile?: NeuralArchProfile;
+  /** Tipo de pooling/attention usado no treino que gerou o checkpoint activo. */
+  poolingMode?: ProfilePoolingMode;
+  poolingHalfLifeDays?: number;
+  poolingAttentionTemperature?: number | null;
+  poolingAttentionMaxEntries?: number;
   syncedAt?: string;
   durationMs?: number;
   epochsConfigured?: number;

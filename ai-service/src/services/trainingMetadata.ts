@@ -1,4 +1,6 @@
 import type { ModelArchitectureKind, NeuralHeadKind } from '../types/index.js'
+import type { NeuralArchProfile } from '../ml/neuralModelFactory.js'
+import type { ProfilePoolingMode } from '../profile/clientProfileAggregation.js'
 
 /** Sidecar next to `model.json` under a versioned checkpoint directory (written on promotion). */
 export const TRAINING_METADATA_FILENAME = 'training-metadata.json'
@@ -13,6 +15,11 @@ export interface PersistedTrainingMetadata {
   precisionAt5?: number
   neuralHeadKind?: NeuralHeadKind
   modelArchitecture?: ModelArchitectureKind
+  modelArchitectureProfile?: NeuralArchProfile
+  poolingMode?: ProfilePoolingMode
+  poolingHalfLifeDays?: number
+  poolingAttentionTemperature?: number | null
+  poolingAttentionMaxEntries?: number
 }
 
 /** Decode `model-2026-05-01T22-40-18-110Z.json` → ISO `2026-05-01T22:40:18.110Z` (checkpoint naming in VersionedModelStore). */
@@ -59,6 +66,38 @@ export function parsePersistedTrainingMetadataJson(text: string): PersistedTrain
 
   const arch = o.modelArchitecture
   if (arch === 'baseline' || arch === 'm22') out.modelArchitecture = arch
+  const archProfile = o.modelArchitectureProfile
+  if (
+    archProfile === 'baseline' ||
+    archProfile === 'deep64_32' ||
+    archProfile === 'deep128_64' ||
+    archProfile === 'deep256' ||
+    archProfile === 'deep512'
+  ) {
+    out.modelArchitectureProfile = archProfile
+  }
+
+  const poolingMode = o.poolingMode
+  if (
+    poolingMode === 'mean' ||
+    poolingMode === 'exp' ||
+    poolingMode === 'attention_light' ||
+    poolingMode === 'attention_learned'
+  ) {
+    out.poolingMode = poolingMode
+  }
+  if (typeof o.poolingHalfLifeDays === 'number' && Number.isFinite(o.poolingHalfLifeDays)) {
+    out.poolingHalfLifeDays = o.poolingHalfLifeDays
+  }
+  if (
+    o.poolingAttentionTemperature === null ||
+    (typeof o.poolingAttentionTemperature === 'number' && Number.isFinite(o.poolingAttentionTemperature))
+  ) {
+    out.poolingAttentionTemperature = o.poolingAttentionTemperature
+  }
+  if (typeof o.poolingAttentionMaxEntries === 'number' && Number.isFinite(o.poolingAttentionMaxEntries)) {
+    out.poolingAttentionMaxEntries = o.poolingAttentionMaxEntries
+  }
 
   return out
 }

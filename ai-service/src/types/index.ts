@@ -80,6 +80,16 @@ export interface TrainingStatus {
   neuralHeadKind?: NeuralHeadKind
   /** M22 — active checkpoint architecture (`baseline` 768-MLP vs `m22` multi-input). */
   modelArchitecture?: ModelArchitectureKind
+  /** Selected MLP profile used for the active checkpoint (e.g. `deep128_64`). */
+  modelArchitectureProfile?: import('../ml/neuralModelFactory.js').NeuralArchProfile
+  /** Active profile pooling mode used during the training that produced the active checkpoint. */
+  poolingMode?: import('../profile/clientProfileAggregation.js').ProfilePoolingMode
+  /** Half-life used by exp/attention-family pooling for the active checkpoint. */
+  poolingHalfLifeDays?: number
+  /** Softmax temperature used for attention modes (`null` means uniform attention). */
+  poolingAttentionTemperature?: number | null
+  /** Max purchases considered in attention window (0 = unlimited). */
+  poolingAttentionMaxEntries?: number
 }
 
 export interface TrainingMetadata {
@@ -94,6 +104,16 @@ export interface TrainingMetadata {
   neuralHeadKind?: NeuralHeadKind
   /** M22 — persisted checkpoint kind; absent implies baseline 768-MLP. */
   modelArchitecture?: ModelArchitectureKind
+  /** Persisted MLP profile used to train this checkpoint. */
+  modelArchitectureProfile?: import('../ml/neuralModelFactory.js').NeuralArchProfile
+  /** Persisted pooling mode used to train this checkpoint. */
+  poolingMode?: import('../profile/clientProfileAggregation.js').ProfilePoolingMode
+  /** Persisted pooling half-life used to train this checkpoint. */
+  poolingHalfLifeDays?: number
+  /** Persisted pooling attention temperature used to train this checkpoint. */
+  poolingAttentionTemperature?: number | null
+  /** Persisted pooling attention max entries used to train this checkpoint. */
+  poolingAttentionMaxEntries?: number
 }
 
 export interface TrainingResult {
@@ -109,6 +129,11 @@ export interface TrainingResult {
   /** M22 — sidecar JSON next to promoted checkpoint; null when baseline training. */
   m22ItemManifest?: import('../ml/m22Manifest.js').M22ItemManifest | null
   modelArchitecture?: ModelArchitectureKind
+  modelArchitectureProfile?: import('../ml/neuralModelFactory.js').NeuralArchProfile
+  poolingMode?: import('../profile/clientProfileAggregation.js').ProfilePoolingMode
+  poolingHalfLifeDays?: number
+  poolingAttentionTemperature?: number | null
+  poolingAttentionMaxEntries?: number
 }
 
 export interface ClientProfile {

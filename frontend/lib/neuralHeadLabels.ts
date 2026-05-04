@@ -1,4 +1,4 @@
-import type { ModelArchitectureKind, NeuralHeadKind } from '@/lib/types';
+import type { ModelArchitectureKind, NeuralArchProfile, NeuralHeadKind, ProfilePoolingMode } from '@/lib/types';
 
 /** Rótulo curto para métricas na UI (M21 — BCE vs pairwise). */
 export function describeNeuralHeadForMetrics(kind: NeuralHeadKind | undefined): string | undefined {
@@ -18,6 +18,31 @@ export function describeModelArchitectureForMetrics(
     return 'M22 — híbrido (HF + esparsa + opcional identity)';
   }
   return 'Baseline — MLP 768-d (semântico ‖ utilizador)';
+}
+
+export function describeModelArchitectureProfileForMetrics(
+  profile: NeuralArchProfile | undefined
+): string | undefined {
+  if (!profile) return undefined;
+  const map: Record<NeuralArchProfile, string> = {
+    baseline: 'baseline (64)',
+    deep64_32: 'deep64_32 (64→32)',
+    deep128_64: 'deep128_64 (128→64)',
+    deep256: 'deep256 (256→128→64)',
+    deep512: 'deep512 (512→256→128→64)',
+  };
+  return map[profile];
+}
+
+export function describePoolingModeForMetrics(mode: ProfilePoolingMode | undefined): string | undefined {
+  if (!mode) return undefined;
+  const map: Record<ProfilePoolingMode, string> = {
+    mean: 'mean (média simples)',
+    exp: 'exp (decaimento exponencial)',
+    attention_light: 'attention_light (recência + softmax)',
+    attention_learned: 'attention_learned (pesos aprendidos)',
+  };
+  return map[mode];
 }
 
 /** Classificação explícita BCE vs pairwise — obrigatória para interpretar loss / accuracy. */
