@@ -1,0 +1,84 @@
+{
+  "generatedAt": "2026-05-04T03:13:04.199Z",
+  "gitCommit": "f36b48dc26af37d0ad997746b2e183b825520fb0",
+  "apiServiceUrl": "http://127.0.0.1:8080",
+  "dataCounts": {
+    "clients": 20,
+    "products": 92,
+    "orders": 130
+  },
+  "hyperparams": {
+    "epochs": 30,
+    "batchSize": 16,
+    "classWeight": {
+      "0": 1,
+      "1": 4
+    },
+    "valFraction": 0.2,
+    "poolingMode": "attention_light",
+    "poolingHalfLifeDays": 30,
+    "poolingModesTested": [
+      "attention_light"
+    ]
+  },
+  "runs": [
+    {
+      "scenario": "abc",
+      "profile": "deep128_64",
+      "poolingMode": "attention_light",
+      "trainableParams": 112761,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "durationMs": 8631,
+      "bestEpoch": 6,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.5575052499771118,
+      "finalTrainAccuracy": 0.8669108748435974,
+      "finalValLoss": 0.4887714385986328,
+      "finalValAccuracy": 0.8097561001777649,
+      "trainValLossGap": 0.068733811378479,
+      "valMetrics": {
+        "aucRoc": 0.815710407239819,
+        "aucPr": 0.6823109921068613,
+        "brier": 0.15160081036381354,
+        "accuracyAt05": 0.8097560975609757,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.2804878048780488
+      },
+      "precisionAt5": 0.45,
+      "precisionAt5ColdSlice": 0,
+      "precisionAt5ColdClients": 0,
+      "precisionAt5GlobalClients": 20
+    },
+    {
+      "scenario": "abc",
+      "profile": "deep128_64_32",
+      "poolingMode": "attention_light",
+      "trainableParams": 114809,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "durationMs": 25499,
+      "bestEpoch": 29,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.2435096800327301,
+      "finalTrainAccuracy": 0.9505494832992554,
+      "finalValLoss": 0.362566202878952,
+      "finalValAccuracy": 0.9048780202865601,
+      "trainValLossGap": -0.11905652284622192,
+      "valMetrics": {
+        "aucRoc": 0.8792760180995475,
+        "aucPr": 0.8175995136095594,
+        "brier": 0.07820078096569807,
+        "accuracyAt05": 0.9048780487804878,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.17073170731707318
+      },
+      "precisionAt5": 0.6,
+      "precisionAt5ColdSlice": 0,
+      "precisionAt5ColdClients": 0,
+      "precisionAt5GlobalClients": 20
+    }
+  ]
+}

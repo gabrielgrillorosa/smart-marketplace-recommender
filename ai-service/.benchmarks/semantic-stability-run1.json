@@ -1,0 +1,135 @@
+{
+  "generatedAt": "2026-05-04T09:56:43.028Z",
+  "gitCommit": "5e3d4d703f72c97094e99cbe0a4937a5978d6648",
+  "apiServiceUrl": "http://localhost:8080",
+  "dataCounts": {
+    "clients": 20,
+    "products": 92,
+    "orders": 130
+  },
+  "hyperparams": {
+    "epochs": 30,
+    "batchSize": 16,
+    "classWeight": {
+      "0": 1,
+      "1": 4
+    },
+    "valFraction": 0.2,
+    "poolingMode": "attention_light",
+    "poolingHalfLifeDays": 30,
+    "poolingModesTested": [
+      "attention_light",
+      "attention_learned"
+    ]
+  },
+  "runs": [
+    {
+      "profile": "baseline",
+      "poolingMode": "attention_light",
+      "trainableParams": 49281,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 24.06298828125,
+      "durationMs": 8714,
+      "bestEpoch": 17,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.637793779373169,
+      "finalTrainAccuracy": 0.8528693914413452,
+      "finalValLoss": 0.4528164863586426,
+      "finalValAccuracy": 0.800000011920929,
+      "trainValLossGap": 0.18497729301452637,
+      "valMetrics": {
+        "aucRoc": 0.8410497737556561,
+        "aucPr": 0.6961512530572693,
+        "brier": 0.14590463633375153,
+        "accuracyAt05": 0.8,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.3
+      },
+      "precisionAt5": 0.6,
+      "notes": []
+    },
+    {
+      "profile": "deep64_32",
+      "poolingMode": "attention_light",
+      "trainableParams": 51329,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 25.06298828125,
+      "durationMs": 9001,
+      "bestEpoch": 13,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.5332934260368347,
+      "finalTrainAccuracy": 0.8669108748435974,
+      "finalValLoss": 0.3947603404521942,
+      "finalValAccuracy": 0.8463414907455444,
+      "trainValLossGap": 0.1385330855846405,
+      "valMetrics": {
+        "aucRoc": 0.862841628959276,
+        "aucPr": 0.7266189387198698,
+        "brier": 0.12060673792628779,
+        "accuracyAt05": 0.8463414634146341,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.25365853658536586
+      },
+      "precisionAt5": 0.6,
+      "notes": []
+    },
+    {
+      "profile": "baseline",
+      "poolingMode": "attention_learned",
+      "trainableParams": 49281,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 24.06298828125,
+      "durationMs": 11329,
+      "bestEpoch": 30,
+      "stoppedEarly": false,
+      "finalTrainLoss": 0.5691284537315369,
+      "finalTrainAccuracy": 0.8797314167022705,
+      "finalValLoss": 0.39126425981521606,
+      "finalValAccuracy": 0.8390243649482727,
+      "trainValLossGap": 0.1778641939163208,
+      "valMetrics": {
+        "aucRoc": 0.8404343891402715,
+        "aucPr": 0.6988924203321668,
+        "brier": 0.11960447932612146,
+        "accuracyAt05": 0.8390243902439024,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.2121951219512195
+      },
+      "precisionAt5": 0.65,
+      "notes": []
+    },
+    {
+      "profile": "deep64_32",
+      "poolingMode": "attention_learned",
+      "trainableParams": 51329,
+      "trainingSamples": 2048,
+      "trainRows": 1638,
+      "valRows": 410,
+      "paramSampleRatio": 25.06298828125,
+      "durationMs": 11136,
+      "bestEpoch": 19,
+      "stoppedEarly": true,
+      "finalTrainLoss": 0.4646044373512268,
+      "finalTrainAccuracy": 0.8870574235916138,
+      "finalValLoss": 0.3764406442642212,
+      "finalValAccuracy": 0.8658536672592163,
+      "trainValLossGap": 0.08816379308700562,
+      "valMetrics": {
+        "aucRoc": 0.8634932126696833,
+        "aucPr": 0.7492836977613316,
+        "brier": 0.11028480991238193,
+        "accuracyAt05": 0.8658536585365854,
+        "positiveRateTrue": 0.2073170731707317,
+        "positiveRatePred": 0.22439024390243903
+      },
+      "precisionAt5": 0.7,
+      "notes": []
+    }
+  ]
+}

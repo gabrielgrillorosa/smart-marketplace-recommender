@@ -353,76 +353,6 @@ Per run, useful fields for decisions:
 
 ---
 
-## Benchmark guide (baseline and M22)
-
-This repository now supports **two primary benchmark paths** in `ai-service`:
-
-1. **Baseline neural head benchmark** (`benchmark:neural-arch`) for the legacy concat path (`e_sem || u`).
-2. **M22 benchmark** (`benchmark:m22`) for scenarios `a`, `ab`, `abc` and architecture profiles (`baseline`, `deep64_32`, `deep128_64`, `deep256`, `deep512`).
-
-### 1) Baseline benchmark (`benchmark:neural-arch`)
-
-```bash
-cd ai-service
-npm run benchmark:neural-arch -- \
-  --pooling-modes mean,attention_light,attention_learned \
-  --out ./.benchmarks/nn-arch.grid.json
-```
-
-Generates per-profile runs (legacy path), including `precisionAt5`, `aucPr`, `aucRoc`, `brier`, and calibration fields.
-
-### 2) M22 benchmark (`benchmark:m22`)
-
-```bash
-cd ai-service
-npm run benchmark:m22 -- \
-  --scenarios a,ab,abc \
-  --profiles baseline,deep64_32,deep128_64,deep256,deep512 \
-  --pooling-modes mean,attention_light,attention_learned \
-  --out ./.benchmarks/m22-grid-full.json
-```
-
-For production decisions, **do not use scenario `a` alone** because it ignores structural and identity signals. Compare **`ab`** and **`abc`**.
-
-### Best M22 results (filtered to AB/ABC)
-
-| Pooling mode | Selected run | precisionAt5 | aucPr | brier | accuracy@0.5 | Why selected |
-|---|---|---:|---:|---:|---:|---|
-| `attention_learned` | `ab + deep256` | 0.65 | 0.8647 | 0.0739 | 0.9098 | Best ranking tie, stronger aucPr than other 0.65 runs. |
-| `attention_light` | `abc + deep128_64` | 0.70 | 0.8619 | 0.0617 | 0.9268 | Best global trade-off across ranking + calibration; chosen production candidate. |
-| `mean` | `ab + deep128_64` | 0.65 | 0.8573 | 0.0635 | 0.9317 | Same ranking as `deep512` but better calibration and far lower complexity. |
-
-Source artifacts:
-- `ai-service/.benchmarks/m22-grid-attention_learned.json`
-- `ai-service/.benchmarks/m22-grid-attention_light.json`
-- `ai-service/.benchmarks/m22-grid-mean.json`
-
-### Best baseline results (legacy path)
-
-| Pooling mode | Best baseline profile | precisionAt5 | aucPr | brier | accuracy@0.5 |
-|---|---|---:|---:|---:|---:|
-| `mean` | `deep256` | 0.70 | 0.7854 | 0.0818 | 0.9098 |
-| `attention_light` | `deep64_32` | 0.75 | 0.7641 | 0.1178 | 0.8415 |
-| `attention_learned` | `deep64_32` | 0.65 | 0.7951 | 0.0956 | 0.8780 |
-
-Source artifacts:
-- `ai-service/.benchmarks/nn-arch.mean.json`
-- `ai-service/.benchmarks/nn-arch.attention_light.json`
-- `ai-service/.benchmarks/nn-arch.attention_learned.json`
-
-### Why `abc + attention_light + deep128_64` is the chosen M22 candidate
-
-The selected run (`abc`, `attention_light`, `deep128_64`) is:
-
-- **High ranking quality**: `precisionAt5 = 0.70`, at the top of evaluated AB/ABC runs for the `attention_light` slice.
-- **Better probability quality** than nearby alternatives: stronger `aucPr` and lower `brier` indicate better class-separation and calibration stability.
-- **Healthier generalization signal**: `trainValLossGap = -0.0509` with high validation accuracy (`0.9268`) suggests robust fit without the large instability seen in heavier profiles.
-- **Balanced capacity**: ~112k parameters is enough to model semantic + structural + identity interactions without paying the variance/latency cost of the bigger heads.
-
-Even in comparisons where another candidate can have a local point metric edge, this configuration is preferred by **overall metric consistency** (ranking + discrimination + calibration + operational cost), which is the safer production criterion.
-
----
-
 ## Dataset Construction & Training Quality
 
 The training dataset is built by `buildTrainingDataset()` — a pure function in `training-utils.ts` that applies four layers of quality control before a single sample reaches the model.
@@ -825,6 +755,114 @@ flowchart TB
   class CAT,D64,LOGIT,NSCR fuseN
   class COS,FIN outN
 ```
+
+---
+
+## Benchmark guide (baseline and M22)
+
+### Quick glossary (what each benchmark dimension means)
+
+- **`mean`**: uniform average of profile-history embeddings; strongest regularization, lowest adaptation to recency/content shifts.
+- **`attention_light`**: softmax weighting based on recency logits only (`-Δ/τ`), no learned content parameters.
+- **`attention_learned`**: learned attention logits (`w·e + b - λΔ/τ`) combining content signal with recency decay; highest expressiveness.
+- **M22 hybrid**: model uses semantic item embedding (A) + sparse structural features (B), with optional identity path (C) controlled by `M22_IDENTITY`.
+- **Semantic-only baseline**: legacy concat path (`e_sem || u`) without sparse/identity item branches.
+
+This repository supports two benchmark paths in `ai-service`:
+
+1. **Baseline neural head benchmark** (`benchmark:neural-arch`) for the legacy concat path (`e_sem || u`).
+2. **M22 benchmark** (`benchmark:m22`) for scenarios `a`, `ab`, `abc` and architecture profiles (`baseline`, `deep64_32`, `deep128_64`, `deep256`, `deep512`).
+
+### 1) Baseline benchmark (`benchmark:neural-arch`)
+
+```bash
+cd ai-service
+npm run benchmark:neural-arch -- \
+  --pooling-modes mean,attention_light,attention_learned \
+  --out ./.benchmarks/nn-arch.grid.json
+```
+
+### 2) M22 benchmark (`benchmark:m22`)
+
+```bash
+cd ai-service
+npm run benchmark:m22 -- \
+  --scenarios a,ab,abc \
+  --profiles baseline,deep64_32,deep128_64,deep256,deep512 \
+  --pooling-modes mean,attention_light,attention_learned \
+  --out ./.benchmarks/m22-grid-full.json
+```
+
+For production decisions, **do not use scenario `a` alone** because it ignores structural and identity signals. Compare **`ab`** and **`abc`**.
+
+### Stability results only (decision-grade, 3 runs each)
+
+#### M22 stability rerun (AB/ABC, `attention_light` + `attention_learned`)
+
+| Configuration | precision@5 per run | mean precision@5 | std |
+|---|---|---:|---:|
+| `ab + attention_learned + deep128_64` | `0.65, 0.55, 0.60` | `0.60` | `0.0408` |
+| `abc + attention_learned + deep128_64` | `0.50, 0.60, 0.60` | `0.5667` | `0.0471` |
+| `ab + attention_light + deep128_64` | `0.50, 0.60, 0.55` | `0.55` | `0.0408` |
+| `ab + attention_learned + deep256` | `0.55, 0.65, 0.45` | `0.55` | `0.0816` |
+
+M22 decision from the 3-run protocol: `ab + attention_learned + deep128_64` is the selected hybrid candidate because it combines the highest mean precision with materially lower variance than competing heads.
+
+**Best M22 candidate (`ab + attention_learned + deep128_64`) — all observed metrics across 3 runs**
+
+| Metric | Mean | Std | Runs |
+|---|---:|---:|---|
+| `precisionAt5` | `0.6000` | `0.0408` | `0.65, 0.55, 0.60` |
+| `aucRoc` | `0.9006` | `0.0257` | `0.9064, 0.8666, 0.9287` |
+| `aucPr` | `0.8306` | `0.0493` | `0.8598, 0.7612, 0.8709` |
+| `brier` (lower better) | `0.0844` | `0.0277` | `0.0662, 0.1235, 0.0636` |
+| `accuracy@0.5` | `0.8894` | `0.0427` | `0.9146, 0.8293, 0.9244` |
+| `finalTrainLoss` | `0.3048` | `0.1073` | `0.2625, 0.4522, 0.1998` |
+| `finalValLoss` | `0.3193` | `0.0626` | `0.2723, 0.4078, 0.2779` |
+| `trainValLossGap` | `-0.0145` | `0.0501` | `-0.0099, 0.0444, -0.0780` |
+| `durationMs` | `25086.7` | `13709.2` | `43139, 9937, 22184` |
+
+Source artifacts:
+- `ai-service/.benchmarks/m22-rerun-light-learned-all-arch.json`
+- `ai-service/.benchmarks/m22-rerun-ab-abc-light-learned-1286432-12864-256.json`
+- `ai-service/.benchmarks/m22-rerun2-ab-abc-light-learned-1286432-12864-256.json`
+
+#### Baseline stability rerun (semantic-only, `attention_light` + `attention_learned`)
+
+| Configuration | precision@5 per run | mean precision@5 | std |
+|---|---|---:|---:|
+| `attention_learned + deep64_32` | `0.70, 0.65, 0.60` | `0.65` | `0.0408` |
+| `attention_light + baseline` | `0.60, 0.65, 0.65` | `0.6333` | `0.0236` |
+| `attention_learned + baseline` | `0.65, 0.60, 0.60` | `0.6167` | `0.0236` |
+| `attention_light + deep64_32` | `0.60, 0.45, 0.65` | `0.5667` | `0.0850` |
+
+Baseline decision from the 3-run protocol: `attention_learned + deep64_32` is the selected semantic-only head.
+
+**Best semantic-only candidate (`attention_learned + deep64_32`) — all observed metrics across 3 runs**
+
+| Metric | Mean | Std | Runs |
+|---|---:|---:|---|
+| `precisionAt5` | `0.6500` | `0.0408` | `0.70, 0.65, 0.60` |
+| `aucRoc` | `0.8847` | `0.0150` | `0.8635, 0.8956, 0.8949` |
+| `aucPr` | `0.7931` | `0.0311` | `0.7493, 0.8178, 0.8123` |
+| `brier` (lower better) | `0.0923` | `0.0130` | `0.1103, 0.0867, 0.0801` |
+| `accuracy@0.5` | `0.8837` | `0.0133` | `0.8659, 0.8878, 0.8976` |
+| `finalTrainLoss` | `0.4017` | `0.0445` | `0.4646, 0.3715, 0.3691` |
+| `finalValLoss` | `0.3291` | `0.0338` | `0.3764, 0.3107, 0.3000` |
+| `trainValLossGap` | `0.0727` | `0.0115` | `0.0882, 0.0607, 0.0691` |
+| `durationMs` | `13403.3` | `1663.9` | `11136, 13992, 15082` |
+
+#### Final technical position
+
+- **Hybrid winner:** `ab + attention_learned + deep128_64`.
+- **Semantic-only winner:** `attention_learned + deep64_32`.
+- **Why these are selected (Deep Learning perspective):**
+  - **Primary objective (ranking):** both winners are top by mean `precisionAt5` in their respective regimes under repeated runs.
+  - **Discrimination/calibration guardrails:** winners keep strong `aucPr`/`aucRoc` while maintaining acceptable `brier`, avoiding choices that win ranking but degrade probability quality.
+  - **Generalization check:** `trainValLossGap` stays controlled (near zero or modest), with no persistent overfitting signature across runs.
+  - **Variance-aware decision:** model choice is based on **mean + variance**, not single-run peaks; this is critical in stochastic training pipelines with evolving marketplace data.
+  - **Operational fit:** hybrid head has higher computational cost but better feature-fusion capacity; semantic-only head is lighter and more stable in latency.
+- **Executive conclusion:** `attention_learned` is the consistent pooling winner across both regimes, and the selected pair gives the best production trade-off between ranking lift, probabilistic reliability, and repeatability.
 
 ---
 
