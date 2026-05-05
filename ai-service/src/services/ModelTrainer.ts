@@ -4,7 +4,10 @@ import type { NeuralArchProfile } from '../ml/neuralModelFactory.js'
 import { ModelStore } from './ModelStore.js'
 import { BoughtSyncEdge, Neo4jRepository } from '../repositories/Neo4jRepository.js'
 import { EmbeddingService } from './EmbeddingService.js'
-import type { NeuralLossMode } from '../types/index.js'
+import type {
+  NeuralLossMode,
+  NegativeSamplingTrainingSummary,
+} from '../types/index.js'
 import { TrainingResult } from '../types/index.js'
 import {
   buildTrainingDataset,
@@ -12,7 +15,13 @@ import {
   bceLabelsToPairwiseRows,
   m22BceLabelsToPairwiseRows,
   isM22TrainingDataset,
+  type NegativeSamplingDatasetMetadata,
 } from './training-utils.js'
+import {
+  assertNegativeSamplingEnvOrThrow,
+  parseNegativeSamplingEnv,
+  type NegativeSamplingEnv,
+} from '../config/negativeSamplingEnv.js'
 import {
   fetchTrainingData,
   normalizeOrderDateFromApi,
@@ -57,6 +66,94 @@ const pairwiseRankingLoss = (_yTrue: tf.Tensor, yPred: tf.Tensor): tf.Tensor =>
     const neg = flat.slice([p], [p])
     return tf.mean(tf.softplus(tf.sub(neg, pos)))
   })
+
+/**
+ * M23 T23-6 — Pure aggregator for the dataset's `samplingMetadata`.
+ *
+ * Inputs are the M23 runtime snapshot and the optional metadata produced
+ * by `buildTrainingDataset`. Output is a compact summary suitable for
+ * logging and the `TrainingResult` payload — no per-positive arrays.
+ *
+ * Legacy mode does not emit per-positive telemetry, so `composition`,
+ * `fallback`, and identity counters stay at zero. The thresholds and
+ * `seed` remain populated so legacy vs stratified comparisons share a
+ * uniform shape across runs.
+ *
+ * Exported (rather than inlined into `train()`) so it can be unit-tested
+ * without spinning up TensorFlow / fetching data.
+ */
+export function summarizeNegativeSampling(
+  env: NegativeSamplingEnv,
+  seed: number,
+  metadata?: NegativeSamplingDatasetMetadata
+): NegativeSamplingTrainingSummary {
+  const summary: NegativeSamplingTrainingSummary = {
+    mode: env.mode,
+    seed,
+    thresholds: {
+      softMaxSim: env.softMaxSim,
+      hardMinSim: env.hardMinSim,
+      mediumMinSim: env.mediumMinSim,
+    },
+    positives: metadata?.perPositive.length ?? 0,
+    composition: {
+      hardAvailable: 0,
+      hardSelected: 0,
+      mediumAvailable: 0,
+      mediumSelected: 0,
+      easyAvailable: 0,
+      easySelected: 0,
+    },
+    fallback: {
+      hardToMedium: 0,
+      hardToOther: 0,
+      mediumToHard: 0,
+      mediumToEasy: 0,
+      easyToMedium: 0,
+      easyToHard: 0,
+    },
+    identity: {
+      enabled: metadata?.identityEnabled ?? false,
+      applied: metadata?.identityGuardrailApplied ?? 0,
+      unavailable: metadata?.identityGuardrailUnavailable ?? 0,
+    },
+  }
+
+  if (!metadata) return summary
+
+  for (const t of metadata.perPositive) {
+    summary.composition.hardAvailable += t.hardAvailable
+    summary.composition.hardSelected += t.hardSelected
+    summary.composition.mediumAvailable += t.mediumAvailable
+    summary.composition.mediumSelected += t.mediumSelected
+    summary.composition.easyAvailable += t.easyAvailable
+    summary.composition.easySelected += t.easySelected
+    summary.fallback.hardToMedium += t.fallbackHardToMedium
+    summary.fallback.hardToOther += t.fallbackHardToOther
+    summary.fallback.mediumToHard += t.fallbackMediumToHard
+    summary.fallback.mediumToEasy += t.fallbackMediumToEasy
+    summary.fallback.easyToMedium += t.fallbackEasyToMedium
+    summary.fallback.easyToHard += t.fallbackEasyToHard
+  }
+
+  return summary
+}
+
+function formatSamplingSummaryLog(summary: NegativeSamplingTrainingSummary): string {
+  const c = summary.composition
+  const f = summary.fallback
+  const i = summary.identity
+  return (
+    `[ModelTrainer] M23 negative sampling: mode=${summary.mode} seed=${summary.seed} ` +
+    `thresholds(soft=${summary.thresholds.softMaxSim}/hard=${summary.thresholds.hardMinSim}/medium=${summary.thresholds.mediumMinSim}) ` +
+    `positives=${summary.positives} ` +
+    `composition(hard ${c.hardSelected}/${c.hardAvailable}, ` +
+    `medium ${c.mediumSelected}/${c.mediumAvailable}, ` +
+    `easy ${c.easySelected}/${c.easyAvailable}) ` +
+    `fallback(h>m=${f.hardToMedium} h>o=${f.hardToOther} m>h=${f.mediumToHard} m>e=${f.mediumToEasy} e>m=${f.easyToMedium} e>h=${f.easyToHard}) ` +
+    `identity(enabled=${i.enabled} applied=${i.applied} unavailable=${i.unavailable})`
+  )
+}
 
 export class ModelTrainer {
   private _isTraining = false
@@ -140,6 +237,13 @@ export class ModelTrainer {
     this._isTraining = true
     const startMs = Date.now()
 
+    // M23 T23-6: snapshot the negative-sampling runtime once at training entry
+    // so logs/result reference exactly one source of truth (no ad-hoc env reads
+    // inside training loops). Default mode stays `legacy` — rollback is purely
+    // operational (`NEGATIVE_SAMPLING_MODE=legacy` or unset), no code change.
+    const samplingEnv = parseNegativeSamplingEnv(process.env)
+    assertNegativeSamplingEnvOrThrow(samplingEnv)
+
     try {
       const { clients, products, orders } = await fetchTrainingData(this.apiServiceUrl)
 
@@ -180,6 +284,13 @@ export class ModelTrainer {
 
       const productsById = new Map(products.map((p) => [p.id, p]))
 
+      const trainingSeed = seedFromClientIds(clients)
+      const datasetOptions = {
+        negativeSamplingRatio: 4,
+        seed: trainingSeed,
+        useClassWeight: true,
+      }
+
       const dataset =
         trainM22Structural && m22Manifest
           ? buildTrainingDataset(
@@ -187,11 +298,7 @@ export class ModelTrainer {
               clientOrderMap,
               productEmbeddingMap,
               products,
-              {
-                negativeSamplingRatio: 4,
-                seed: seedFromClientIds(clients),
-                useClassWeight: true,
-              },
+              datasetOptions,
               temporal,
               this.profilePooling.get(),
               { manifest: m22Manifest, productsById }
@@ -201,14 +308,17 @@ export class ModelTrainer {
               clientOrderMap,
               productEmbeddingMap,
               products,
-              {
-                negativeSamplingRatio: 4,
-                seed: seedFromClientIds(clients),
-                useClassWeight: true,
-              },
+              datasetOptions,
               temporal,
               this.profilePooling.get()
             )
+
+      const samplingSummary = summarizeNegativeSampling(
+        samplingEnv,
+        trainingSeed,
+        dataset.samplingMetadata
+      )
+      console.info(formatSamplingSummaryLog(samplingSummary))
 
       const useM22 = isM22TrainingDataset(dataset)
 
@@ -397,6 +507,7 @@ export class ModelTrainer {
           pooling.mode === 'attention_light' || pooling.mode === 'attention_learned'
             ? (pooling.attentionMaxEntries ?? 0)
             : undefined,
+        negativeSampling: samplingSummary,
       }
     } catch (err) {
       this._isTraining = false

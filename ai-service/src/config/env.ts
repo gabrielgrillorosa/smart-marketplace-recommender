@@ -3,6 +3,11 @@ import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } fr
 import { parseNeuralLossMode } from './neuralLossEnv.js'
 import { parseM22EnvFlags, assertM22EnvCombinationsOrThrow, logM22EnvSummary } from './m22Env.js'
 import { parseNeuralArchProfileEnv } from './neuralArchEnv.js'
+import {
+  parseNegativeSamplingEnv,
+  assertNegativeSamplingEnvOrThrow,
+  logNegativeSamplingEnvSummary,
+} from './negativeSamplingEnv.js'
 
 const missingVars: string[] = []
 
@@ -103,6 +108,10 @@ const M22_ENV = Object.freeze(parseM22EnvFlags(process.env))
 assertM22EnvCombinationsOrThrow(M22_ENV)
 logM22EnvSummary(M22_ENV)
 
+const NEGATIVE_SAMPLING_ENV = Object.freeze(parseNegativeSamplingEnv(process.env))
+assertNegativeSamplingEnvOrThrow(NEGATIVE_SAMPLING_ENV)
+logNegativeSamplingEnvSummary(NEGATIVE_SAMPLING_ENV)
+
 const POSTGRES_HOST = process.env.POSTGRES_HOST ?? 'localhost'
 const POSTGRES_PORT = parseInt(process.env.POSTGRES_PORT ?? '5432', 10)
 const POSTGRES_DB = process.env.POSTGRES_DB ?? 'marketplace'
@@ -140,4 +149,5 @@ export const ENV = Object.freeze({
   NEURAL_LOSS_MODE,
   NEURAL_ARCH_PROFILE,
   M22_ENV,
+  NEGATIVE_SAMPLING_ENV,
 })

@@ -1,8 +1,8 @@
 # Roadmap
 
-**Current focus:** **M17 — Fase 2 (P2)** ou **Fase 3 (P3)** do [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md) quando priorizado ([spec M17](../features/m17-phased-recency-ranking-signals/spec.md)); calibração / baseline métrica em staging com `RECENCY_RERANK_WEIGHT` > 0 conforme necessidade. **M17 P1 + [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md)/064** ✅ **entregue** (2026-05-01). **M18** — Catálogo AD-055 ✅ (2026-04-30). **M22** — torre de item híbrida (denso + esparsa) para cold start — **IMPLEMENTED** no `ai-service` (2026-05-02, flags default off): [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [spec](../features/m22-hybrid-dual-item-tower-cold-start/spec.md). Ver [STATE](STATE.md).
+**Current focus:** **M21** — implementação parcial (**faltam P3/P4/P5**) no [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md). **M17** ✅ **COMPLETE** (P1+P2+P3). **M20** ✅ **IMPLEMENTED**. **M18** — Catálogo AD-055 ✅ (2026-04-30). **M22** — torre de item híbrida (denso + esparsa) para cold start — **IMPLEMENTED** no `ai-service` (2026-05-02, flags default off): [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md), [spec](../features/m22-hybrid-dual-item-tower-cold-start/spec.md). **M23** — negative sampling soft+hard **IMPLEMENTED** no `ai-service` (2026-05-04, `legacy` default, benchmark/rollout docs prontos): [RFC M23](../features/m23-negative-sampling-soft-hard-ranking/rfc.md), [spec M23](../features/m23-negative-sampling-soft-hard-ranking/spec.md), [design M23](../features/m23-negative-sampling-soft-hard-ranking/design.md), [tasks M23](../features/m23-negative-sampling-soft-hard-ranking/tasks.md). Ver [STATE](STATE.md).
 
-**Previous:** M17 P1 + transparência de score — **COMPLETE** ([spec](../features/m17-phased-recency-ranking-signals/spec.md), [design](../features/m17-phased-recency-ranking-signals/design.md), [tasks](../features/m17-phased-recency-ranking-signals/tasks.md)). M16 — ✅ **COMPLETE** (2026-04-30).
+**Previous:** M17 — **COMPLETE** ([spec](../features/m17-phased-recency-ranking-signals/spec.md), [design](../features/m17-phased-recency-ranking-signals/design.md), [tasks](../features/m17-phased-recency-ranking-signals/tasks.md)). M16 — ✅ **COMPLETE** (2026-04-30).
 
 ---
 
@@ -11,21 +11,22 @@
 
 | Ordem   | Nome de trabalho                                                  | Fonte                                                                                                                                                                                                                                 | Próximo passo **tlc**                                                     |
 | ------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **P1**  | **M17** — Fase 1 (ADR-062) + ADR-063/064 — ✅ **entregue** | [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md); [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md); [spec](../features/m17-phased-recency-ranking-signals/spec.md); [tasks](../features/m17-phased-recency-ranking-signals/tasks.md) | **M17 P2** (pooling) ou **M17 P3** (atenção); baseline métrica / staging |
-| **P2**  | **M18** — catálogo simplificado / contrato AD-055 — ✅ entregue | [STATE § AD-055](STATE.md#state-ad-055); [spec M18](../features/m18-catalog-simplified-ad055/spec.md) | Verificação `docker compose`; seguir **M17 P2/P3** |
+| **P1**  | **M17** — Fases 1/2/3 (ADR-062 + ADR-063/064) — ✅ **COMPLETE** | [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md); [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md); [spec](../features/m17-phased-recency-ranking-signals/spec.md); [tasks](../features/m17-phased-recency-ranking-signals/tasks.md) | Marco encerrado |
+| **P2**  | **M18** — catálogo simplificado / contrato AD-055 — ✅ entregue | [STATE § AD-055](STATE.md#state-ad-055); [spec M18](../features/m18-catalog-simplified-ad055/spec.md) | Verificação `docker compose` |
 | **—**   | **M19** — Pos-Efetivar deltas & baseline (ADR-065) — ✅ **IMPLEMENTED** (2026-05-01) | [ADR-065](../features/m19-pos-efetivar-showcase-deltas/adr-065-post-checkout-column-deltas-baseline.md); [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md); [tasks](../features/m19-pos-efetivar-showcase-deltas/tasks.md) | Verificação `npm run test:e2e` no `frontend` |
-| **—**   | **M20** — Retreino manual, métricas, showcase «Pos-Retreino» (ADR-067) — **DESIGNED** (2026-05-01) | [ADR-067](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | **Execute** T067-1 → T067-7 (gates por serviço) |
-| **—**   | **M21** — Evolução ranking/perfil/híbrido (ADR-070 + ADR-071) — **DESIGNED** (complex, 2026-05-01) | [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md); [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md); [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [design](../features/m21-ranking-evolution-committee-decisions/design.md); [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md) | **Execute** T21-1 → T21-7 (`ai-service`; ordem T1→…→T3) |
+| **—**   | **M20** — Retreino manual, métricas, showcase «Pos-Retreino» (ADR-067) — ✅ **IMPLEMENTED** | [ADR-067](../features/m20-manual-retrain-metrics-pos-retreino/adr-067-manual-retrain-metrics-showcase-pos-retreino.md); [design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md); [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md); [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md) | Operação e monitorização |
+| **—**   | **M21** — Evolução ranking/perfil/híbrido (ADR-070 + ADR-071) — **IMPLEMENTAÇÃO PARCIAL** | [ADR-070](../features/m21-ranking-evolution-committee-decisions/adr-070-m21-committee-priorities-and-m17-p3-deferral.md); [ADR-071](../features/m21-ranking-evolution-committee-decisions/adr-071-m21-neural-head-and-pure-fusion-boundary.md); [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md); [design](../features/m21-ranking-evolution-committee-decisions/design.md); [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md) | Concluir **P3/P4/P5** |
 | **—**   | **M22** — Torre de item híbrida (HF denso + esparsa categoria/marca/id) cold start — **IMPLEMENTED** (`ai-service`, 2026-05-02) | [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md); [spec M22](../features/m22-hybrid-dual-item-tower-cold-start/spec.md); [design M22](../features/m22-hybrid-dual-item-tower-cold-start/design.md); [tasks M22](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md) | **Operador:** activar `M22_*`, treinar, `precisionAt5`; não substitui M21 |
+| **—**   | **M23** — Redesenho de negative sampling soft + hard para ranking — **IMPLEMENTED** (`ai-service`, 2026-05-04) | [RFC M23](../features/m23-negative-sampling-soft-hard-ranking/rfc.md); [spec M23](../features/m23-negative-sampling-soft-hard-ranking/spec.md); [design M23](../features/m23-negative-sampling-soft-hard-ranking/design.md); [tasks M23](../features/m23-negative-sampling-soft-hard-ranking/tasks.md) | **Operador:** `npm run benchmark:m23`, validar rollout e manter `legacy` até aprovação |
 
 
 **M18:** implementação + E2E `m18-catalog-ad055.spec.ts` — estado em [STATE § AD-055](STATE.md#state-ad-055).
 
 **M19:** baseline cart-aware para deltas da coluna **Pós efetivar**; motor único `buildRecommendationDeltaMap`; PE-04 opção B — ✅ [spec M19](../features/m19-pos-efetivar-showcase-deltas/spec.md) (2026-05-01).
 
-**M20 (ADR-067):** retreino só manual por defeito; métricas completas no job/`model/status`; UI **Pos-Retreino** vs **Com IA** + acção **Fixar novo normal** — **DESIGNED** ([design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md), [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md), [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md)).
+**M20 (ADR-067):** retreino só manual por defeito; métricas completas no job/`model/status`; UI **Pos-Retreino** vs **Com IA** + acção **Fixar novo normal** — ✅ **IMPLEMENTED** ([design M20](../features/m20-manual-retrain-metrics-pos-retreino/design.md), [spec M20](../features/m20-manual-retrain-metrics-pos-retreino/spec.md), [tasks](../features/m20-manual-retrain-metrics-pos-retreino/tasks.md)).
 
-**M21 (ADR-070, ADR-071):** entregas incrementais **T1 → A → T2 → R → T4 → T3** (pairwise, atenção leve no perfil, negativos duros, fusão dinâmica, temperatura, loss combinada) sem substituir **M17 P3**; defaults legacy por env; gate **`precisionAt5`**. **DESIGNED** (complex; [spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md), [design](../features/m21-ranking-evolution-committee-decisions/design.md), [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md)).
+**M21 (ADR-070, ADR-071):** entregas incrementais **T1 → A → T2 → R → T4 → T3** (pairwise, atenção leve no perfil, negativos duros, fusão dinâmica, temperatura, loss combinada) sem substituir **M17 P3**; defaults legacy por env; gate **`precisionAt5`**. **IMPLEMENTAÇÃO PARCIAL** — faltam **P3/P4/P5** ([spec M21](../features/m21-ranking-evolution-committee-decisions/spec.md), [design](../features/m21-ranking-evolution-committee-decisions/design.md), [tasks](../features/m21-ranking-evolution-committee-decisions/tasks.md)).
 
 **M22 ([ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md)):** segundo ramo de **item** com **features esparsas** (marca/categoria/id) fundido ao embedding **HF**, para cold start sem depender só de temperatura/janela; milestone **separado** de M21; **IMPLEMENTED** no `ai-service` (2026-05-02) — defaults `M22_*` off; ver [README](../../ai-service/README.md) e [tasks](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md).
 
@@ -33,13 +34,13 @@
 
 ---
 
-## M17 — Phased recency ranking signals (`ai-service`) — **P1 + ADR-063/064 ✅** · **P2 / P3 🔄 próximo**
+## M17 — Phased recency ranking signals (`ai-service`) — ✅ **COMPLETE** (P1+P2+P3)
 
 **Goal:** Roll out **recency-aware** hybrid ranking in **three controlled phases** with **orthogonal configuration** (per [ADR-062](../features/m17-phased-recency-ranking-signals/adr-062-phased-recency-ranking-signals.md)): measurable attribution, no “big bang” stacking of all signals on day one, and a clear path to phase 3 (attention) only when data volume justifies it.
 
 **Target:** Fase 1 com peso de boost default `0`; fases 2–3 com flags/env e testes; com Fase 2 activa, treino e inferência usam a **mesma** definição de perfil; métricas (`precisionAt5` e gates) documentadas por fase.
 
-**Estado (2026-05-01):** **Fase 1 (P1)** e **transparência ADR-063/064** (`rankingConfig`, modal, proxy, Zustand) **entregues**. **Seguinte no mesmo milestone:** **Fase 2** (pooling perfil treino+inferência) e **Fase 3** (atenção temporal) — ver [spec M17](../features/m17-phased-recency-ranking-signals/spec.md) histórias P2/P3.
+**Estado (2026-05-04):** **Fase 1 (P1)**, **Fase 2 (P2)** e **Fase 3 (P3)** concluídas, incluindo transparência ADR-063/064 (`rankingConfig`, modal, proxy, Zustand).
 
 ### Features
 
@@ -48,11 +49,11 @@
 - Similarity boost toward last (or recent) purchased item embeddings in `RecommendationService` (or equivalent re-rank step); intensity via env (e.g. weight `0` = off).
 - No MLP retrain required for first value; complements [ADR-060](../features/m16-neural-first-didactic-ranking-catalog-density/adr-060-recent-suppression-neo4j-order-date.md) (suppression ≠ boost).
 
-**Phase 2 — Weighted client profile pooling** — PLANNED
+**Phase 2 — Weighted client profile pooling** — ✅ IMPLEMENTED
 
 - Exponential decay (or documented alternative) in `training-utils` + matching inference path; **requires** aligned train/infer and a retrain cycle to evaluate offline/online metrics.
 
-**Phase 3 — Temporal attention over orders** — PLANNED (roadmap / larger change)
+**Phase 3 — Temporal attention over orders** — ✅ IMPLEMENTED
 
 - New model path and serialized artifact; **not** a third trivial toggle — conditioned on sufficient events per client; separate design slice when prioritized.
 
@@ -61,7 +62,7 @@
 - **Decisão:** [ADR-063](../features/m17-phased-recency-ranking-signals/adr-063-score-breakdown-api-and-product-detail-modal.md) (*Accepted*): `rankingConfig` e termos no payload; modal «Resumo do score actual» alinhado ao servidor. [ADR-064](../features/m17-phased-recency-ranking-signals/adr-064-rankingconfig-zustand-recommendation-slice.md): `rankingConfig` no `recommendationSlice` Zustand.
 - **Rastreio:** [tasks M17](../features/m17-phased-recency-ranking-signals/tasks.md) T7–T11; [spec PRS-16–22](../features/m17-phased-recency-ranking-signals/spec.md).
 
-**Specification:** [.specs/features/m17-phased-recency-ranking-signals/spec.md](../features/m17-phased-recency-ranking-signals/spec.md) — P1 `PRS-01`…`PRS-10`; ADR-063 `PRS-16`…`PRS-22`; **P2/P3** em histórias de alto nível. **Tasks P1+ADR:** [tasks.md](../features/m17-phased-recency-ranking-signals/tasks.md) — **concluídas**.
+**Specification:** [.specs/features/m17-phased-recency-ranking-signals/spec.md](../features/m17-phased-recency-ranking-signals/spec.md) — P1 `PRS-01`…`PRS-10`; ADR-063 `PRS-16`…`PRS-22`; P2/P3 no mesmo milestone. **Tasks:** [tasks.md](../features/m17-phased-recency-ranking-signals/tasks.md) — **concluídas**.
 
 ---
 
@@ -85,7 +86,7 @@
 
 ---
 
-## M20 — Retreino manual, métricas de treino, showcase «Pos-Retreino» (ADR-067) — **DESIGNED** (2026-05-01)
+## M20 — Retreino manual, métricas de treino, showcase «Pos-Retreino» (ADR-067) — ✅ **IMPLEMENTED**
 
 **Goal:** Alinhar operação e narrativa didáctica: checkout **só sync** Neo4j por defeito; treino profundo via **retreino manual**; `expectedTrainingTriggered` coerente; métricas completas do `ModelTrainer` nos jobs e no status; showcase com coluna **Pos-Retreino** (delta vs **Com IA** pré-promoção) e acção **Reiniciar**; cron diário configurável independentemente.
 
@@ -95,7 +96,7 @@
 
 ---
 
-## M21 — Evolução ranking, perfil & fusão híbrida (ADR-070 + ADR-071) — **DESIGNED** (complex, 2026-05-01)
+## M21 — Evolução ranking, perfil & fusão híbrida (ADR-070 + ADR-071) — **IMPLEMENTAÇÃO PARCIAL** (faltam P3/P4/P5)
 
 **Goal:** Entregar melhorias incrementais de treino e inferência (**pairwise loss**, **atenção leve no perfil**, **negativos mais duros**, **reponderação híbrida dinâmica**, **temperatura**, **loss combinada**) sem obrigar **M17 P3** (atenção pesada no MLP); cada técnica activável por env com defaults que reproduzem o sistema pré-M21.
 
@@ -114,6 +115,21 @@
 **Specification:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/spec.md](../features/m22-hybrid-dual-item-tower-cold-start/spec.md) (**M22-01**…**M22-07**). **Design:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/design.md](../features/m22-hybrid-dual-item-tower-cold-start/design.md). **Tasks:** [.specs/features/m22-hybrid-dual-item-tower-cold-start/tasks.md](../features/m22-hybrid-dual-item-tower-cold-start/tasks.md) (**Executed** T22-1…T22-10, 2026-05-02). **ADR:** [ADR-074](../features/m22-hybrid-dual-item-tower-cold-start/adr-074-m22-milestone-hybrid-sparse-item-tower.md).
 
 **Relação com M21:** M22 **não** conclui nem substitui as faixas M21; pode ser priorizado **depois** ou em paralelo com consciência de superfície de treino/artefacto.
+
+---
+
+## M23 — Redesenho de negative sampling (soft + hard) para ranking — **IMPLEMENTED** (`ai-service`, 2026-05-04)
+
+**Goal:** Reequilibrar construção de negativos para treino de ranking, preservando negativos difíceis (semelhantes) como sinal principal de aprendizagem e removendo apenas casos quase duplicados/ambíguos com alto risco de falso negativo.
+
+**Target:** Entregar a execução técnica no `ai-service` preservando rollout em duas fases (calibração offline + ativação controlada em produção), com `legacy` como baseline operacional e `stratified` gated por benchmark.
+
+**RFC:** [../features/m23-negative-sampling-soft-hard-ranking/rfc.md](../features/m23-negative-sampling-soft-hard-ranking/rfc.md).  
+**Specification:** [../features/m23-negative-sampling-soft-hard-ranking/spec.md](../features/m23-negative-sampling-soft-hard-ranking/spec.md).  
+**Design:** [../features/m23-negative-sampling-soft-hard-ranking/design.md](../features/m23-negative-sampling-soft-hard-ranking/design.md).  
+**Tasks:** [../features/m23-negative-sampling-soft-hard-ranking/tasks.md](../features/m23-negative-sampling-soft-hard-ranking/tasks.md) (`T23-1`…`T23-9`).
+
+**Implementation status:** sampler `legacy|stratified`, benchmark `m23SamplingBenchmark`, CLI `npm run benchmark:m23`, rollout/rollback docs no `ai-service/README.md`, `.env.example` alinhado e gate `cd ai-service && npm run verify` verde.
 
 ---
 

@@ -116,6 +116,54 @@ export interface TrainingMetadata {
   poolingAttentionMaxEntries?: number
 }
 
+/**
+ * M23 T23-6 — Aggregate snapshot of negative-sampling decisions taken
+ * while building the training dataset. Optional and backward-compatible:
+ * legacy mode emits a minimal object (`mode`, thresholds, `seed`, and
+ * `positives`) with composition counters left at zero; stratified mode
+ * fills the bucket / fallback / identity-guardrail summary derived from
+ * `samplingMetadata.perPositive`.
+ *
+ * Kept intentionally small (single object, no per-positive arrays) so
+ * `TrainingResult` and `console.info` lines remain compact even on
+ * large datasets.
+ */
+export interface NegativeSamplingTrainingSummary {
+  mode: import('../config/negativeSamplingEnv.js').NegativeSamplingMode
+  seed: number
+  thresholds: {
+    softMaxSim: number
+    hardMinSim: number
+    mediumMinSim: number
+  }
+  /** Number of positive rows the dataset emitted (== `perPositive.length` in stratified). */
+  positives: number
+  /** Bucket composition (sum across positives). All zero in legacy mode. */
+  composition: {
+    hardAvailable: number
+    hardSelected: number
+    mediumAvailable: number
+    mediumSelected: number
+    easyAvailable: number
+    easySelected: number
+  }
+  /** Fallback counters (sum across positives). All zero in legacy mode. */
+  fallback: {
+    hardToMedium: number
+    hardToOther: number
+    mediumToHard: number
+    mediumToEasy: number
+    easyToMedium: number
+    easyToHard: number
+  }
+  /** Identity guardrail summary (M23-15). `applied`/`unavailable` zero in legacy mode. */
+  identity: {
+    enabled: boolean
+    applied: number
+    unavailable: number
+  }
+}
+
 export interface TrainingResult {
   status: 'trained'
   epochs: number
@@ -134,6 +182,8 @@ export interface TrainingResult {
   poolingHalfLifeDays?: number
   poolingAttentionTemperature?: number | null
   poolingAttentionMaxEntries?: number
+  /** M23 T23-6 — aggregate negative-sampling summary for this training run. */
+  negativeSampling?: NegativeSamplingTrainingSummary
 }
 
 export interface ClientProfile {

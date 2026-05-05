@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildApp } from './helpers/buildApp.js'
 import { ModelStore } from '../services/ModelStore.js'
+import { summarizeNegativeSampling } from '../services/ModelTrainer.js'
+import type { NegativeSamplingDatasetMetadata } from '../services/training-utils.js'
+import type { NegativeSamplingEnv } from '../config/negativeSamplingEnv.js'
+import type { NegativeSamplingTelemetry } from '../services/negativeSamplingSelector.js'
 
 describe('GET /api/v1/model/status', () => {
   it('returns 200 with status: untrained when no model is trained', async () => {
@@ -247,5 +251,170 @@ describe('GET /api/v1/model/status governance metadata (M13)', () => {
     expect(body.lastTrainingTriggeredBy).toBe('checkout')
     expect(body.lastOrderId).toBe('order-123')
     expect(body.lastDecision?.accepted).toBe(false)
+  })
+})
+
+/**
+ * M23 T23-6 — `summarizeNegativeSampling` is the pure aggregator that
+ * `ModelTrainer.train()` uses to expose `mode`, active thresholds, `seed`,
+ * and a compact composition/fallback/identity summary on the training
+ * result and on the structured info log. These tests exercise the
+ * aggregator directly so they don't need to spin up TensorFlow / network
+ * fetch — `train()` simply forwards the same inputs.
+ */
+describe('summarizeNegativeSampling — M23 T23-6 training summary', () => {
+  const legacyEnv: NegativeSamplingEnv = {
+    mode: 'legacy',
+    softMaxSim: 0.92,
+    hardMinSim: 0.7,
+    mediumMinSim: 0.4,
+    benchmarkRuns: 2,
+  }
+  const stratifiedEnv: NegativeSamplingEnv = {
+    ...legacyEnv,
+    mode: 'stratified',
+  }
+
+  function makeTelemetry(
+    overrides: Partial<NegativeSamplingTelemetry> = {}
+  ): NegativeSamplingTelemetry {
+    return {
+      mode: 'stratified',
+      seed: 0,
+      hardAvailable: 0,
+      hardSelected: 0,
+      mediumAvailable: 0,
+      mediumSelected: 0,
+      easyAvailable: 0,
+      easySelected: 0,
+      intraCategoryAvailable: 0,
+      intraCategorySelected: 0,
+      fallbackHardToMedium: 0,
+      fallbackHardToOther: 0,
+      fallbackMediumToHard: 0,
+      fallbackMediumToEasy: 0,
+      fallbackEasyToMedium: 0,
+      fallbackEasyToHard: 0,
+      ...overrides,
+    }
+  }
+
+  it('legacy mode without metadata: exposes mode, thresholds, seed, zero composition/identity', () => {
+    const summary = summarizeNegativeSampling(legacyEnv, 4242, undefined)
+
+    expect(summary.mode).toBe('legacy')
+    expect(summary.seed).toBe(4242)
+    expect(summary.thresholds).toEqual({
+      softMaxSim: 0.92,
+      hardMinSim: 0.7,
+      mediumMinSim: 0.4,
+    })
+    expect(summary.positives).toBe(0)
+    expect(summary.composition).toEqual({
+      hardAvailable: 0,
+      hardSelected: 0,
+      mediumAvailable: 0,
+      mediumSelected: 0,
+      easyAvailable: 0,
+      easySelected: 0,
+    })
+    expect(summary.fallback).toEqual({
+      hardToMedium: 0,
+      hardToOther: 0,
+      mediumToHard: 0,
+      mediumToEasy: 0,
+      easyToMedium: 0,
+      easyToHard: 0,
+    })
+    expect(summary.identity).toEqual({ enabled: false, applied: 0, unavailable: 0 })
+  })
+
+  it('stratified mode aggregates composition and fallback counts across positives', () => {
+    const metadata: NegativeSamplingDatasetMetadata = {
+      mode: 'stratified',
+      identityEnabled: false,
+      identityGuardrailApplied: 0,
+      identityGuardrailUnavailable: 0,
+      perPositive: [
+        makeTelemetry({
+          hardAvailable: 3,
+          hardSelected: 1,
+          mediumAvailable: 5,
+          mediumSelected: 2,
+          easyAvailable: 7,
+          easySelected: 1,
+          fallbackHardToMedium: 0,
+          fallbackEasyToMedium: 1,
+        }),
+        makeTelemetry({
+          hardAvailable: 2,
+          hardSelected: 0,
+          mediumAvailable: 4,
+          mediumSelected: 2,
+          easyAvailable: 6,
+          easySelected: 1,
+          fallbackHardToMedium: 1,
+          fallbackMediumToEasy: 1,
+        }),
+      ],
+    }
+
+    const summary = summarizeNegativeSampling(stratifiedEnv, 12345, metadata)
+
+    expect(summary.mode).toBe('stratified')
+    expect(summary.seed).toBe(12345)
+    expect(summary.positives).toBe(2)
+    expect(summary.composition).toEqual({
+      hardAvailable: 5,
+      hardSelected: 1,
+      mediumAvailable: 9,
+      mediumSelected: 4,
+      easyAvailable: 13,
+      easySelected: 2,
+    })
+    expect(summary.fallback).toEqual({
+      hardToMedium: 1,
+      hardToOther: 0,
+      mediumToHard: 0,
+      mediumToEasy: 1,
+      easyToMedium: 1,
+      easyToHard: 0,
+    })
+  })
+
+  it('forwards identity guardrail counters from dataset metadata', () => {
+    const metadata: NegativeSamplingDatasetMetadata = {
+      mode: 'stratified',
+      identityEnabled: true,
+      identityGuardrailApplied: 3,
+      identityGuardrailUnavailable: 1,
+      perPositive: [makeTelemetry()],
+    }
+
+    const summary = summarizeNegativeSampling(stratifiedEnv, 7, metadata)
+
+    expect(summary.identity).toEqual({ enabled: true, applied: 3, unavailable: 1 })
+    expect(summary.positives).toBe(1)
+  })
+
+  it('legacy mode WITH metadata still aggregates faithfully (uniform shape for legacy vs stratified compare)', () => {
+    // Defensive: legacy normally emits no metadata, but the aggregator must
+    // still produce a comparable summary when given any metadata payload.
+    const metadata: NegativeSamplingDatasetMetadata = {
+      mode: 'legacy' as never,
+      identityEnabled: false,
+      identityGuardrailApplied: 0,
+      identityGuardrailUnavailable: 0,
+      perPositive: [
+        makeTelemetry({ hardAvailable: 1, hardSelected: 1 }),
+      ],
+    }
+
+    const summary = summarizeNegativeSampling(legacyEnv, 99, metadata)
+
+    expect(summary.mode).toBe('legacy')
+    expect(summary.positives).toBe(1)
+    expect(summary.composition.hardSelected).toBe(1)
+    expect(summary.composition.hardAvailable).toBe(1)
   })
 })

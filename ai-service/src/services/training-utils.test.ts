@@ -563,6 +563,433 @@ describe('buildTrainingDataset', () => {
   })
 })
 
+/**
+ * M23 — T23-5 RED tests for `buildTrainingDataset` orchestrating
+ * legacy vs stratified negative sampling modes. The orchestrator is
+ * expected to:
+ *   - default to `legacy` when `NEGATIVE_SAMPLING_MODE` is unset (full
+ *     backward compatibility with all tests above);
+ *   - in `stratified`, build the candidate pool via the T23-2 soft
+ *     cleanup, classify via T23-3 buckets, pick via T23-4 selector;
+ *   - emit OPTIONAL `samplingMetadata` on the result (mode + per-positive
+ *     telemetry aggregated) without breaking existing typing;
+ *   - apply the M23-15 identity guardrail when M22 manifest has
+ *     `identityEnabled = true` and there ARE intra-category candidates
+ *     after soft cleanup, ensuring at least one intra-category survives
+ *     among selected negatives.
+ */
+describe('buildTrainingDataset — M23 mode dispatch (T23-5)', () => {
+  function withEnv<T>(overrides: Record<string, string | undefined>, fn: () => T): T {
+    const prev: Record<string, string | undefined> = {}
+    for (const k of Object.keys(overrides)) {
+      prev[k] = process.env[k]
+      const v = overrides[k]
+      if (v === undefined) delete process.env[k]
+      else process.env[k] = v
+    }
+    try {
+      return fn()
+    } finally {
+      for (const k of Object.keys(prev)) {
+        const v = prev[k]
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+      }
+    }
+  }
+
+  it('legacy default: NEGATIVE_SAMPLING_MODE unset reproduces pre-M23 dataset shape and counts', () => {
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients = [defaultClients[0]]
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: undefined }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        { ...defaultOptions, negativeSamplingRatio: 4 },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling
+      )
+    )
+
+    if (isM22TrainingDataset(result)) throw new Error('expected legacy baseline dataset')
+    expect(result.labels.filter((l) => l === 1).length).toBe(1)
+    expect(result.labels.filter((l) => l === 0).length).toBe(3)
+    expect(result.inputVectors).toHaveLength(4)
+    result.inputVectors.forEach((v) => expect(v).toHaveLength(768))
+  })
+
+  it('legacy explicit: NEGATIVE_SAMPLING_MODE=legacy is byte-identical to no env (same seed)', () => {
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([
+      ['c1', new Set(['p1', 'p2'])],
+      ['c2', new Set(['p3'])],
+    ])
+    const opts: TrainingDatasetOptions = { ...defaultOptions, seed: 12345 }
+
+    const fromUnset = withEnv({ NEGATIVE_SAMPLING_MODE: undefined }, () =>
+      buildTrainingDataset(
+        defaultClients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        opts,
+        mockTemporal(defaultClients, clientOrderMap),
+        defaultPooling
+      )
+    )
+    const fromLegacy = withEnv({ NEGATIVE_SAMPLING_MODE: 'legacy' }, () =>
+      buildTrainingDataset(
+        defaultClients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        opts,
+        mockTemporal(defaultClients, clientOrderMap),
+        defaultPooling
+      )
+    )
+
+    if (isM22TrainingDataset(fromUnset) || isM22TrainingDataset(fromLegacy)) {
+      throw new Error('expected baseline datasets')
+    }
+    expect(fromLegacy.labels).toEqual(fromUnset.labels)
+    expect(fromLegacy.inputVectors).toEqual(fromUnset.inputVectors)
+  })
+
+  it('stratified: emits target distribution (1 hard + 2 medium + 1 easy = 4 negatives) per positive', () => {
+    // Pool engineered so cosine bands are unambiguous after default thresholds
+    // (hard 0.70-0.92, medium 0.40-0.70, easy <0.40, and soft cleanup at >0.92).
+    // SKUs use distinct prefixes to avoid the T23-2 `same_sku_family` rule.
+    const products: ProductDTO[] = [
+      { id: 'pos', name: 'Positive', category: 'food', price: 1, sku: 'POS-1' },
+      { id: 'h1', name: 'Hard A', category: 'food', price: 2, sku: 'HRDA-1' },
+      { id: 'h2', name: 'Hard B', category: 'food', price: 3, sku: 'HRDB-1' },
+      { id: 'm1', name: 'Med A', category: 'cleaning', price: 4, sku: 'MEDA-1' },
+      { id: 'm2', name: 'Med B', category: 'cleaning', price: 5, sku: 'MEDB-1' },
+      { id: 'e1', name: 'Easy A', category: 'snacks', price: 6, sku: 'ESYA-1' },
+      { id: 'e2', name: 'Easy B', category: 'snacks', price: 7, sku: 'ESYB-1' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['pos', [1, 0, 0, 0]],
+      ['h1', [0.85, 0.5, 0, 0]],
+      ['h2', [0.8, 0.6, 0, 0]],
+      ['m1', [0.55, 0.83, 0, 0]],
+      ['m2', [0.5, 0.86, 0, 0]],
+      ['e1', [0, 1, 0, 0]],
+      ['e2', [0, 0, 1, 0]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['pos'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        embeddingMap,
+        products,
+        { negativeSamplingRatio: 4, seed: 42, useClassWeight: true },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling
+      )
+    )
+    if (isM22TrainingDataset(result)) throw new Error('expected baseline dataset')
+
+    expect(result.labels.filter((l) => l === 1).length).toBe(1)
+    expect(result.labels.filter((l) => l === 0).length).toBe(4)
+    expect(result.inputVectors).toHaveLength(5)
+
+    const meta = (result as { samplingMetadata?: unknown }).samplingMetadata as
+      | { mode: string; perPositive: { hardSelected: number; mediumSelected: number; easySelected: number }[] }
+      | undefined
+    expect(meta).toBeDefined()
+    expect(meta!.mode).toBe('stratified')
+    expect(meta!.perPositive).toHaveLength(1)
+    expect(meta!.perPositive[0].hardSelected).toBe(1)
+    expect(meta!.perPositive[0].mediumSelected).toBe(2)
+    expect(meta!.perPositive[0].easySelected).toBe(1)
+  })
+
+  it('stratified determinism: same env + same seed yields identical labels and vectors', () => {
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([
+      ['c1', new Set(['p1', 'p2'])],
+      ['c2', new Set(['p3'])],
+    ])
+    const opts: TrainingDatasetOptions = { negativeSamplingRatio: 4, seed: 999, useClassWeight: true }
+
+    const r1 = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        defaultClients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        opts,
+        mockTemporal(defaultClients, clientOrderMap),
+        defaultPooling
+      )
+    )
+    const r2 = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        defaultClients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        opts,
+        mockTemporal(defaultClients, clientOrderMap),
+        defaultPooling
+      )
+    )
+    if (isM22TrainingDataset(r1) || isM22TrainingDataset(r2)) throw new Error('expected baseline')
+    expect(r1.labels).toEqual(r2.labels)
+    expect(r1.inputVectors).toEqual(r2.inputVectors)
+  })
+
+  it('stratified fallback: when no hard pool exists, the hard slot is filled from medium', () => {
+    // All non-positive products are far from the positive (cosine ~0) → medium/easy only.
+    // We engineer a pool with no hard but at least 4 candidates so the slot template fills.
+    const products: ProductDTO[] = [
+      { id: 'pos', name: 'Positive', category: 'food', price: 1, sku: 'POS-1' },
+      // medium band candidates (cosine ~0.5 against positive)
+      { id: 'm1', name: 'Med A', category: 'cleaning', price: 2, sku: 'MEDA-1' },
+      { id: 'm2', name: 'Med B', category: 'cleaning', price: 3, sku: 'MEDB-1' },
+      // easy candidates (orthogonal)
+      { id: 'e1', name: 'Easy A', category: 'snacks', price: 4, sku: 'ESYA-1' },
+      { id: 'e2', name: 'Easy B', category: 'snacks', price: 5, sku: 'ESYB-1' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['pos', [1, 0, 0, 0]],
+      ['m1', [0.55, 0.83, 0, 0]],
+      ['m2', [0.5, 0.86, 0, 0]],
+      ['e1', [0, 1, 0, 0]],
+      ['e2', [0, 0, 1, 0]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['pos'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        embeddingMap,
+        products,
+        { negativeSamplingRatio: 4, seed: 7, useClassWeight: true },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling
+      )
+    )
+    if (isM22TrainingDataset(result)) throw new Error('expected baseline')
+
+    expect(result.labels.filter((l) => l === 0).length).toBe(4)
+    const meta = (result as { samplingMetadata?: { perPositive: { fallbackHardToMedium: number }[] } }).samplingMetadata
+    expect(meta).toBeDefined()
+    expect(meta!.perPositive[0].fallbackHardToMedium).toBeGreaterThanOrEqual(1)
+  })
+
+  it('stratified + M22 identity guardrail: at least one intra-category negative is preserved when available', () => {
+    // Engineer a pool where intra-category candidates land in `medium` with
+    // LOWER cosine than the cross-category mediums, AND non-intra easies sit
+    // even lower. Selector then naturally picks 1 hard (cross) + 2 medium
+    // (cross-category, higher cosine) + 1 easy (cross-category, lowest
+    // cosine) → no intra. Guardrail must swap one in.
+    const products: ProductDTO[] = [
+      { id: 'pos', name: 'Positive', category: 'food', price: 1, sku: 'POS-1' },
+      { id: 'food1', name: 'Other Food A', category: 'food', price: 2, sku: 'FDA-1' },
+      { id: 'food2', name: 'Other Food B', category: 'food', price: 3, sku: 'FDB-1' },
+      { id: 'h1', name: 'Cleaning Hard', category: 'cleaning', price: 4, sku: 'CLA-1' },
+      { id: 'h2', name: 'Cleaning Hard 2', category: 'cleaning', price: 5, sku: 'CLB-1' },
+      { id: 'h3', name: 'Snacks Hard', category: 'snacks', price: 6, sku: 'SNA-1' },
+      { id: 'h4', name: 'Snacks Hard 2', category: 'snacks', price: 7, sku: 'SNB-1' },
+      { id: 'e1', name: 'Easy A', category: 'cleaning', price: 8, sku: 'ESYA-1' },
+      { id: 'e2', name: 'Easy B', category: 'snacks', price: 9, sku: 'ESYB-1' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['pos', [1, 0, 0, 0]],
+      // intra-category but lower-cosine medium (~0.45) → loses both medium
+      // slot competition and easy slot competition (vs cross-category easies
+      // with cosine 0)
+      ['food1', [0.45, 0.89, 0, 0]],
+      ['food2', [0.45, 0, 0.89, 0]],
+      // cross-category hard (cosine ~0.86, ~0.80)
+      ['h1', [0.85, 0.5, 0, 0]],
+      ['h2', [0.8, 0.6, 0, 0]],
+      // cross-category medium with HIGHER cosine than intras (~0.55, ~0.50)
+      ['h3', [0.55, 0.83, 0, 0]],
+      ['h4', [0.5, 0.86, 0, 0]],
+      // cross-category easies (cosine 0) win the easy slot vs intra-mediums
+      ['e1', [0, 1, 0, 0]],
+      ['e2', [0, 0, 1, 0]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['pos'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const manifest = buildM22ManifestFromProducts(products, {
+      identityEnabled: true,
+      priceBinEdges: [0, 5, 10, 25, 100],
+    })
+    const productsById = new Map(products.map((p) => [p.id, p]))
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        embeddingMap,
+        products,
+        { negativeSamplingRatio: 4, seed: 7, useClassWeight: true },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling,
+        { manifest, productsById }
+      )
+    )
+    if (!isM22TrainingDataset(result)) throw new Error('expected M22 dataset')
+
+    // Find indices of negatives (label 0) and check at least one comes from category 'food'.
+    const negativeRowIndices = result.labels
+      .map((l, i) => (l === 0 ? i : -1))
+      .filter((i) => i !== -1)
+    expect(negativeRowIndices.length).toBeGreaterThan(0)
+
+    // The dataset hides product ids inside row sem384. We instead recompute via embedding
+    // match: any selected negative whose sem384 equals food1/food2 embedding satisfies the
+    // guardrail.
+    const intraEmbeddings = [embeddingMap.get('food1')!, embeddingMap.get('food2')!]
+    const hasIntraNeg = negativeRowIndices.some((idx) => {
+      const sem = result.rows[idx]!.sem384
+      return intraEmbeddings.some(
+        (target) => target.length === sem.length && target.every((v, j) => Math.abs(v - sem[j]) < 1e-9)
+      )
+    })
+    expect(hasIntraNeg).toBe(true)
+
+    const meta = (result as { samplingMetadata?: { identityGuardrailApplied: number; identityGuardrailUnavailable: number } })
+      .samplingMetadata
+    expect(meta).toBeDefined()
+    expect(meta!.identityGuardrailApplied).toBeGreaterThanOrEqual(1)
+  })
+
+  it('stratified + M22 identity off: guardrail is NOT triggered (no intra-category swap)', () => {
+    const products: ProductDTO[] = [
+      { id: 'pos', name: 'Positive', category: 'food', price: 1, sku: 'POS-1' },
+      { id: 'food1', name: 'Other Food', category: 'food', price: 2, sku: 'FDA-1' },
+      { id: 'h1', name: 'Cross 1', category: 'cleaning', price: 4, sku: 'CLA-1' },
+      { id: 'h2', name: 'Cross 2', category: 'cleaning', price: 5, sku: 'CLB-1' },
+      { id: 'h3', name: 'Cross 3', category: 'snacks', price: 6, sku: 'SNA-1' },
+      { id: 'h4', name: 'Cross 4', category: 'snacks', price: 7, sku: 'SNB-1' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['pos', [1, 0, 0, 0]],
+      ['food1', [0, 1, 0, 0]],
+      ['h1', [0.85, 0.5, 0, 0]],
+      ['h2', [0.8, 0.6, 0, 0]],
+      ['h3', [0.55, 0.83, 0, 0]],
+      ['h4', [0.5, 0.86, 0, 0]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['pos'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const manifest = buildM22ManifestFromProducts(products, {
+      identityEnabled: false,
+      priceBinEdges: [0, 5, 10, 25, 100],
+    })
+    const productsById = new Map(products.map((p) => [p.id, p]))
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        embeddingMap,
+        products,
+        { negativeSamplingRatio: 4, seed: 7, useClassWeight: true },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling,
+        { manifest, productsById }
+      )
+    )
+    if (!isM22TrainingDataset(result)) throw new Error('expected M22 dataset')
+    const meta = (result as { samplingMetadata?: { identityGuardrailApplied: number } }).samplingMetadata
+    expect(meta).toBeDefined()
+    expect(meta!.identityGuardrailApplied).toBe(0)
+  })
+
+  it('stratified + identity ON but no intra-category candidates: records guardrail-unavailable in telemetry', () => {
+    const products: ProductDTO[] = [
+      { id: 'pos', name: 'Positive', category: 'food', price: 1, sku: 'POS-1' },
+      { id: 'h1', name: 'Cross 1', category: 'cleaning', price: 4, sku: 'CLA-1' },
+      { id: 'h2', name: 'Cross 2', category: 'cleaning', price: 5, sku: 'CLB-1' },
+      { id: 'h3', name: 'Cross 3', category: 'snacks', price: 6, sku: 'SNA-1' },
+      { id: 'h4', name: 'Cross 4', category: 'snacks', price: 7, sku: 'SNB-1' },
+    ]
+    const embeddingMap = new Map<string, number[]>([
+      ['pos', [1, 0, 0, 0]],
+      ['h1', [0.85, 0.5, 0, 0]],
+      ['h2', [0.8, 0.6, 0, 0]],
+      ['h3', [0.55, 0.83, 0, 0]],
+      ['h4', [0.5, 0.86, 0, 0]],
+    ])
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['pos'])]])
+    const clients: ClientDTO[] = [{ id: 'c1', name: 'C1', segment: 'B2B', countryCode: 'BR' }]
+
+    const manifest = buildM22ManifestFromProducts(products, {
+      identityEnabled: true,
+      priceBinEdges: [0, 5, 10, 25, 100],
+    })
+    const productsById = new Map(products.map((p) => [p.id, p]))
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        embeddingMap,
+        products,
+        { negativeSamplingRatio: 4, seed: 7, useClassWeight: true },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling,
+        { manifest, productsById }
+      )
+    )
+    if (!isM22TrainingDataset(result)) throw new Error('expected M22 dataset')
+    const meta = (result as { samplingMetadata?: { identityGuardrailApplied: number; identityGuardrailUnavailable: number } })
+      .samplingMetadata
+    expect(meta).toBeDefined()
+    expect(meta!.identityGuardrailApplied).toBe(0)
+    expect(meta!.identityGuardrailUnavailable).toBeGreaterThanOrEqual(1)
+  })
+
+  it('stratified preserves M22 contract: returns rows shaped sem384 + user384 (identity off baseline parity)', () => {
+    const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)
+    const clientOrderMap = new Map<string, Set<string>>([['c1', new Set(['p1'])]])
+    const clients = [defaultClients[0]]
+    const manifest = buildM22ManifestFromProducts(defaultProducts, {
+      identityEnabled: false,
+      priceBinEdges: [0, 5, 10, 15, 25, 35, 50, 100],
+    })
+    const productsById = new Map(defaultProducts.map((p) => [p.id, p]))
+
+    const result = withEnv({ NEGATIVE_SAMPLING_MODE: 'stratified' }, () =>
+      buildTrainingDataset(
+        clients,
+        clientOrderMap,
+        productEmbeddingMap,
+        defaultProducts,
+        { ...defaultOptions, negativeSamplingRatio: 4, seed: 42 },
+        mockTemporal(clients, clientOrderMap),
+        defaultPooling,
+        { manifest, productsById }
+      )
+    )
+    expect(isM22TrainingDataset(result)).toBe(true)
+    if (!isM22TrainingDataset(result)) throw new Error('expected m22 dataset')
+    expect(result.rows.length).toBe(result.labels.length)
+    for (const r of result.rows) {
+      expect(r.sem384.length).toBe(384)
+      expect(r.user384.length).toBe(384)
+    }
+  })
+})
+
 describe('bceLabelsToPairwiseRows (M21 pairwise)', () => {
   it('stacks positives then negatives with stable pair count (seed=42)', () => {
     const productEmbeddingMap = makeProductEmbeddingMap(defaultProducts)

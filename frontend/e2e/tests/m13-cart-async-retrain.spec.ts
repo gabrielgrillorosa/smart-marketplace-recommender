@@ -81,7 +81,7 @@ async function waitForCartCaptureTimestampChange(page: Page, previousTimestamp: 
   return (await getCartCaptureTimestamp(page))!;
 }
 
-async function orderCatalogAndEnableDiagnostic(page: Page): Promise<{ scoredProductId: string }> {
+async function orderCatalogAndWaitForScores(page: Page): Promise<{ scoredProductId: string }> {
   await page.waitForSelector('[data-testid="reorderable-item"]', { timeout: 20000 });
 
   const catalogCards = page.getByTestId('reorderable-item');
@@ -92,18 +92,9 @@ async function orderCatalogAndEnableDiagnostic(page: Page): Promise<{ scoredProd
   await expect(orderButton).toBeVisible({ timeout: 10000 });
   await orderButton.click();
 
-  const coverageBanner = page.getByTestId('catalog-coverage-banner');
-  await expect(coverageBanner).toBeVisible({ timeout: 30000 });
   await expect
     .poll(async () => page.locator('[data-testid^="catalog-score-"]').count(), { timeout: 30000 })
     .toBeGreaterThan(10);
-  await expect(coverageBanner).toContainText(/produtos visíveis receberam score/i);
-  await expect(coverageBanner).toContainText(/fora da cobertura atual/i);
-
-  const diagnosticButton = page.getByTestId('catalog-order-diagnostic');
-  await expect(diagnosticButton).toBeVisible({ timeout: 10000 });
-  await diagnosticButton.click();
-  await expect(coverageBanner).toContainText(/modo diagnóstico/i, { timeout: 30000 });
 
   const firstScoredBadge = page.locator('[data-testid^="catalog-score-"]').first();
   const firstScoredBadgeTestId = await firstScoredBadge.getAttribute('data-testid');
@@ -124,7 +115,7 @@ test.describe('M13 — Cart, Checkout & Async Retrain', () => {
     const clientSelected = await selectFirstClient(page);
     test.skip(!clientSelected, 'Sem clientes disponiveis no ambiente E2E atual.');
 
-    const { scoredProductId } = await orderCatalogAndEnableDiagnostic(page);
+    const { scoredProductId } = await orderCatalogAndWaitForScores(page);
 
     await page.getByTestId(`catalog-product-card-${scoredProductId}`).click();
     const modalScoreSummary = page.getByTestId('product-detail-score-summary');
@@ -156,7 +147,7 @@ test.describe('M13 — Cart, Checkout & Async Retrain', () => {
     const clientSelected = await selectFirstClient(page);
     test.skip(!clientSelected, 'Sem clientes disponiveis no ambiente E2E atual.');
 
-    await orderCatalogAndEnableDiagnostic(page);
+    await orderCatalogAndWaitForScores(page);
 
     const addButton = page.locator('[data-testid^="catalog-add-cart-"]:not([disabled])').first();
     const hasAddButton = await addButton.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);

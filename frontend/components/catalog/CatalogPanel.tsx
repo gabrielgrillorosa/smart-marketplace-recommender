@@ -9,7 +9,6 @@ import { SemanticSearchBar } from './SemanticSearchBar';
 import { ProductDetailModal } from './ProductDetailModal';
 import { ProductCard } from './ProductCard';
 import type { ProductDetailScoreSummary } from './ScoreBadge';
-import { CoverageStatusBanner } from './CoverageStatusBanner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReorderableGrid } from '@/components/ReorderableGrid/ReorderableGrid';
 import { useSelectedClient } from '@/lib/hooks/useSelectedClient';
@@ -107,9 +106,9 @@ export function CatalogPanel() {
   const lastRequestedOrderedSessionRef = useRef<string | null>(null);
 
   const { selectedClient } = useSelectedClient();
-  const { ordered, coverageMode, enableDiagnostic, reset } = useCatalogOrdering();
+  const { ordered, coverageMode, reset } = useCatalogOrdering();
   const { fetch: fetchRecommendations } = useRecommendationFetcher();
-  const { recommendations, loading: recLoading, coverageMeta, rankingConfig } = useRecommendations();
+  const { recommendations, loading: recLoading, rankingConfig } = useRecommendations();
 
   const cartByClient = useAppStore((s) => s.cartByClient);
   const cartItemLoading = useAppStore((s) => s.cartItemLoading);
@@ -284,11 +283,6 @@ export function CatalogPanel() {
     }
     return m;
   }, [activeRecommendations]);
-  const scoredVisibleCount = useMemo(
-    () => displayedProducts.filter((product) => scoreMap.has(product.id)).length,
-    [displayedProducts, scoreMap]
-  );
-
   const rankingModeActive = ordered && !recLoading && searchResults === null;
 
   const rankingSections = useMemo(() => {
@@ -601,16 +595,6 @@ export function CatalogPanel() {
           )}
         </div>
       </div>
-
-      <CoverageStatusBanner
-        ordered={ordered || recLoading}
-        loading={recLoading}
-        coverageMeta={coverageMeta}
-        visibleProductCount={displayedProducts.length}
-        scoredVisibleCount={scoredVisibleCount}
-        searchStateKind={searchStateKind}
-        onEnableDiagnostic={coverageMode === 'full' ? enableDiagnostic : undefined}
-      />
 
       <CartSummaryBar
         cart={cartForClient}

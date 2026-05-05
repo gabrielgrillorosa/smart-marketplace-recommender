@@ -40,10 +40,12 @@ public class ProductApplicationService {
         this.aiSyncClient = aiSyncClient;
     }
 
-   
+
+    // During cold start, ai-service seeds PostgreSQL before its /ready probe turns healthy.
+    // Keep catalog reads fresh until that boot path finishes to avoid caching an empty page.
     @Cacheable(value = CacheNames.CATALOG_LIST,
             key = "#page + '-' + #size + '-' + #category + '-' + #country + '-' + #supplier + '-' + #search",
-            condition = "!#noCache")
+            condition = "!#noCache && @catalogCacheReadiness.isCacheEnabled()")
     @Transactional(readOnly = true)
     public PagedResponse<ProductSummaryDTO> listProducts(int page, int size,
                                                           String category, String country,
