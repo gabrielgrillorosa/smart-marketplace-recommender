@@ -13,7 +13,7 @@ A **production-grade hybrid AI recommendation system** for B2B marketplaces — 
 - [Quickstart](#quickstart)
 - [Neural Network Architecture](#neural-network-architecture)
 - [Neural architecture benchmark (CLI)](#neural-architecture-benchmark-cli)
-- [Benchmark guide (baseline and M22)](#benchmark-guide-baseline-and-m22)
+- [Benchmark guide (baseline, M22, and M23)](#benchmark-guide-baseline-m22-and-m23)
 - [Dataset Construction & Training Quality](#dataset-construction--training-quality)
 - [Hybrid Scoring Engine](#hybrid-scoring-engine)
 - [Recency-aware profile & ranking](#recency-aware-profile--ranking)
@@ -419,6 +419,27 @@ const softPositiveIdsBySimilarity = new Set(
 
 After soft negative exclusion, at least 2 of the 4 negative slots per positive are filled with products from **different categories** than the positive. This forces the network to learn inter-category discrimination — without it, category-specific purchase signals (e.g., "client likes beverages") are diluted by unrelated negatives.
 
+### M23 stratified negative sampling (`NEGATIVE_SAMPLING_MODE`)
+
+The new **M23** path keeps the same purchase labels, the same neural heads, and the same M22 item tower contract, but it **changes the quality of the negatives** the model sees during training. Instead of relying only on the legacy filtered pool, **`NEGATIVE_SAMPLING_MODE=stratified`** applies:
+
+- **Near-duplicate cleanup** with **`SOFT_NEGATIVE_MAX_SIM`** to remove candidates that are semantically too close to a positive.
+- **Three difficulty buckets** — `hard`, `medium`, `easy` — controlled by **`HARD_NEGATIVE_MIN_SIM`** and **`MEDIUM_NEGATIVE_MIN_SIM`**.
+- **Deterministic 1 + 2 + 1 sampling** per positive (`1 hard + 2 medium + 1 easy`) so the model sees a more informative curriculum instead of an unstable mixture of easy negatives.
+- **Identity-aware guardrails** in M22 identity scenarios, preserving intra-category negatives when available and reporting fallback pressure when they are not.
+
+Recommended environment block for the current decision-grade hybrid stack:
+
+```bash
+NEGATIVE_SAMPLING_MODE=stratified
+SOFT_NEGATIVE_MAX_SIM=0.92
+HARD_NEGATIVE_MIN_SIM=0.70
+MEDIUM_NEGATIVE_MIN_SIM=0.40
+M23_BENCHMARK_RUNS=2
+```
+
+Why this matters for engineering management: the model now learns from a **cleaner and more pedagogical ranking signal**. In practice, this improved **list-wise quality** (`precision@5`, `nDCG@5`, `MRR`) much more than legacy pointwise dataset construction, especially in the production-relevant **AB / no-identity** hybrid scenario.
+
 ### Deterministic Seed
 
 The negative sampling seed is derived from the `clientId` hash. Every retrain with the same data produces identical datasets per client — making before/after comparisons reproducible and demo behavior predictable.
@@ -758,7 +779,7 @@ flowchart TB
 
 ---
 
-## Benchmark guide (baseline and M22)
+## Benchmark guide (baseline, M22, and M23)
 
 ### Quick glossary (what each benchmark dimension means)
 
@@ -768,10 +789,11 @@ flowchart TB
 - **M22 hybrid**: model uses semantic item embedding (A) + sparse structural features (B), with optional identity path (C) controlled by `M22_IDENTITY`.
 - **Semantic-only baseline**: legacy concat path (`e_sem || u`) without sparse/identity item branches.
 
-This repository supports two benchmark paths in `ai-service`:
+This repository supports three benchmark paths in `ai-service`:
 
 1. **Baseline neural head benchmark** (`benchmark:neural-arch`) for the legacy concat path (`e_sem || u`).
 2. **M22 benchmark** (`benchmark:m22`) for scenarios `a`, `ab`, `abc` and architecture profiles (`baseline`, `deep64_32`, `deep128_64`, `deep256`, `deep512`).
+3. **M23 benchmark** (`benchmark:m23`) for `legacy` vs `stratified` negative sampling under the same M22-style ranking protocol.
 
 ### 1) Baseline benchmark (`benchmark:neural-arch`)
 
@@ -793,9 +815,45 @@ npm run benchmark:m22 -- \
   --out ./.benchmarks/m22-grid-full.json
 ```
 
+### 3) M23 benchmark (`benchmark:m23`)
+
+```bash
+cd ai-service
+npm run benchmark:m23 -- \
+  --sampling-modes legacy,stratified \
+  --scenarios noIdentity,withIdentity \
+  --profiles deep128_64,deep128_64_32,deep256 \
+  --pooling-modes attention_light,attention_learned \
+  --loss-modes bce \
+  --runs-per-config 2 \
+  --out ./.benchmarks/m23-grid-bce.json
+```
+
 For production decisions, **do not use scenario `a` alone** because it ignores structural and identity signals. Compare **`ab`** and **`abc`**.
 
 ### Stability results only (decision-grade, 3 runs each)
+
+#### M23 production rerun (legacy vs stratified, AB/ABC, `bce`, `attention_light` + `attention_learned`)
+
+This rerun changed the decision in the hybrid stack. Under the new **`NEGATIVE_SAMPLING_MODE=stratified`** protocol, the strongest production-facing result came from **AB / no-identity** with a **time-only pooling strategy**:
+
+| Configuration | Scenario | precision@5 | nDCG@5 | MRR | pairwiseAcc | hitRate@10 | aucRoc | aucPr | brier | valAcc | valLoss |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `stratified + deep256 + attention_light` | `ab` / `noIdentity` | **`0.8500`** | **`0.3188`** | **`0.4584`** | **`0.9495`** | **`1.0000`** | `0.7897` | `0.5451` | `0.1650` | `0.7726` | `0.5878` |
+| `stratified + deep256 + attention_learned` | `ab` / `noIdentity` | `0.8500` | `0.3011` | `0.4126` | `0.9363` | `0.9750` | `0.7602` | `0.5098` | `0.1880` | `0.7471` | `0.6270` |
+| `legacy + deep128_64 + attention_light` | `abc` / `withIdentity` | **`0.7750`** | **`0.2140`** | **`0.3862`** | `0.8160` | `0.8750` | `0.9225` | `0.8702` | `0.0710` | `0.9149` | `0.2822` |
+
+**Decision:** for the hybrid recommendation path, the new winner is **`NEGATIVE_SAMPLING_MODE=stratified` + `NEURAL_ARCH_PROFILE=deep256` + `PROFILE_POOLING_MODE=attention_light`**.
+
+Why this winner changed:
+
+- **Ranking objective improved materially:** versus the previous hybrid winner (`ab + attention_learned + deep128_64`), `precision@5` moved from **`0.6000` → `0.8500`** (`+0.2500`, `+41.7%` relative).
+- **Top-of-list quality improved even more:** `nDCG@5` moved from roughly **`0.20`-`0.21` historical M22 range** to **`0.3188`**, meaning relevant products are not only found, but found earlier in the ranked list.
+- **Ranking generalization improved:** `MRR` reached **`0.4584`** and `pairwiseAccuracyWithinCategory` reached **`0.9495`**, showing the model learned a cleaner local ordering signal rather than only a pointwise separator.
+- **User-facing usefulness improved:** `topNAfterFirstInteractionHitRate` reached **`1.0000`** in the winning AB run average, which is exactly the kind of “first useful list” signal an engineering manager cares about for product impact.
+- **Attention-light won for a good reason:** the pure recency softmax (`attention_light`) beat `attention_learned` on the same `deep256` profile while being simpler to explain operationally. Under the cleaner stratified dataset, the model benefited more from a stable time-based profile than from extra learned attention parameters.
+
+Executive reading: the new sampling regime improved the **learning signal** enough that a **wider head (`deep256`) plus simpler temporal pooling (`attention_light`)** now beats the older learned-pooling winner on the metrics that matter most for recommendation quality.
 
 #### M22 stability rerun (AB/ABC, `attention_light` + `attention_learned`)
 
@@ -854,15 +912,15 @@ Baseline decision from the 3-run protocol: `attention_learned + deep64_32` is th
 
 #### Final technical position
 
-- **Hybrid winner:** `ab + attention_learned + deep128_64`.
+- **Hybrid winner (current stack):** `ab + stratified + deep256 + attention_light`.
 - **Semantic-only winner:** `attention_learned + deep64_32`.
 - **Why these are selected (Deep Learning perspective):**
-  - **Primary objective (ranking):** both winners are top by mean `precisionAt5` in their respective regimes under repeated runs.
-  - **Discrimination/calibration guardrails:** winners keep strong `aucPr`/`aucRoc` while maintaining acceptable `brier`, avoiding choices that win ranking but degrade probability quality.
-  - **Generalization check:** `trainValLossGap` stays controlled (near zero or modest), with no persistent overfitting signature across runs.
+  - **Primary objective (ranking):** the hybrid winner is now top on **`precisionAt5`**, **`nDCG@5`**, **`MRR`**, and **pairwise ranking accuracy** in the production-relevant AB slice.
+  - **Discrimination/calibration guardrails:** the semantic-only winner still keeps the best balance of ranking and pointwise quality in the pure concat path; the hybrid winner accepts lower pointwise AUC than legacy because the product objective is ranked recommendation quality, not only binary discrimination.
+  - **Generalization check:** the winning hybrid run keeps a controlled **negative** `trainValLossGap`, avoiding the unstable early-stop behaviour seen in weaker stratified identity runs.
   - **Variance-aware decision:** model choice is based on **mean + variance**, not single-run peaks; this is critical in stochastic training pipelines with evolving marketplace data.
-  - **Operational fit:** hybrid head has higher computational cost but better feature-fusion capacity; semantic-only head is lighter and more stable in latency.
-- **Executive conclusion:** `attention_learned` is the consistent pooling winner across both regimes, and the selected pair gives the best production trade-off between ranking lift, probabilistic reliability, and repeatability.
+  - **Operational fit:** `attention_light` is easier to explain and operate than `attention_learned`, while `deep256` justified its extra capacity only after the M23 sampler improved the ranking curriculum.
+- **Executive conclusion:** the M23 rollout changed the hybrid architecture decision. The recommended deploy is now **`NEGATIVE_SAMPLING_MODE=stratified`**, **`NEURAL_ARCH_PROFILE=deep256`**, **`PROFILE_POOLING_MODE=attention_light`** for the hybrid path, while **`attention_learned + deep64_32`** remains the semantic-only reference.
 
 ---
 

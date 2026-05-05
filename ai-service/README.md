@@ -51,6 +51,76 @@ Three **orthogonal** item signals are fused with the user vector as **f(u, e_sem
 
 **Cold-start eval slice:** `computePrecisionAt5ColdStartCategorySlice` in `src/ml/rankingEval.ts` (global `precision@5` plus category cold slice; optional Module C scoring when a bundle is passed).
 
+## Negative sampling redesign — M23 (`NEGATIVE_SAMPLING_*`)
+
+M23 changes only **how training negatives are built**. It does **not** replace M21 pairwise/bce heads and does **not** change the M22 item tower contract. The operational default remains **`legacy`** so rollback is env-only.
+
+| Env | Default | Meaning |
+|-----|---------|---------|
+| `NEGATIVE_SAMPLING_MODE` | **`legacy`** | `legacy` = pre-M23 dataset construction / rollback path. `stratified` = soft cleanup for near-duplicates + buckets `hard/medium/easy` + deterministic `1 hard + 2 medium + 1 easy` selection. |
+| `SOFT_NEGATIVE_MAX_SIM` | `0.92` | Extreme semantic similarity cutoff used by **`stratified`** soft cleanup. Above this, the candidate is treated as near-duplicate and removed from the negative pool. |
+| `HARD_NEGATIVE_MIN_SIM` | `0.70` | Lower bound of the `hard` bucket in **`stratified`** mode. |
+| `MEDIUM_NEGATIVE_MIN_SIM` | `0.40` | Lower bound of the `medium` bucket in **`stratified`** mode (`easy` is below this). |
+| `M23_BENCHMARK_RUNS` | `2` | Minimum repeated runs per M23 benchmark configuration; values below `2` are rejected/clamped by the parser. |
+
+**Legacy compatibility:** `SOFT_NEGATIVE_SIM_THRESHOLD` still exists for the older pre-M23 path and remains relevant when `NEGATIVE_SAMPLING_MODE=legacy`. In `stratified`, the active thresholds are the M23 envs above plus structural hard-negative rules.
+
+**Training logs / artifacts:** `ModelTrainer.train()` now emits `negativeSampling` summary data with `mode`, active thresholds, deterministic `seed`, bucket composition, fallback counters, and identity-guardrail counters. In M22 identity scenarios, watch `identity.applied` vs `identity.unavailable`.
+
+### Benchmark / rollout
+
+Run the offline comparator before enabling `stratified` in staging or production:
+
+```bash
+M23_BENCHMARK_RUNS=3 npm run benchmark:m23 -- --out ./.benchmarks/m23-sampling.json
+```
+
+Optional filters:
+
+```bash
+npm run benchmark:m23 -- --sampling-modes legacy,stratified --scenarios noIdentity,withIdentity --profile deep128_64
+```
+
+Promote `stratified` only when the report shows stable or better ranking quality on the same protocol:
+
+- `ranking.ndcgAtK`
+- `ranking.mrr`
+- `ranking.pairwiseAccuracyWithinCategory`
+- `ranking.topNAfterFirstInteractionHitRate`
+- `ranking.precisionAtKColdSlice`
+- `bucketTelemetry` / identity guardrail counters
+
+**Blocking signals:** worse ranking metrics than `legacy`, very high fallback pressure (few real hard negatives), repeated `identityGuardrailUnavailable` in M22 identity runs, or high variance across seeds/runs.
+
+### Current recommended deploy profile
+
+Latest decision-grade benchmark results promoted **`stratified`** from an experimental benchmark mode to the recommended training configuration for the hybrid AB / no-identity path:
+
+```bash
+NEGATIVE_SAMPLING_MODE=stratified
+SOFT_NEGATIVE_MAX_SIM=0.92
+HARD_NEGATIVE_MIN_SIM=0.70
+MEDIUM_NEGATIVE_MIN_SIM=0.40
+NEURAL_ARCH_PROFILE=deep256
+PROFILE_POOLING_MODE=attention_light
+NEURAL_LOSS_MODE=bce
+```
+
+Why this profile won:
+
+- **Ranking lift:** `precision@5` reached **`0.85`** in the AB / `noIdentity` slice, materially above the older hybrid decision boundary.
+- **Better ordering, not just classification:** the same setup also led on **`ndcgAtK`**, **`mrr`**, and **`pairwiseAccuracyWithinCategory`**, which are better proxies for `/recommend` quality than pointwise AUC alone.
+- **Simpler pooling, stronger result:** with cleaner negatives, **`attention_light`** beat `attention_learned` on the same `deep256` head, so the chosen stack is easier to explain and operate.
+
+### Rollout / rollback
+
+1. Keep `NEGATIVE_SAMPLING_MODE=legacy` while benchmarking.
+2. If the benchmark is acceptable, set `NEGATIVE_SAMPLING_MODE=stratified`, restart `ai-service`, and retrain to produce a new checkpoint with M23 sampling.
+3. Keep the previous promoted model/version available while validating the new run.
+4. To rollback, set `NEGATIVE_SAMPLING_MODE=legacy`, restart, and either retrain legacy or repoint `current` to the previous promoted checkpoint.
+
+**Relation to M21/M22:** M21 still decides the **loss/head** (`bce` vs `pairwise`); M22 still decides the **item representation** (`M22_*`). M23 only changes **which negatives the model sees during training**. When `M22_IDENTITY=true`, the stratified sampler preserves intra-category negatives when available and reports when it cannot.
+
 ### Flow (pairwise train vs infer)
 
 ```mermaid
