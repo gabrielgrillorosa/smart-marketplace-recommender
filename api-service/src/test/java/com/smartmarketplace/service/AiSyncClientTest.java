@@ -1,96 +1,64 @@
 package com.smartmarketplace.service;
 
-import com.smartmarketplace.dto.ProductDetailDTO;
+import com.smartmarketplace.outbox.IntegrationEventType;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AiSyncClientTest {
 
     @Test
-    void buildPayload_escapesTextAndIncludesCountries() {
-        AiSyncClient client = new AiSyncClient("http://localhost:9999");
-        ProductDetailDTO product = sampleProduct("Café \"Especial\"", "Linha 1\nLinha 2\tFim");
-
-        String payload = client.buildPayload(product);
-
-        assertThat(payload).contains("\\\"Especial\\\"");
-        assertThat(payload).contains("Linha 1\\nLinha 2\\tFim");
-        assertThat(payload).contains("\"countryCodes\":[\"BR\",\"MX\"]");
-    }
-
-    @Test
-    void notifyProductCreated_postsToExpectedEndpoint() throws Exception {
+    void dispatch_productUpserted_postsToExpectedEndpoint() throws Exception {
         AtomicReference<String> pathRef = new AtomicReference<>();
         AtomicReference<String> bodyRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
         HttpServer server = startServer(200, pathRef, bodyRef, latch);
         try {
             AiSyncClient client = new AiSyncClient("http://localhost:" + server.getAddress().getPort());
-            ProductDetailDTO product = sampleProduct("Sync Product", "Descrição");
 
-            client.notifyProductCreated(product);
+            client.dispatch(IntegrationEventType.PRODUCT_UPSERTED_V1, "{\"productId\":\"p-1\"}");
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(pathRef.get()).isEqualTo("/api/v1/embeddings/sync-product");
-            assertThat(bodyRef.get()).contains(product.id().toString());
-            assertThat(bodyRef.get()).contains("\"name\":\"Sync Product\"");
+            assertThat(pathRef.get()).isEqualTo("/api/v1/events/product-upserted");
+            assertThat(bodyRef.get()).contains("\"productId\":\"p-1\"");
         } finally {
             server.stop(0);
         }
     }
 
     @Test
-    void notifyCheckoutCompleted_postsToExpectedEndpoint() throws Exception {
+    void dispatch_checkoutCompleted_postsToExpectedEndpoint() throws Exception {
         AtomicReference<String> pathRef = new AtomicReference<>();
         AtomicReference<String> bodyRef = new AtomicReference<>();
         CountDownLatch latch = new CountDownLatch(1);
         HttpServer server = startServer(202, pathRef, bodyRef, latch);
         try {
             AiSyncClient client = new AiSyncClient("http://localhost:" + server.getAddress().getPort());
-            UUID orderId = UUID.randomUUID();
-            UUID clientId = UUID.randomUUID();
-            List<UUID> productIds = List.of(UUID.randomUUID(), UUID.randomUUID());
 
-            LocalDateTime orderDate = LocalDateTime.of(2025, 3, 10, 14, 30, 0);
-            client.notifyCheckoutCompleted(orderId, clientId, productIds, orderDate);
+            client.dispatch(IntegrationEventType.ORDER_CHECKOUT_COMPLETED_V1, "{\"orderId\":\"o-1\"}");
 
             assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(pathRef.get()).isEqualTo("/api/v1/orders/" + orderId + "/sync-and-train");
-            assertThat(bodyRef.get()).contains("\"clientId\":\"" + clientId + "\"");
-            assertThat(bodyRef.get()).contains("\"orderDate\":\"2025-03-10T14:30:00\"");
-            assertThat(bodyRef.get()).contains(productIds.get(0).toString());
-            assertThat(bodyRef.get()).contains(productIds.get(1).toString());
+            assertThat(pathRef.get()).isEqualTo("/api/v1/events/order-checkout-completed");
+            assertThat(bodyRef.get()).contains("\"orderId\":\"o-1\"");
         } finally {
             server.stop(0);
         }
     }
 
-    private static ProductDetailDTO sampleProduct(String name, String description) {
-        return new ProductDetailDTO(
-                UUID.randomUUID(),
-                "SKU-123",
-                name,
-                "food",
-                new BigDecimal("12.90"),
-                "Supplier X",
-                List.of("BR", "MX"),
-                description,
-                UUID.randomUUID(),
-                LocalDateTime.now()
-        );
+    @Test
+    void dispatch_throwsWhenAiServiceReturnsNon2xx() throws Exception {
+        AiSyncClient client = new AiSyncClient("http://localhost:9999");
+        assertThatThrownBy(() -> client.dispatch(IntegrationEventType.PRODUCT_UPSERTED_V1, "{}"))
+                .isInstanceOf(IOException.class);
     }
 
     private static HttpServer startServer(

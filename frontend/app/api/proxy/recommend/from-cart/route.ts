@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adaptRecommendations } from '@/lib/adapters/recommend';
 
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL ?? 'http://localhost:3001';
+const API_SERVICE_URL = process.env.API_SERVICE_URL ?? 'http://localhost:8080';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const response = await fetch(`${AI_SERVICE_URL}/api/v1/recommend/from-cart`, {
+    const response = await fetch(`${API_SERVICE_URL}/api/v1/recommend/from-cart`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

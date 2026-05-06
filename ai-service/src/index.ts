@@ -21,6 +21,7 @@ import { modelRoutes } from './routes/model.js'
 import { recommendRoutes } from './routes/recommend.js'
 import { adminRoutes } from './routes/adminRoutes.js'
 import { ordersRoutes } from './routes/orders.js'
+import { integrationEventsRoutes } from './routes/integrationEvents.js'
 import { listenAndScheduleRecovery, registerStartupProbes } from './startup/bootstrap.js'
 import { ProfilePoolingRuntimeHolder } from './config/profilePoolingRuntimeHolder.js'
 import { buildProfilePoolingRuntimeFromEnv, resolveAttentionLearnedJsonPath } from './config/profilePoolingEnv.js'
@@ -191,6 +192,13 @@ export async function start(): Promise<void> {
     await fastify.register(ordersRoutes, {
       prefix: '/api/v1',
       repo,
+      registry: trainingJobRegistry,
+    })
+
+    await fastify.register(integrationEventsRoutes, {
+      prefix: '/api/v1',
+      repo,
+      embeddingService,
       registry: trainingJobRegistry,
     })
 

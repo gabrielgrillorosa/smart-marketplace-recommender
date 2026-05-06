@@ -67,11 +67,46 @@ CREATE TABLE IF NOT EXISTS cart_items (
     CONSTRAINT uk_cart_item_cart_product UNIQUE (cart_id, product_id)
 );
 
+CREATE TABLE IF NOT EXISTS integration_outbox (
+    id UUID PRIMARY KEY,
+    event_type VARCHAR(80) NOT NULL,
+    aggregate_type VARCHAR(80) NOT NULL,
+    aggregate_id UUID NOT NULL,
+    event_key VARCHAR(200) NOT NULL,
+    payload TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    lease_until TIMESTAMPTZ,
+    leased_by VARCHAR(120),
+    CONSTRAINT uk_integration_outbox_event_key UNIQUE (event_key)
+);
+
 -- Indexes for common query patterns (M2)
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_clients_country ON clients(country_code);
+CREATE INDEX IF NOT EXISTS idx_orders_client_order_date ON orders(client_id, order_date DESC);
 CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_product_countries_country_product ON product_countries(country_code, product_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_cart ON cart_items(cart_id);
 CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
+CREATE INDEX IF NOT EXISTS idx_integration_outbox_pending
+    ON integration_outbox (processed_at, next_attempt_at, lease_until, created_at);
+
+CREATE OR REPLACE FUNCTION notify_integration_outbox_new()
+RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('integration_outbox_new', NEW.event_type);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_integration_outbox_notify ON integration_outbox;
+CREATE TRIGGER trg_integration_outbox_notify
+AFTER INSERT ON integration_outbox
+FOR EACH ROW
+EXECUTE FUNCTION notify_integration_outbox_new();

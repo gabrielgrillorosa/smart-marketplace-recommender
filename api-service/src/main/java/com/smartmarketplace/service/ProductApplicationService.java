@@ -7,6 +7,7 @@ import com.smartmarketplace.entity.Product;
 import com.smartmarketplace.entity.Supplier;
 import com.smartmarketplace.exception.BusinessRuleException;
 import com.smartmarketplace.exception.ResourceNotFoundException;
+import com.smartmarketplace.outbox.OutboxPublisher;
 import com.smartmarketplace.repository.*;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,16 +30,16 @@ public class ProductApplicationService {
     private final ProductRepository productRepository;
     private final SupplierRepository supplierRepository;
     private final CountryRepository countryRepository;
-    private final AiSyncClient aiSyncClient;
+    private final OutboxPublisher outboxPublisher;
 
     public ProductApplicationService(ProductRepository productRepository,
                                      SupplierRepository supplierRepository,
                                      CountryRepository countryRepository,
-                                     AiSyncClient aiSyncClient) {
+                                     OutboxPublisher outboxPublisher) {
         this.productRepository = productRepository;
         this.supplierRepository = supplierRepository;
         this.countryRepository = countryRepository;
-        this.aiSyncClient = aiSyncClient;
+        this.outboxPublisher = outboxPublisher;
     }
 
 
@@ -58,8 +60,21 @@ public class ProductApplicationService {
         if (search != null) spec = spec.and(ProductSpecifications.nameContains(search));
 
         Page<Product> result = productRepository.findAll(spec, PageRequest.of(page, size));
+        List<UUID> productIds = result.getContent().stream()
+                .map(Product::getId)
+                .toList();
 
-        List<ProductSummaryDTO> items = result.getContent().stream()
+        if (productIds.isEmpty()) {
+            return new PagedResponse<>(List.of(), result.getNumber(), result.getSize(),
+                    result.getTotalElements(), result.getTotalPages());
+        }
+
+        Map<UUID, Product> productsById = productRepository.findAllByIdWithCountries(productIds).stream()
+                .collect(Collectors.toMap(Product::getId, Function.identity()));
+
+        List<ProductSummaryDTO> items = productIds.stream()
+                .map(productsById::get)
+                .filter(Objects::nonNull)
                 .map(this::toSummary)
                 .toList();
 
@@ -101,8 +116,8 @@ public class ProductApplicationService {
         product.setCountries(new HashSet<>(countries));
 
         product = productRepository.save(product);
+        outboxPublisher.publishProductUpserted(product);
         ProductDetailDTO result = toDetail(product);
-        aiSyncClient.notifyProductCreated(result);
         return result;
     }
 

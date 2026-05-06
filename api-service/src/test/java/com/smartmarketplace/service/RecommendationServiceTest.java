@@ -1,7 +1,7 @@
 package com.smartmarketplace.service;
 
-import com.smartmarketplace.dto.RecommendationItemDTO;
-import com.smartmarketplace.dto.RecommendationResponseDTO;
+import com.smartmarketplace.dto.RecommendationEnvelopeDTO;
+import com.smartmarketplace.dto.RecommendationViewItemDTO;
 import com.smartmarketplace.entity.Client;
 import com.smartmarketplace.entity.Country;
 import com.smartmarketplace.exception.ResourceNotFoundException;
@@ -67,20 +67,22 @@ class RecommendationServiceTest {
         UUID clientId = UUID.randomUUID();
         Client client = buildClient(clientId, "BR");
 
-        RecommendationItemDTO item = new RecommendationItemDTO(
+        RecommendationViewItemDTO item = new RecommendationViewItemDTO(
                 UUID.randomUUID(), "Coffee", "beverages",
-                new BigDecimal("9.90"), 0.95, "ai-match"
+                new BigDecimal("9.90"), "SKU-1", 0.95, 0.80, 0.75,
+                "semantic", null, null, null, null, null, true,
+                "eligible", null, null
         );
 
         when(clientRepository.findByIdWithCountry(clientId)).thenReturn(Optional.of(client));
-        when(aiServiceClient.recommend(any(UUID.class), anyInt())).thenReturn(Optional.of(List.of(item)));
+        when(aiServiceClient.recommend(any(UUID.class), anyInt()))
+                .thenReturn(Optional.of(new RecommendationEnvelopeDTO(List.of(item), null, null)));
 
-        RecommendationResponseDTO response = service.recommend(clientId, 5);
+        RecommendationEnvelopeDTO response = service.recommend(clientId, 5);
 
-        assertThat(response.degraded()).isFalse();
-        assertThat(response.items()).hasSize(1);
-        assertThat(response.items().get(0).matchReason()).isEqualTo("ai-match");
-        assertThat(response.clientId()).isEqualTo(clientId);
+        assertThat(response.isFallback()).isFalse();
+        assertThat(response.recommendations()).hasSize(1);
+        assertThat(response.recommendations().get(0).matchReason()).isEqualTo("semantic");
     }
 
     @Test
@@ -88,20 +90,23 @@ class RecommendationServiceTest {
         UUID clientId = UUID.randomUUID();
         Client client = buildClient(clientId, "BR");
 
-        RecommendationItemDTO fallbackItem = new RecommendationItemDTO(
+        RecommendationViewItemDTO fallbackItem = new RecommendationViewItemDTO(
                 UUID.randomUUID(), "Tea", "beverages",
-                new BigDecimal("4.50"), null, "fallback"
+                new BigDecimal("4.50"), "SKU-2", null, null, null,
+                null, null, null, null, null, null, true,
+                "fallback", null, null
         );
 
         when(clientRepository.findByIdWithCountry(clientId)).thenReturn(Optional.of(client));
-        when(aiServiceClient.recommend(any(UUID.class), anyInt())).thenReturn(Optional.of(Collections.emptyList()));
+        when(aiServiceClient.recommend(any(UUID.class), anyInt()))
+                .thenReturn(Optional.of(new RecommendationEnvelopeDTO(Collections.emptyList(), null, null)));
         when(fallbackQuery.topSelling(anyString(), any(UUID.class), anyInt())).thenReturn(List.of(fallbackItem));
 
-        RecommendationResponseDTO response = service.recommend(clientId, 5);
+        RecommendationEnvelopeDTO response = service.recommend(clientId, 5);
 
-        assertThat(response.degraded()).isTrue();
-        assertThat(response.items()).hasSize(1);
-        assertThat(response.items().get(0).matchReason()).isEqualTo("fallback");
+        assertThat(response.isFallback()).isTrue();
+        assertThat(response.recommendations()).hasSize(1);
+        assertThat(response.recommendations().get(0).eligibilityReason()).isEqualTo("fallback");
     }
 
     @Test
@@ -113,10 +118,34 @@ class RecommendationServiceTest {
         when(aiServiceClient.recommend(any(UUID.class), anyInt())).thenReturn(Optional.empty());
         when(fallbackQuery.topSelling(anyString(), any(UUID.class), anyInt())).thenReturn(Collections.emptyList());
 
-        RecommendationResponseDTO response = service.recommend(clientId, 5);
+        RecommendationEnvelopeDTO response = service.recommend(clientId, 5);
 
-        assertThat(response.degraded()).isTrue();
-        assertThat(response.items()).isEmpty();
+        assertThat(response.isFallback()).isTrue();
+        assertThat(response.recommendations()).isEmpty();
+    }
+
+    @Test
+    void recommendFromCart_fallsBackToCartAwareFallback_whenAiReturnsEmpty() {
+        UUID clientId = UUID.randomUUID();
+        UUID cartProductId = UUID.randomUUID();
+        Client client = buildClient(clientId, "BR");
+
+        RecommendationViewItemDTO fallbackItem = new RecommendationViewItemDTO(
+                UUID.randomUUID(), "Biscuits", "snacks",
+                new BigDecimal("7.50"), "SKU-3", null, null, null,
+                null, null, null, null, null, null, true,
+                "fallback", null, null
+        );
+
+        when(clientRepository.findByIdWithCountry(clientId)).thenReturn(Optional.of(client));
+        when(aiServiceClient.recommendFromCart(any(UUID.class), any(), anyInt())).thenReturn(Optional.empty());
+        when(fallbackQuery.topSellingForCart(anyString(), any(UUID.class), any(), anyInt()))
+                .thenReturn(List.of(fallbackItem));
+
+        RecommendationEnvelopeDTO response = service.recommendFromCart(clientId, List.of(cartProductId), 5);
+
+        assertThat(response.isFallback()).isTrue();
+        assertThat(response.recommendations()).containsExactly(fallbackItem);
     }
 
     @Test

@@ -13,7 +13,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -29,11 +32,8 @@ public class ClientApplicationService {
     }
 
     public PagedResponse<ClientSummaryDTO> listClients(int page, int size) {
-        Page<Client> result = clientRepository.findAll(PageRequest.of(page, size));
-        List<ClientSummaryDTO> items = result.getContent().stream()
-                .map(c -> new ClientSummaryDTO(c.getId(), c.getName(), c.getSegment(),
-                        c.getCountry().getCode().trim()))
-                .toList();
+        Page<ClientSummaryDTO> result = clientRepository.findAllSummaries(PageRequest.of(page, size));
+        List<ClientSummaryDTO> items = result.getContent();
         return new PagedResponse<>(items, result.getNumber(), result.getSize(),
                 result.getTotalElements(), result.getTotalPages());
     }
@@ -58,10 +58,22 @@ public class ClientApplicationService {
             throw new ResourceNotFoundException("Client", clientId);
         }
 
-        Page<Order> result = orderRepository.findByClientIdOrderByOrderDateDesc(clientId,
+        Page<UUID> result = orderRepository.findIdsByClientIdOrderByOrderDateDesc(clientId,
                 PageRequest.of(page, size));
+        List<UUID> orderIds = result.getContent();
 
-        List<OrderDTO> items = result.getContent().stream()
+        if (orderIds.isEmpty()) {
+            return new PagedResponse<>(List.of(), result.getNumber(), result.getSize(),
+                    result.getTotalElements(), result.getTotalPages());
+        }
+
+        List<Order> hydratedOrders = orderRepository.findAllByIdWithItemsAndProduct(orderIds);
+        var ordersById = hydratedOrders.stream()
+                .collect(Collectors.toMap(Order::getId, Function.identity()));
+
+        List<OrderDTO> items = orderIds.stream()
+                .map(ordersById::get)
+                .filter(Objects::nonNull)
                 .map(this::toOrderDTO)
                 .toList();
 

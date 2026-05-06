@@ -11,18 +11,16 @@ import com.smartmarketplace.entity.Client;
 import com.smartmarketplace.entity.Product;
 import com.smartmarketplace.exception.CartEmptyException;
 import com.smartmarketplace.exception.ResourceNotFoundException;
+import com.smartmarketplace.outbox.OutboxPublisher;
 import com.smartmarketplace.repository.CartRepository;
 import com.smartmarketplace.repository.ClientRepository;
 import com.smartmarketplace.repository.ProductRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -33,7 +31,7 @@ public class CartApplicationService {
     private final ProductRepository productRepository;
     private final ProductAvailabilityPolicy productAvailabilityPolicy;
     private final OrderApplicationService orderApplicationService;
-    private final AiSyncClient aiSyncClient;
+    private final OutboxPublisher outboxPublisher;
     private final boolean checkoutEnqueueTraining;
 
     public CartApplicationService(CartRepository cartRepository,
@@ -41,14 +39,14 @@ public class CartApplicationService {
                                   ProductRepository productRepository,
                                   ProductAvailabilityPolicy productAvailabilityPolicy,
                                   OrderApplicationService orderApplicationService,
-                                  AiSyncClient aiSyncClient,
+                                  OutboxPublisher outboxPublisher,
                                   @Value("${training.checkout.enqueue:false}") boolean checkoutEnqueueTraining) {
         this.cartRepository = cartRepository;
         this.clientRepository = clientRepository;
         this.productRepository = productRepository;
         this.productAvailabilityPolicy = productAvailabilityPolicy;
         this.orderApplicationService = orderApplicationService;
-        this.aiSyncClient = aiSyncClient;
+        this.outboxPublisher = outboxPublisher;
         this.checkoutEnqueueTraining = checkoutEnqueueTraining;
     }
 
@@ -135,28 +133,9 @@ public class CartApplicationService {
         List<CreateOrderRequest.OrderItemRequest> orderItems = cart.getItems().stream()
                 .map(item -> new CreateOrderRequest.OrderItemRequest(item.getProduct().getId(), item.getQuantity()))
                 .toList();
-        List<UUID> productIds = cart.getItems().stream()
-                .map(item -> item.getProduct().getId())
-                .toList();
-
         var order = orderApplicationService.createOrder(new CreateOrderRequest(clientId, orderItems));
         cartRepository.delete(cart);
-
-        Runnable notifyCheckoutSync = () -> aiSyncClient.notifyCheckoutCompleted(
-                order.id(),
-                clientId,
-                productIds,
-                Objects.requireNonNull(order.orderDate(), "orderDate"));
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    notifyCheckoutSync.run();
-                }
-            });
-        } else {
-            notifyCheckoutSync.run();
-        }
+        outboxPublisher.publishCheckoutCompleted(clientId, order);
 
         return new CheckoutResponse(order.id(), checkoutEnqueueTraining);
     }

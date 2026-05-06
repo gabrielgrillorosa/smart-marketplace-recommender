@@ -157,13 +157,14 @@ async function applyNeo4jConstraints(session: Session, logger: InternalLogger): 
     `CREATE CONSTRAINT product_id IF NOT EXISTS FOR (p:Product) REQUIRE p.id IS UNIQUE`,
     `CREATE CONSTRAINT client_id IF NOT EXISTS FOR (c:Client) REQUIRE c.id IS UNIQUE`,
     `CREATE CONSTRAINT category_name IF NOT EXISTS FOR (cat:Category) REQUIRE cat.name IS UNIQUE`,
+    `CREATE CONSTRAINT supplier_id IF NOT EXISTS FOR (s:Supplier) REQUIRE s.id IS UNIQUE`,
     `CREATE CONSTRAINT supplier_name IF NOT EXISTS FOR (s:Supplier) REQUIRE s.name IS UNIQUE`,
     `CREATE CONSTRAINT country_code IF NOT EXISTS FOR (co:Country) REQUIRE co.code IS UNIQUE`,
   ];
   for (const stmt of constraints) {
     await session.run(stmt);
   }
-  logger.log(`Constraints: 5 uniqueness constraints applied`);
+  logger.log(`Constraints: 6 uniqueness constraints applied`);
 }
 
 async function seedNeo4j(session: Session, logger: InternalLogger): Promise<void> {

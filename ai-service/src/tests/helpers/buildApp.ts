@@ -15,6 +15,7 @@ import { modelRoutes } from '../../routes/model.js'
 import { recommendRoutes } from '../../routes/recommend.js'
 import { adminRoutes } from '../../routes/adminRoutes.js'
 import { ordersRoutes } from '../../routes/orders.js'
+import { integrationEventsRoutes } from '../../routes/integrationEvents.js'
 
 export interface AppDeps {
   neo4jRepo: Partial<Neo4jRepository>
@@ -69,6 +70,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       registry: deps.trainingJobRegistry as TrainingJobRegistry,
     })
   }
+
+  await fastify.register(integrationEventsRoutes, {
+    prefix: '/api/v1',
+    repo: deps.neo4jRepo as Neo4jRepository,
+    embeddingService: deps.embeddingService as EmbeddingService,
+    registry: deps.trainingJobRegistry as TrainingJobRegistry | undefined,
+  })
 
   if (deps.trainingJobRegistry) {
     await fastify.register(adminRoutes, {

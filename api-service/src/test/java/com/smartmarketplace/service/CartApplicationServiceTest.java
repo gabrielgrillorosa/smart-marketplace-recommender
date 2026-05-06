@@ -10,6 +10,7 @@ import com.smartmarketplace.entity.Client;
 import com.smartmarketplace.entity.Country;
 import com.smartmarketplace.entity.Product;
 import com.smartmarketplace.exception.CartItemUnavailableException;
+import com.smartmarketplace.outbox.OutboxPublisher;
 import com.smartmarketplace.repository.CartRepository;
 import com.smartmarketplace.repository.ClientRepository;
 import com.smartmarketplace.repository.ProductRepository;
@@ -52,7 +53,7 @@ class CartApplicationServiceTest {
     private OrderApplicationService orderApplicationService;
 
     @Mock
-    private AiSyncClient aiSyncClient;
+    private OutboxPublisher outboxPublisher;
 
     private CartApplicationService cartApplicationService;
 
@@ -64,7 +65,7 @@ class CartApplicationServiceTest {
                 productRepository,
                 productAvailabilityPolicy,
                 orderApplicationService,
-                aiSyncClient,
+                outboxPublisher,
                 false);
     }
 
@@ -219,7 +220,7 @@ class CartApplicationServiceTest {
 
         verify(orderApplicationService).createOrder(any());
         verify(cartRepository).delete(cart);
-        verify(aiSyncClient).notifyCheckoutCompleted(eq(orderId), eq(clientId), eq(List.of(productId)), eq(orderPlacedAt));
+        verify(outboxPublisher).publishCheckoutCompleted(eq(clientId), any(OrderDTO.class));
         assertThat(response.orderId()).isEqualTo(orderId);
         assertThat(response.expectedTrainingTriggered()).isFalse();
     }
@@ -241,7 +242,7 @@ class CartApplicationServiceTest {
                 productRepository,
                 productAvailabilityPolicy,
                 orderApplicationService,
-                aiSyncClient,
+                outboxPublisher,
                 true);
 
         when(clientRepository.existsById(clientId)).thenReturn(true);
@@ -255,7 +256,7 @@ class CartApplicationServiceTest {
 
         verify(orderApplicationService).createOrder(any());
         verify(cartRepository).delete(cart);
-        verify(aiSyncClient).notifyCheckoutCompleted(eq(orderId), eq(clientId), eq(List.of(productId)), eq(orderPlacedAt));
+        verify(outboxPublisher).publishCheckoutCompleted(eq(clientId), any(OrderDTO.class));
         assertThat(response.orderId()).isEqualTo(orderId);
         assertThat(response.expectedTrainingTriggered()).isTrue();
     }
@@ -280,7 +281,7 @@ class CartApplicationServiceTest {
                 .hasMessage("Product Organic Snack Bar is not available in country BR");
 
         verify(cartRepository, never()).delete(cart);
-        verify(aiSyncClient, never()).notifyCheckoutCompleted(any(), any(), any(), any());
+        verify(outboxPublisher, never()).publishCheckoutCompleted(any(), any());
     }
 
     private static Client buildClient(UUID clientId) {

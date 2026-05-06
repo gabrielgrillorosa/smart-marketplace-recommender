@@ -22,6 +22,20 @@ export interface BoughtSyncEdge {
   productId: string
   orderId: string
   orderDate: string
+  quantity?: number
+}
+
+export interface ProductProjectionUpsert {
+  id: string
+  name: string
+  description: string
+  category: string
+  price: number
+  sku: string
+  supplierId: string
+  supplierName: string
+  supplierCountryCode: string
+  countryCodes: string[]
 }
 
 export class Neo4jUnavailableError extends Error {
@@ -388,7 +402,8 @@ export class Neo4jRepository {
          WITH edge, c, p, (ex IS NOT NULL) AS alreadyThere
          MERGE (c)-[r:BOUGHT {checkout_order_id: edge.orderId}]->(p)
          SET r.order_date = datetime(edge.orderDate),
-             r.is_demo = false
+             r.is_demo = false,
+             r.quantity = coalesce(edge.quantity, r.quantity, 1)
          RETURN count(*) AS processed,
                 sum(CASE WHEN alreadyThere THEN 1 ELSE 0 END) AS existed,
                 sum(CASE WHEN NOT alreadyThere THEN 1 ELSE 0 END) AS created`,
@@ -414,6 +429,65 @@ export class Neo4jRepository {
         existed: existedCount,
         skipped: skippedCount < 0 ? 0 : skippedCount,
       }
+    } catch (err) {
+      throw new Neo4jUnavailableError(err)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async upsertProductProjectionWithEmbedding(
+    product: ProductProjectionUpsert,
+    embedding: number[]
+  ): Promise<void> {
+    const session = this.driver.session()
+    try {
+      await session.run(
+        `MERGE (p:Product {id: $id})
+         SET p.name = $name,
+             p.description = $description,
+             p.category = $category,
+             p.price = $price,
+             p.sku = $sku,
+             p.embedding = $embedding
+         WITH p
+         OPTIONAL MATCH (p)-[oldCat:BELONGS_TO]->(oldCategory:Category)
+         WHERE oldCategory.name <> $category
+         DELETE oldCat
+         WITH p
+         MERGE (cat:Category {name: $category})
+         MERGE (p)-[:BELONGS_TO]->(cat)
+         WITH p
+         OPTIONAL MATCH (p)-[oldSup:SUPPLIED_BY]->(oldSupplier:Supplier)
+         WHERE oldSupplier.id <> $supplierId
+         DELETE oldSup
+         WITH p
+         MERGE (sup:Supplier {id: $supplierId})
+         SET sup.name = $supplierName,
+             sup.country = $supplierCountryCode
+         MERGE (p)-[:SUPPLIED_BY]->(sup)
+         WITH p
+         OPTIONAL MATCH (p)-[oldAvail:AVAILABLE_IN]->(oldCountry:Country)
+         WHERE NOT oldCountry.code IN $countryCodes
+         DELETE oldAvail
+         WITH p
+         UNWIND $countryCodes AS code
+         MERGE (country:Country {code: code})
+         MERGE (p)-[:AVAILABLE_IN]->(country)`,
+        {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          category: product.category,
+          price: product.price,
+          sku: product.sku,
+          embedding,
+          supplierId: product.supplierId,
+          supplierName: product.supplierName,
+          supplierCountryCode: product.supplierCountryCode,
+          countryCodes: product.countryCodes,
+        }
+      )
     } catch (err) {
       throw new Neo4jUnavailableError(err)
     } finally {

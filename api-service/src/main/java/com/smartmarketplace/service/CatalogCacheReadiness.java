@@ -3,10 +3,14 @@ package com.smartmarketplace.service;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
@@ -21,8 +25,11 @@ public class CatalogCacheReadiness {
     private final AtomicBoolean cacheEnabled = new AtomicBoolean(false);
 
     @Autowired
-    public CatalogCacheReadiness(WebClient aiWebClient) {
-        this(() -> probeAiServiceReady(aiWebClient));
+    public CatalogCacheReadiness(
+            HttpClient aiServiceHttpClient,
+            @Value("${ai.service.base-url}") String aiServiceBaseUrl
+    ) {
+        this(() -> probeAiServiceReady(aiServiceHttpClient, aiServiceBaseUrl));
     }
 
     CatalogCacheReadiness(BooleanSupplier readyProbe) {
@@ -48,13 +55,20 @@ public class CatalogCacheReadiness {
         return cacheEnabled.get();
     }
 
-    private static boolean probeAiServiceReady(WebClient aiWebClient) {
-        Boolean ready = aiWebClient.get()
-                .uri("/ready")
-                .exchangeToMono(response -> Mono.just(response.statusCode().is2xxSuccessful()))
+    private static boolean probeAiServiceReady(HttpClient httpClient, String aiServiceBaseUrl) {
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(aiServiceBaseUrl + "/ready"))
+                .GET()
                 .timeout(READY_PROBE_TIMEOUT)
-                .onErrorReturn(false)
-                .block();
-        return Boolean.TRUE.equals(ready);
+                .build();
+        try {
+            HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
+            return response.statusCode() >= 200 && response.statusCode() < 300;
+        } catch (IOException e) {
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

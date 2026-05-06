@@ -15,6 +15,8 @@ export interface CoverageMeta extends RankingWindow {
 }
 
 export const DEFAULT_FULL_COVERAGE_CAP = 100;
+// The api-service facade rejects recommendation requests above 50.
+export const API_RECOMMENDATION_LIMIT = 50;
 
 function normalizeCatalogSize(totalCatalogItems: number): number {
   if (!Number.isFinite(totalCatalogItems) || totalCatalogItems <= 0) {
@@ -32,10 +34,11 @@ export function resolveShowcaseRankingWindow({
   mode: CoverageMode;
 }): RankingWindow {
   const normalizedCatalogSize = normalizeCatalogSize(totalCatalogItems);
-  const requestedLimit =
+  const desiredLimit =
     mode === 'diagnostic'
       ? normalizedCatalogSize
       : Math.min(normalizedCatalogSize, DEFAULT_FULL_COVERAGE_CAP);
+  const requestedLimit = Math.min(desiredLimit, API_RECOMMENDATION_LIMIT);
 
   return {
     requestedLimit,
